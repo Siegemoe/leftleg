@@ -19,3 +19,6 @@ Thumbs.db
 
 # Tauri generated
 src-tauri/gen/
+
+# Serena language server
+.serena/
