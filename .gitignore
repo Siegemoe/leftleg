@@ -22,3 +22,6 @@ src-tauri/gen/
 
 # Serena language server
 .serena/
+
+# pi local project state
+.pi/
