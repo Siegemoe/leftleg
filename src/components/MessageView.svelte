@@ -22,12 +22,16 @@
       {#if item.images.length > 0}
         <div class="thumbs">
           {#each item.images as img}
-            <img src={img.dataUrl} alt={img.name} title={img.name} />
+            {#if img.dataUrl}
+              <img src={img.dataUrl} alt={img.name} title={img.name} />
+            {:else}
+              <span class="img-chip mono">🖼 {img.name}</span>
+            {/if}
           {/each}
         </div>
       {/if}
       {#if item.text}
-        <div class="md">{renderMarkdown(item.text)}</div>
+        <div class="md">{@html renderMarkdown(item.text)}</div>
       {/if}
     </div>
   </div>
@@ -45,7 +49,7 @@
           </details>
         {:else if block.type === "text"}
           {#if block.text.trim()}
-            <div class="md body">{renderMarkdown(block.text)}</div>
+            <div class="md body">{@html renderMarkdown(block.text)}</div>
           {/if}
         {/if}
       {/each}
@@ -103,6 +107,13 @@
     max-height: 110px;
     border-radius: 8px;
     display: block;
+  }
+  .img-chip {
+    display: inline-block;
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    padding: 4px 8px;
   }
   .row.assistant { flex-direction: column; }
   .stack { max-width: 860px; display: flex; flex-direction: column; gap: 2px; }

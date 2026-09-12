@@ -98,6 +98,16 @@ fn append_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Native crash forensics: panics must leave a trace on disk.
+    let log_dir = std::env::var("APPDATA").ok().map(|d| std::path::PathBuf::from(d).join("dev.leftleg.app").join("logs"));
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(dir) = &log_dir {
+            let _ = fs::create_dir_all(dir);
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let line = format!("[panic@{}] {}\nbacktrace: {:?}\n", stamp, info, std::backtrace::Backtrace::force_capture());
+            let _ = fs::OpenOptions::new().create(true).append(true).open(dir.join("rust-panic.log")).and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+        }
+    }));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

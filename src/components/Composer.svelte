@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { sendPrompt, abort, streaming, statusNote } from "../lib/stores";
+  import { sendPrompt, abort, streaming, statusNote, queue } from "../lib/stores";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-  import { readFileBase64 } from "../lib/api";
+  import { readFileBase64, piRequest } from "../lib/api";
 
   interface Attachment {
     name: string;
@@ -111,10 +111,57 @@
       doSend();
     }
   }
+
+  // Paste images directly from the clipboard (screenshots, copied files).
+  async function onPaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const it of items) {
+      if (it.kind === "file" && it.type.startsWith("image/")) {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length === 0) return;
+    e.preventDefault();
+    for (const f of files) {
+      const dataUrl = await new Promise<string>((resolve) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.readAsDataURL(f);
+      });
+      const b64 = dataUrl.split(",")[1] ?? "";
+      attachments = [...attachments, {
+        name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
+        mimeType: f.type || "image/png",
+        data: b64,
+        isImage: true,
+      }];
+    }
+  }
+
+  async function clearQueue() {
+    try {
+      await piRequest({ type: "clear_queue" }, 30);
+    } catch { /* ignore */ }
+  }
 </script>
 
 {#if $statusNote}
   <div class="note mono">{$statusNote}</div>
+{/if}
+
+{#if $queue.steering.length + $queue.followUp.length > 0}
+  <div class="pending">
+    {#each $queue.steering as s}
+      <div class="pending-chip"><span class="tag">steer</span><span class="ptext">{s}</span></div>
+    {/each}
+    {#each $queue.followUp as s}
+      <div class="pending-chip"><span class="tag">follow-up</span><span class="ptext">{s}</span></div>
+    {/each}
+    <button class="ghost clear-btn" onclick={clearQueue} title="Remove queued messages (they are not sent)">Clear queue</button>
+  </div>
 {/if}
 
 <div class="composer">
@@ -147,6 +194,8 @@
       bind:value={text}
       oninput={autoGrow}
       onkeydown={onKeydown}
+      onpaste={onPaste}
+      spellcheck="true"
       placeholder={$streaming ? "Streaming… press Enter to steer, or wait" : "Message Leftleg…  (Enter to send, Shift+Enter for newline)"}
       rows="1"
     ></textarea>
@@ -184,6 +233,34 @@
     background: var(--bg-surface-2);
     border-radius: var(--radius-sm);
     align-self: flex-start;
+  }
+  .pending {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 24px 6px;
+    padding: 8px 10px;
+    background: var(--bg-surface-2);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+  }
+  .pending-chip {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  .ptext {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .clear-btn {
+    align-self: flex-end;
+    font-size: 11px;
+    padding: 2px 8px;
+    color: var(--text-3);
   }
   .composer {
     flex-shrink: 0;

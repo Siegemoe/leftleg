@@ -55,6 +55,10 @@ function contentText(content: string | Array<{ type: string; text?: string }> | 
   return content.filter((c) => c.type === "text").map((c) => (c as { text?: string }).text ?? "").join("");
 }
 
+// Base64 data URLs above this size are rendered as file chips instead of <img>.
+// Multi-MB embedded images in long histories have crashed the webview.
+const MAX_INLINE_IMAGE_BASE64 = 1_500_000;
+
 /** Rebuild the UI item list from a full message array (initial load / session switch). */
 export function rebuildFromMessages(messages: AgentMessage[]) {
   const out: UiItem[] = [];
@@ -63,7 +67,14 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
     if (m.role === "user") {
       const images = (m.attachments ?? [])
         .filter((a) => a.type === "image" && a.content)
-        .map((a) => ({ name: a.fileName ?? "image", dataUrl: `data:${a.mimeType ?? "image/png"};base64,${a.content}` }));
+        .map((a) => {
+          const data = a.content ?? "";
+          if (data.length > MAX_INLINE_IMAGE_BASE64) {
+            // too big to inline: show a chip with the payload stripped
+            return { name: `${a.fileName ?? "image"} (${Math.round(data.length * 0.75 / 1e6)} MB — too large to preview)`, dataUrl: "" };
+          }
+          return { name: a.fileName ?? "image", dataUrl: `data:${a.mimeType ?? "image/png"};base64,${data}` };
+        });
       out.push({ kind: "user", text: contentText(m.content as never), images });
     } else if (m.role === "assistant") {
       const blocks: Block[] = [];
