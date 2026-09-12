@@ -390,12 +390,20 @@ export async function abort() {
   try { await api.piRequest({ type: "abort" }, 120); } catch { /* ignore */ }
 }
 
+/** Model pinned for every new session — the stack's default (AGENTS.md rule 7). */
+export const DEFAULT_MODEL = { provider: "openrouter", id: "z-ai/glm-5.3-flash" };
+
 export async function newSession() {
   try {
     await api.piRequest({ type: "new_session" }, 120);
     items.set([]);
     activeSessionPath.set(null);
     await refreshRpcState();
+    // Fresh sessions otherwise inherit pi's fallback model (often Opus) — pin ours.
+    const cur = get(rpcState)?.model;
+    if (cur?.provider !== DEFAULT_MODEL.provider || cur?.id !== DEFAULT_MODEL.id) {
+      await setModel(DEFAULT_MODEL.provider, DEFAULT_MODEL.id);
+    }
     await refreshSessions();
     await refreshStats();
   } catch (e) {

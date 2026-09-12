@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { rpcState, stats, streaming, queue, statusNote, compact, rpcState as rs } from "../lib/stores";
+  import { rpcState, stats, streaming, queue, statusNote } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
   import type { ThinkingLevel } from "../lib/types";
 
@@ -77,7 +77,7 @@
   {/if}
 
   <span class="spacer"></span>
-  <button class="ghost compact" onclick={() => compact()} title="Compact conversation context now">/compact</button>
+  <span class="version" title="Leftleg build">v{__APP_VERSION__}</span>
 </footer>
 
 <style>
@@ -124,5 +124,5 @@
   .queued { color: var(--accent); border-color: var(--accent); }
   .warn { color: orange; border-color: orange; }
   .note { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .compact { padding: 1px 8px; font-size: 11px; color: var(--text-3); }
+  .version { color: var(--text-3); letter-spacing: 0.3px; user-select: none; }
 </style>

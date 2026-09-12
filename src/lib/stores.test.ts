@@ -17,8 +17,8 @@ vi.mock("./api", () => ({
 
 import * as api from "./api";
 import {
-  activeSessionPath, connected, extDialog, handleEvent, items, projectDir,
-  queue, rebuildFromMessages, sessionStates, sendPrompt, stats, statusNote, streaming,
+  activeSessionPath, connected, extDialog, handleEvent, items, newSession, projectDir,
+  queue, rebuildFromMessages, rpcState, sessionStates, sendPrompt, stats, statusNote, streaming,
 } from "./stores";
 
 function resetStores() {
@@ -27,6 +27,7 @@ function resetStores() {
   queue.set({ steering: [], followUp: [] });
   sessionStates.set({});
   stats.set(null);
+  rpcState.set(null);
   activeSessionPath.set(null);
   statusNote.set("");
   extDialog.set(null);
@@ -303,5 +304,30 @@ describe("rebuildFromMessages", () => {
     rebuildFromMessages([{ role: "bashExecution", command: "ls", output: "boom", exitCode: 1 } as never]);
     const [b] = get(items) as Array<{ kind: string; command: string; output: string; isError: boolean }>;
     expect(b).toMatchObject({ kind: "bash", command: "ls", output: "boom", isError: true });
+  });
+});
+
+describe("newSession", () => {
+  // keep this describe last: it overrides the shared piRequest mock resolution
+  it("pins the default GLM model on fresh sessions", async () => {
+    vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: {} } as never);
+
+    await newSession();
+
+    const calls = vi.mocked(api.piRequest).mock.calls;
+    const setModelCall = calls.find(([c]) => (c as { type: string }).type === "set_model");
+    expect(setModelCall?.[0]).toMatchObject({ provider: "openrouter", modelId: "z-ai/glm-5.3-flash" });
+  });
+
+  it("skips the model switch when already on the default model", async () => {
+    vi.mocked(api.piRequest).mockResolvedValue({
+      success: true,
+      data: { model: { provider: "openrouter", id: "z-ai/glm-5.3-flash" } },
+    } as never);
+
+    await newSession();
+
+    const types = vi.mocked(api.piRequest).mock.calls.map(([c]) => (c as { type: string }).type);
+    expect(types).not.toContain("set_model");
   });
 });

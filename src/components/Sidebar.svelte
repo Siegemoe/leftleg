@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { newSession, openSession, sessions, projectDir, activeSessionPath, rpcState, theme, applyTheme, connected, chooseProject, refreshSessions, sessionStates } from "../lib/stores";
+  import { newSession, openSession, sessions, projectDir, activeSessionPath, rpcState, theme, applyTheme, connected, chooseProject, refreshSessions, sessionStates, settingsOpen } from "../lib/stores";
 
   const dotLabel: Record<string, string> = {
     idle: "inactive",
@@ -30,11 +30,11 @@
     return s.name ?? s.firstMessage ?? "Empty session";
   }
 
-  const themeOptions: Array<{ value: "light" | "dark" | "system"; label: string }> = [
-    { value: "light", label: "Light" },
-    { value: "dark", label: "Dark" },
-    { value: "system", label: "System" },
-  ];
+  const themeCycle = ["light", "dark", "system"] as const;
+  function cycleTheme() {
+    const next = themeCycle[(themeCycle.indexOf($theme) + 1) % themeCycle.length];
+    applyTheme(next);
+  }
 </script>
 
 <aside>
@@ -84,29 +84,28 @@
   </div>
 
   <div class="footer">
-    <button class="project-btn" onclick={chooseProject} title="Change project folder">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      </svg>
-      <span class="proj-name">{$projectDir ? $projectDir.split(/[\\/]/).pop() : "Open folder…"}</span>
-    </button>
-    <div class="theme-row">
-      {#each themeOptions as opt}
-        <button
-          class="ghost theme-btn"
-          class:active={$theme === opt.value}
-          onclick={() => applyTheme(opt.value)}
-          title={opt.label}
-        >
-          {#if opt.value === "light"}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-          {:else if opt.value === "dark"}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-          {:else}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M12 5v14"/><path d="M2 12h20" opacity="0"/></svg>
-          {/if}
-        </button>
-      {/each}
+    <div class="footer-row">
+      <button class="ghost icon-btn" title="Settings" onclick={() => settingsOpen.set(true)}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+      <button class="project-btn" onclick={chooseProject} title="Change project folder">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        </svg>
+        <span class="proj-name">{$projectDir ? $projectDir.split(/[\\/]/).pop() : "Open folder…"}</span>
+      </button>
+      <button class="ghost icon-btn" title="Theme: {$theme} — click to cycle light / dark / system" onclick={cycleTheme}>
+        {#if $theme === "light"}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        {:else if $theme === "dark"}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        {:else}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        {/if}
+      </button>
     </div>
     <div class="conn" class:on={$connected}>
       {$connected ? "pi connected" : "pi offline"}
@@ -226,6 +225,8 @@
     padding-top: 10px;
   }
   .project-btn {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -233,18 +234,20 @@
     overflow: hidden;
   }
   .proj-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .theme-row {
+  .footer-row {
     display: flex;
-    gap: 4px;
+    align-items: center;
+    gap: 6px;
   }
-  .theme-btn {
-    flex: 1;
+  .icon-btn {
+    flex-shrink: 0;
     display: inline-flex;
+    align-items: center;
     justify-content: center;
-    padding: 5px;
+    padding: 6px;
     color: var(--text-3);
   }
-  .theme-btn.active { color: var(--accent); background: var(--accent-soft); }
+  .icon-btn:hover { color: var(--text-2); }
   .conn {
     font-size: 11px;
     color: var(--text-3);

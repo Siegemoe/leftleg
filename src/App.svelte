@@ -45,7 +45,6 @@
       </button>
       <span class="project mono" title={$projectDir}>{$projectDir || "no project"}</span>
       <span class="spacer"></span>
-      <button class="ghost" onclick={() => settingsOpen.set(true)}>Settings</button>
     </header>
     <Chat />
     <StatusBar />
