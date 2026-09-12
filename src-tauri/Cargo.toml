@@ -1,0 +1,27 @@
+[package]
+name = "leftleg"
+version = "0.1.0"
+description = "Leftleg — a native control surface for the Pi coding agent"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "leftleg_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+strip = true

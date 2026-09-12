@@ -1,0 +1,21 @@
+# Dependencies & build artifacts
+node_modules/
+dist/
+src-tauri/target/
+
+# Logs & temp
+*.log
+leftleg-*.log
+npm-install.log
+cargo-build*.log
+tauri-dev*.log
+tauri-build*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Tauri generated
+src-tauri/gen/
