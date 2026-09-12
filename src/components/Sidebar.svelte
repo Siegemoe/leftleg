@@ -1,5 +1,19 @@
 <script lang="ts">
-  import { newSession, openSession, sessions, projectDir, activeSessionPath, rpcState, theme, applyTheme, connected, chooseProject, refreshSessions } from "../lib/stores";
+  import { newSession, openSession, sessions, projectDir, activeSessionPath, rpcState, theme, applyTheme, connected, chooseProject, refreshSessions, sessionStates } from "../lib/stores";
+
+  const dotLabel: Record<string, string> = {
+    idle: "inactive",
+    current: "this project",
+    active: "working",
+    attention: "needs attention",
+    error: "error",
+  };
+
+  function stateFor(s: { path: string; cwd: string | null }): string {
+    const st = $sessionStates[s.path];
+    if (st) return st.status;
+    return s.cwd === $projectDir ? "current" : "idle";
+  }
 
   function fmtTime(ts: string | number): string {
     const d = typeof ts === "number" ? new Date(ts) : new Date(ts);
@@ -37,7 +51,7 @@
 
   <div class="section-label">
     Sessions
-    <span class="spacer" />
+    <span class="spacer"></span>
     <button class="ghost refresh" title="Refresh" onclick={() => refreshSessions()}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M21 12a9 9 0 1 1-2.6-6.4" /><polyline points="21 3 21 9 15 9" />
@@ -51,10 +65,12 @@
         class="session"
         class:active={$activeSessionPath === s.path}
         onclick={() => openSession(s.path)}
-        title="{s.cwd}
-{new Date(s.timestamp).toLocaleString()}"
+        title="{s.cwd}\n{new Date(s.timestamp).toLocaleString()}"
       >
-        <span class="s-title">{title(s)}</span>
+        <span class="row-top">
+          <span class="state-dot {stateFor(s)}" title={dotLabel[stateFor(s)]}></span>
+          <span class="s-title">{title(s)}</span>
+        </span>
         <span class="s-meta">
           {#if s.cwd === $projectDir}
             <span class="tag">current</span>
@@ -152,6 +168,38 @@
     border-radius: var(--radius-sm);
     padding: 7px 9px;
   }
+  .row-top {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+  .state-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-3);
+    opacity: 0.55;
+  }
+  .state-dot.active {
+    background: var(--ok);
+    opacity: 1;
+    animation: dotpulse 1.1s ease-in-out infinite;
+  }
+  .state-dot.current {
+    background: var(--accent);
+    opacity: 1;
+  }
+  .state-dot.attention {
+    background: #d9a13c;
+    opacity: 1;
+  }
+  .state-dot.error {
+    background: var(--danger);
+    opacity: 1;
+  }
+  @keyframes dotpulse { 50% { opacity: 0.35; } }
   .session:hover { background: var(--bg-hover); }
   .session.active {
     background: var(--accent-soft);

@@ -40,7 +40,7 @@
   {/if}
 
   <span class="pill streaming" class:active={$streaming}>
-    <span class="dot" />
+    <span class="dot"></span>
     {$streaming ? "working" : "idle"}
   </span>
 
@@ -55,7 +55,7 @@
 
   {#if ctxPercent !== null}
     <span class="pill ctx" title="Context window usage">
-      <span class="ctxbar"><span class="fill" style="width: {Math.min(ctxPercent, 100)}%; background: {ctxColor}" /></span>
+      <span class="ctxbar"><span class="fill" style="width: {Math.min(ctxPercent, 100)}%; background: {ctxColor}"></span></span>
       ctx {ctxPercent}%
     </span>
   {/if}
@@ -76,7 +76,7 @@
     <span class="pill warn" title="Auto-compaction disabled">no auto-compact</span>
   {/if}
 
-  <span class="spacer" />
+  <span class="spacer"></span>
   <button class="ghost compact" onclick={() => compact()} title="Compact conversation context now">/compact</button>
 </footer>
 

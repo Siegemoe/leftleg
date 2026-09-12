@@ -160,5 +160,4 @@ export interface PiEvent {
   method?: string;
   title?: string;
   options?: string[];
-  message?: unknown;
 }

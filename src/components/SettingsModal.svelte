@@ -68,7 +68,7 @@
       <section>
         <h3>Appearance</h3>
         <div class="row">
-          <label>Theme</label>
+          <span class="row-label">Theme</span>
           <div class="seg">
             {#each [["light", "Light"], ["dark", "Dark"], ["system", "System"]] as [v, l]}
               <button class:active={$theme === v} onclick={() => applyTheme(v as never)}>{l}</button>
@@ -81,7 +81,7 @@
       <section>
         <h3>Project</h3>
         <div class="row">
-          <label>Working directory</label>
+          <span class="row-label">Working directory</span>
           <div class="dir-row">
             <span class="mono dir" title={$projectDir}>{$projectDir || "—"}</span>
             <button onclick={chooseProject}>Change…</button>
@@ -131,7 +131,7 @@
       <section>
         <h3>Thinking</h3>
         <div class="row">
-          <label>Level</label>
+          <span class="row-label">Level</span>
           <div class="seg wrap">
             {#each availableLevels as l}
               <button class:active={$rpcState?.thinkingLevel === l} onclick={() => setThinkingLevel(l)}>{l}</button>
@@ -144,15 +144,15 @@
       <section>
         <h3>Queued messages</h3>
         <div class="row">
-          <label>Steering delivery</label>
-          <select value={$rpcState?.steeringMode ?? "one-at-a-time"} onchange={(e) => setSteeringMode(e.currentTarget.value as never)}>
+          <label for="steering-mode">Steering delivery</label>
+          <select id="steering-mode" value={$rpcState?.steeringMode ?? "one-at-a-time"} onchange={(e) => setSteeringMode(e.currentTarget.value as never)}>
             <option value="all">all — after each turn</option>
             <option value="one-at-a-time">one-at-a-time</option>
           </select>
         </div>
         <div class="row">
-          <label>Follow-up delivery</label>
-          <select value={$rpcState?.followUpMode ?? "one-at-a-time"} onchange={(e) => setFollowUpMode(e.currentTarget.value as never)}>
+          <label for="followup-mode">Follow-up delivery</label>
+          <select id="followup-mode" value={$rpcState?.followUpMode ?? "one-at-a-time"} onchange={(e) => setFollowUpMode(e.currentTarget.value as never)}>
             <option value="all">all — when agent finishes</option>
             <option value="one-at-a-time">one-at-a-time</option>
           </select>
@@ -177,8 +177,8 @@
       <section>
         <h3>Session</h3>
         <div class="row">
-          <label>Name</label>
-          <input type="text" placeholder="Unnamed session" bind:value={sessionName} oninput={onNameInput} />
+          <label for="session-name">Name</label>
+          <input id="session-name" type="text" placeholder="Unnamed session" bind:value={sessionName} oninput={onNameInput} />
         </div>
       </section>
 
@@ -250,7 +250,7 @@
     color: var(--text-3);
   }
   .row { display: flex; flex-direction: column; gap: 5px; }
-  label { font-size: 12.5px; color: var(--text-2); }
+  label, .row-label { font-size: 12.5px; color: var(--text-2); }
   label.check {
     display: flex;
     align-items: center;

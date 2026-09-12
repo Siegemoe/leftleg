@@ -57,7 +57,7 @@
 
 <div class="card" class:running={item.status === "running"} class:error={item.status === "error"}>
   <button class="head" onclick={() => (expanded = !expanded)}>
-    <span class="status-dot" />
+    <span class="status-dot"></span>
     <span class="lbl">{item.status === "running" ? `${label === item.name ? item.name : label}…` : label}</span>
     {#if shortTarget}
       <span class="target mono" title={target}>{shortTarget}</span>
@@ -65,7 +65,7 @@
     {#if lines !== null}
       <span class="meta">{lines} lines</span>
     {/if}
-    <span class="spacer" />
+    <span class="spacer"></span>
     {#if diffStats}
       <span class="diffstat"><span class="plus">+{diffStats.plus}</span> <span class="minus">−{diffStats.minus}</span></span>
     {/if}

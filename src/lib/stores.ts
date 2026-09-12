@@ -24,6 +24,15 @@ export const stats = writable<SessionStats | null>(null);
 export const activeSessionPath = writable<string | null>(null);
 export const statusNote = writable<string>(""); // transient status line (compaction, retry...)
 
+// Per-session visual state for the sidebar: what each thread is doing.
+export type SessionStatus = "idle" | "active" | "attention" | "error";
+export const sessionStates = writable<Record<string, { status: SessionStatus; note: string }>>({});
+
+function setSessionStatus(path: string | null, status: SessionStatus, note = "") {
+  if (!path) return;
+  sessionStates.update((s) => ({ ...s, [path]: { status, note } }));
+}
+
 export interface ExtDialogData {
   id: string;
   method: string;
@@ -143,13 +152,15 @@ export async function handleEvent(evt: PiEvent) {
   switch (evt.type) {
     case "agent_start":
       streaming.set(true);
+      setSessionStatus(get(activeSessionPath), "active", "working");
       break;
     case "agent_end":
     case "agent_settled": {
       streaming.set(false);
+      setSessionStatus(get(activeSessionPath), "idle");
       if (streamingAssistant) {
         streamingAssistant.streaming = false;
-        for (const b of streamingAssistant.blocks) b.done = true;
+        for (const b of streamingAssistant.blocks) if (b.type !== "toolcall") b.done = true;
         streamingAssistant = null;
       }
       break;
@@ -207,6 +218,9 @@ export async function handleEvent(evt: PiEvent) {
     case "message_end": {
       const m = evt.message;
       if (m?.role === "assistant" && streamingAssistant) {
+        if (m.stopReason === "error") {
+          setSessionStatus(get(activeSessionPath), "attention", "error in response");
+        }
         // Finalize from the authoritative message.
         const content = m.content ?? [];
         const arr = Array.isArray(content) ? content : [];
@@ -284,6 +298,9 @@ export async function handleEvent(evt: PiEvent) {
       break;
     case "auto_retry_end":
       statusNote.set("");
+      break;
+    case "extension_error":
+      setSessionStatus(get(activeSessionPath), "attention", "extension error");
       break;
     case "extension_ui_request": {
       const id = evt.id as string;

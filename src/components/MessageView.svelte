@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { UiItem } from "../lib/types";
   import ToolCard from "./ToolCard.svelte";
-  import { renderMarkdown } from "../lib/markdown";
+  import { renderMarkdown, renderStreamingMarkdown } from "../lib/markdown";
 
   let { item }: { item: UiItem } = $props();
 
@@ -13,7 +13,13 @@
         ? item.blocks.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n\n")
         : ""
   );
-  let rendered = $derived(html ? renderMarkdown(html) : "");
+  let rendered = $derived(
+    html
+      ? item.kind === "assistant" && item.streaming
+        ? renderStreamingMarkdown(html)
+        : renderMarkdown(html)
+      : ""
+  );
 </script>
 
 {#if item.kind === "user"}
@@ -49,7 +55,7 @@
           </details>
         {:else if block.type === "text"}
           {#if block.text.trim()}
-            <div class="md body">{@html renderMarkdown(block.text)}</div>
+            <div class="md body">{@html item.streaming ? renderStreamingMarkdown(block.text) : renderMarkdown(block.text)}</div>
           {/if}
         {/if}
       {/each}
@@ -57,7 +63,7 @@
         <div class="error-note">⚠ {item.errorMessage}</div>
       {/if}
       {#if item.streaming}
-        <span class="cursor" />
+        <span class="cursor"></span>
       {/if}
     </div>
   </div>

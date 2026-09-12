@@ -11,16 +11,18 @@
 
   let cleanup: (() => void) | null = null;
 
-  onMount(async () => {
-    const unlisten = await listen<PiEvent>("pi-event", (e) => {
-      handleEvent(e.payload).catch(console.error);
-    });
-    const unlistenExit = await listen("pi-exit", () => {
-      connected.set(false);
-      statusNote.set("pi process exited unexpectedly — reopen the project from the sidebar");
-      setTimeout(() => statusNote.set(""), 10000);
-    });
-    cleanup = () => { unlisten(); unlistenExit(); };
+  onMount(() => {
+    void (async () => {
+      const unlisten = await listen<PiEvent>("pi-event", (e) => {
+        handleEvent(e.payload).catch(console.error);
+      });
+      const unlistenExit = await listen("pi-exit", () => {
+        connected.set(false);
+        statusNote.set("pi process exited unexpectedly — reopen the project from the sidebar");
+        setTimeout(() => statusNote.set(""), 10000);
+      });
+      cleanup = () => { unlisten(); unlistenExit(); };
+    })();
     return () => cleanup?.();
   });
 </script>
@@ -42,7 +44,7 @@
         </svg>
       </button>
       <span class="project mono" title={$projectDir}>{$projectDir || "no project"}</span>
-      <span class="spacer" />
+      <span class="spacer"></span>
       <button class="ghost" onclick={() => settingsOpen.set(true)}>Settings</button>
     </header>
     <Chat />
