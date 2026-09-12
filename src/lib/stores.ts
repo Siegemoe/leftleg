@@ -236,6 +236,7 @@ export async function handleEvent(evt: PiEvent) {
         streamingAssistant.blocks = blocks;
         streamingAssistant.usage = m.usage;
         streamingAssistant.stopReason = m.stopReason;
+        streamingAssistant.errorMessage = m.stopReason === "error" ? m.errorMessage : undefined;
         streamingAssistant.streaming = false;
         streamingAssistant = null;
         items.update((a) => a);

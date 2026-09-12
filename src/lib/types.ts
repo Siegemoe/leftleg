@@ -152,7 +152,7 @@ export interface PiEvent {
   toolName?: string;
   args?: Record<string, unknown>;
   partialResult?: { content?: Array<{ type: string; text?: string }>; details?: Record<string, unknown> };
-  result?: { content?: Array<{ type: string; text?: string }>; details?: Record<string, unknown> };
+  result?: { content?: Array<{ type: string; text?: string }>; details?: Record<string, unknown>; tokensBefore?: number; estimatedTokensAfter?: number };
   isError?: boolean;
   usage?: Usage;
   // extension ui

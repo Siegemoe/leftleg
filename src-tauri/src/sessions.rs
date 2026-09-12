@@ -55,37 +55,60 @@ fn session_display_name(path: &std::path::Path) -> Option<String> {
 }
 
 /// Extract a short snippet from the first user message in a session file.
+/// Malformed or non-message lines are skipped; they do not abort the scan.
 fn first_user_text(path: &std::path::Path) -> Option<String> {
     let file = fs::File::open(path).ok()?;
     let reader = std::io::BufReader::new(file);
     for line in reader.lines().take(200) {
-        let line = line.ok()?;
-        let v: serde_json::Value = serde_json::from_str(&line).ok()?;
-        if v.get("type")?.as_str()? == "message" {
-            let msg = v.get("message")?;
-            if msg.get("role")?.as_str()? == "user" {
-                let text = match msg.get("content") {
-                    Some(serde_json::Value::String(s)) => Some(s.clone()),
-                    Some(serde_json::Value::Array(blocks)) => blocks.iter().find_map(|b| {
-                        if b.get("type")?.as_str()? == "text" {
-                            b.get("text").and_then(|t| t.as_str()).map(String::from)
-                        } else {
-                            None
-                        }
-                    }),
-                    _ => None,
-                };
-                if let Some(t) = text {
-                    let t = t.trim().replace('\n', " ");
-                    let t: String = t.chars().take(120).collect();
-                    if !t.is_empty() {
-                        return Some(t);
-                    }
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let Some(msg_type) = v.get("type").and_then(|t| t.as_str()) else {
+            continue;
+        };
+        if msg_type != "message" {
+            continue;
+        }
+        let Some(msg) = v.get("message") else { continue };
+        let Some(role) = msg.get("role").and_then(|r| r.as_str()) else { continue };
+        if role != "user" {
+            continue;
+        }
+        let text = match msg.get("content") {
+            Some(serde_json::Value::String(s)) => Some(s.clone()),
+            Some(serde_json::Value::Array(blocks)) => blocks.iter().find_map(|b| {
+                if b.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    b.get("text").and_then(|t| t.as_str()).map(String::from)
+                } else {
+                    None
                 }
+            }),
+            _ => None,
+        };
+        if let Some(t) = text {
+            let t = t.trim().replace('\n', " ");
+            let t: String = t.chars().take(120).collect();
+            if !t.is_empty() {
+                return Some(t);
             }
         }
     }
     None
+}
+
+/// Parse the first line of a session file into (cwd, timestamp, session_id).
+/// `None` when the line is not a `type:"session"` header or is invalid JSON.
+fn parse_session_header(first_line: &str) -> Option<(String, String, String)> {
+    let v = serde_json::from_str::<serde_json::Value>(first_line.trim()).ok()?;
+    if v.get("type").and_then(|t| t.as_str()) != Some("session") {
+        return None;
+    }
+    let field = |k: &str| v.get(k).and_then(|c| c.as_str()).unwrap_or_default().to_string();
+    Some((field("cwd"), field("timestamp"), field("id")))
 }
 
 /// List all persisted sessions (all projects), newest-modified first.
@@ -118,12 +141,9 @@ pub fn list_sessions() -> Result<Vec<SessionInfo>, String> {
             if reader.read_line(&mut header).is_err() {
                 continue;
             }
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(header.trim()) else {
+            let Some((cwd, timestamp, session_id)) = parse_session_header(&header) else {
                 continue;
             };
-            if v.get("type").and_then(|t| t.as_str()) != Some("session") {
-                continue;
-            }
             let modified = f
                 .metadata()
                 .and_then(|m| m.modified())
@@ -134,22 +154,10 @@ pub fn list_sessions() -> Result<Vec<SessionInfo>, String> {
             out.push(SessionInfo {
                 name: session_display_name(&path),
                 path: path.to_string_lossy().into_owned(),
-                cwd: v
-                    .get("cwd")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or_default()
-                    .into(),
-                timestamp: v
-                    .get("timestamp")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or_default()
-                    .into(),
+                cwd,
+                timestamp,
                 file_modified: modified,
-                session_id: v
-                    .get("id")
-                    .and_then(|i| i.as_str())
-                    .unwrap_or_default()
-                    .into(),
+                session_id,
                 first_message: first_user_text(&path),
             });
         }
@@ -211,4 +219,159 @@ pub fn base64_encode(data: &[u8]) -> String {
         out.push(if chunk.len() > 2 { TABLE[(n & 63) as usize] as char } else { '=' });
     }
     out
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Unique temp dir per test; best-effort cleanup via leak-tolerance.
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir()
+            .join(format!("leftleg-test-{}-{}", tag, uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write_lines(path: &std::path::Path, lines: &[&str]) {
+        let mut f = fs::File::create(path).unwrap();
+        for l in lines {
+            writeln!(f, "{l}").unwrap();
+        }
+    }
+
+    // ---------- base64_encode (RFC 4648 vectors) ----------
+
+    #[test]
+    fn base64_rfc4648_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    // ---------- parse_session_header ----------
+
+    #[test]
+    fn header_parses_cwd_timestamp_id() {
+        let line = r#"{"type":"session","version":3,"id":"abc-123","timestamp":"2026-09-12T17:45:40Z","cwd":"C:/dev/active/pi-agent-gui"}"#;
+        let (cwd, ts, id) = parse_session_header(line).expect("valid header");
+        assert_eq!(cwd, "C:/dev/active/pi-agent-gui");
+        assert_eq!(ts, "2026-09-12T17:45:40Z");
+        assert_eq!(id, "abc-123");
+    }
+
+    #[test]
+    fn header_rejects_non_session_and_invalid_json() {
+        assert!(parse_session_header(r#"{"type":"message"}"#).is_none());
+        assert!(parse_session_header("not json at all").is_none());
+        assert!(parse_session_header("").is_none());
+    }
+
+    #[test]
+    fn header_defaults_missing_fields_to_empty_strings() {
+        let (cwd, ts, id) = parse_session_header(r#"{"type":"session"}"#).expect("typed header");
+        assert_eq!((cwd.as_str(), ts.as_str(), id.as_str()), ("", "", ""));
+    }
+
+    // ---------- session_display_name ----------
+
+    #[test]
+    fn latest_session_info_name_wins_and_is_trimmed() {
+        let dir = temp_dir("name");
+        let path = dir.join("s.jsonl");
+        write_lines(&path, &[
+            r#"{"type":"session","id":"1"}"#,
+            r#"{"type":"message","message":{"role":"user","content":"hi"}}"#,
+            r#"{"type":"session_info","name":"  first name  "}"#,
+            r#"{"type":"message","message":{"role":"assistant","content":"hey"}}"#,
+            r#"{"type":"session_info","name":"renamed"}"#,
+        ]);
+        assert_eq!(session_display_name(&path), Some("renamed".to_string()));
+    }
+
+    #[test]
+    fn empty_names_are_ignored() {
+        let dir = temp_dir("name-empty");
+        let path = dir.join("s.jsonl");
+        write_lines(&path, &[
+            r#"{"type":"session_info","name":""}"#,
+            r#"{"type":"session_info","name":"   "}"#,
+        ]);
+        assert_eq!(session_display_name(&path), None);
+    }
+
+    #[test]
+    fn no_session_info_means_no_name() {
+        let dir = temp_dir("name-none");
+        let path = dir.join("s.jsonl");
+        write_lines(&path, &[
+            r#"{"type":"session","id":"1"}"#,
+            r#"{"type":"message","message":{"role":"user","content":"hi"}}"#,
+        ]);
+        assert_eq!(session_display_name(&path), None);
+    }
+
+    // ---------- first_user_text ----------
+
+    #[test]
+    fn first_user_text_string_content() {
+        let dir = temp_dir("fut-str");
+        let path = dir.join("s.jsonl");
+        write_lines(&path, &[
+            r#"{"type":"session","id":"1"}"#,
+            r#"{"type":"message","message":{"role":"user","content":"fix the login bug"}}"#,
+        ]);
+        assert_eq!(first_user_text(&path), Some("fix the login bug".to_string()));
+    }
+
+    #[test]
+    fn first_user_text_block_content() {
+        let dir = temp_dir("fut-blocks");
+        let path = dir.join("s.jsonl");
+        write_lines(&path, &[
+            r#"{"type":"message","message":{"role":"user","content":[{"type":"text","text":"from a block"}]}}"#,
+        ]);
+        assert_eq!(first_user_text(&path), Some("from a block".to_string()));
+    }
+
+    #[test]
+    fn first_user_text_skips_non_user_and_malformed_lines() {
+        let dir = temp_dir("fut-skip");
+        let path = dir.join("s.jsonl");
+        write_lines(&path, &[
+            r#"{"type":"message","message":{"role":"assistant","content":"assistant first"}}"#,
+            "this line is not json <<<",
+            r#"{"no_type_here":true}"#,
+            r#"{"type":"message","message":{"role":"user","content":"found it"}}"#,
+        ]);
+        assert_eq!(first_user_text(&path), Some("found it".to_string()));
+    }
+
+    #[test]
+    fn first_user_text_truncates_to_120_chars_and_flattens_newlines() {
+        let dir = temp_dir("fut-trunc");
+        let path = dir.join("s.jsonl");
+        let long = format!(r#"{{"type":"message","message":{{"role":"user","content":"a\nb {}"}}}}"#, "x".repeat(200));
+        write_lines(&path, &[&long]);
+        let got = first_user_text(&path).unwrap();
+        assert!(got.starts_with("a b xxx"));
+        assert_eq!(got.chars().count(), 120);
+    }
+
+    #[test]
+    fn first_user_text_empty_content_falls_through_to_next_user_message() {
+        let dir = temp_dir("fut-empty");
+        let path = dir.join("s.jsonl");
+        write_lines(&path, &[
+            r#"{"type":"message","message":{"role":"user","content":"   "}}"#,
+            r#"{"type":"message","message":{"role":"user","content":"the real one"}}"#,
+        ]);
+        assert_eq!(first_user_text(&path), Some("the real one".to_string()));
+    }
 }

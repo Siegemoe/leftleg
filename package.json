@@ -7,7 +7,10 @@
     "dev": "vite",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "check:rust": "cargo check --manifest-path src-tauri/Cargo.toml",
-    "build": "svelte-check --tsconfig ./tsconfig.json && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "build": "svelte-check --tsconfig ./tsconfig.json && vitest run && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -21,10 +24,12 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.0",
     "@tauri-apps/cli": "^2.9.0",
+    "jsdom": "^30.0.1",
     "svelte": "^5.36.0",
     "svelte-check": "^4.7.6",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^5.0.0"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

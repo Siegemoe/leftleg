@@ -37,7 +37,7 @@
 - [ ] Tray icon + background sessions
 - [ ] Telemetry-free crash reporting via the log pipeline
 - [ ] Automated UI smoke tests (click-through: launch → pick project → send → tool card renders)
-- [ ] Rust unit tests: JSONL framing, pending map, session header parse
+- [x] Rust unit tests: JSONL line classification, pending map, session header parse (+ first-user-message extraction, base64)
 
 ## Non-goals (v0 philosophy)
 No agent-state database. No custom compaction/context engine. No multi-agent scheduler. Pi owns the brain; Leftleg owns the desk.

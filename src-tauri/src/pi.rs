@@ -33,6 +33,41 @@ impl PendingMap {
     }
 }
 
+/// What to do with one JSONL line read from pi's stdout.
+#[derive(Debug, PartialEq)]
+pub enum LineAction {
+    /// Empty or unparseable line — skip entirely.
+    Skip,
+    /// An event for the webview.
+    Emit(Value),
+    /// A `type:"response"` message: resolve the pending request by id,
+    /// falling back to emitting when the id is unknown.
+    Response { id: String, value: Value },
+}
+
+/// Classify one raw stdout line. Framing contract: lines are split on `\n`
+/// only (by the reader thread), any trailing `\r` is stripped here, empty and
+/// invalid-JSON lines are skipped, `type:"response"` messages with a string
+/// id are routed to the pending-request map, everything else goes to the UI.
+pub fn classify_line(bytes: &[u8]) -> LineAction {
+    let mut slice = bytes;
+    if slice.last() == Some(&b'\r') {
+        slice = &slice[..slice.len() - 1];
+    }
+    if slice.is_empty() {
+        return LineAction::Skip;
+    }
+    let Ok(value) = serde_json::from_slice::<Value>(slice) else {
+        return LineAction::Skip;
+    };
+    if value.get("type").and_then(|t| t.as_str()) == Some("response") {
+        if let Some(id) = value.get("id").and_then(|v| v.as_str()).map(String::from) {
+            return LineAction::Response { id, value };
+        }
+    }
+    LineAction::Emit(value)
+}
+
 /// Handle to a running `pi --mode rpc` subprocess.
 pub struct PiProcess {
     child: Arc<Mutex<Child>>,
@@ -77,37 +112,23 @@ impl PiProcess {
             let reader = BufReader::new(stdout);
             for line in reader.split(b'\n') {
                 let Ok(bytes) = line else { break };
-                let mut slice = &bytes[..];
-                if slice.last() == Some(&b'\r') {
-                    slice = &slice[..slice.len() - 1];
-                }
-                if slice.is_empty() {
-                    continue;
-                }
-                let Ok(value) = serde_json::from_slice::<Value>(slice) else {
-                    continue;
-                };
-                match value.get("type").and_then(|t| t.as_str()) {
-                    // Correlated response: resolve the pending request.
-                    Some("response") => {
-                        let id = value.get("id").and_then(|v| v.as_str()).map(String::from);
-                        if let Some(id) = id {
-                            if let Some(tx) = pending.remove(&id) {
-                                let _ = tx.send(value.clone());
-                                continue; // response consumed; still emit for safety below
-                            }
-                        }
+                match classify_line(&bytes) {
+                    LineAction::Skip => {}
+                    LineAction::Emit(value) => {
                         let _ = app_handle.emit("pi-event", &value);
                     }
-                    // Everything else (events, extension_ui_request) -> webview.
-                    _ => {
-                        let _ = app_handle.emit("pi-event", &value);
+                    LineAction::Response { id, value } => {
+                        if let Some(tx) = pending.remove(&id) {
+                            let _ = tx.send(value); // response consumed by the waiting request
+                        } else {
+                            // Unknown id (late timeout, restart, etc.) — surface to the webview.
+                            let _ = app_handle.emit("pi-event", &value);
+                        }
                     }
                 }
             }
             // Stream ended: pi exited.
             pending.clear();
-            // Fail all still-pending requests.
             let _ = &proc_ref;
             let _ = app_handle.emit("pi-exit", ());
         });
@@ -171,5 +192,77 @@ pub fn request(
             proc.pending.remove(&id);
             Err(format!("timed out waiting for response to {id}"))
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_trailing_cr() {
+        // reader splits on '\n' only, so CRLF input leaves the '\r' on the line
+        match classify_line(b"{\"type\":\"agent_start\"}\r") {
+            LineAction::Emit(v) => assert_eq!(v["type"], "agent_start"),
+            other => panic!("expected Emit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn skips_empty_lines() {
+        assert_eq!(classify_line(b""), LineAction::Skip);
+        assert_eq!(classify_line(b"\r"), LineAction::Skip);
+    }
+
+    #[test]
+    fn skips_invalid_json() {
+        assert_eq!(classify_line(b"{not json"), LineAction::Skip);
+    }
+
+    #[test]
+    fn forwards_events_to_webview() {
+        match classify_line(b"{\"type\":\"extension_ui_request\",\"id\":\"e1\"}") {
+            LineAction::Emit(v) => {
+                assert_eq!(v["type"], "extension_ui_request");
+                assert_eq!(v["id"], "e1");
+            }
+            other => panic!("expected Emit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn routes_responses_with_string_id_to_pending_map() {
+        let line = b"{\"type\":\"response\",\"id\":\"ll-1\",\"success\":true}";
+        match classify_line(line) {
+            LineAction::Response { id, value } => {
+                assert_eq!(id, "ll-1");
+                assert_eq!(value["success"], true);
+            }
+            other => panic!("expected Response, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn responses_without_string_id_fall_back_to_emit() {
+        // numeric id — cannot be correlated, must surface to the webview
+        let line = b"{\"type\":\"response\",\"id\":42,\"success\":false}";
+        assert!(matches!(classify_line(line), LineAction::Emit(_)));
+    }
+
+    #[test]
+    fn pending_map_roundtrip_removal_and_clear() {
+        let map = PendingMap::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        map.insert("a".to_string(), tx);
+
+        let tx = map.remove("a").expect("entry present after insert");
+        tx.send(serde_json::json!({"ok": true})).unwrap();
+        assert_eq!(rx.recv().unwrap()["ok"], true);
+        assert!(map.remove("a").is_none(), "entry must be removed on first take");
+
+        map.insert("b".to_string(), std::sync::mpsc::channel().0);
+        map.clear();
+        assert!(map.remove("b").is_none(), "clear must empty the map");
     }
 }
