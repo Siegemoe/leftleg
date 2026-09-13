@@ -34,6 +34,11 @@ export function resolveTarget(target: string, agentDir: string, projectDir: stri
   switch (target) {
     case "serena-global-yml": return join(homedir(), ".serena", "serena_config.yml");
     case "serena-project-yml": return projectDir ? join(projectDir, ".serena", "project.yml") : null;
+    case "system-md": return join(agentDir, "SYSTEM.md");
+    case "append-system-md": return join(agentDir, "APPEND_SYSTEM.md");
+    case "system-md-project": return projectDir ? join(projectDir, ".pi", "SYSTEM.md") : null;
+    case "append-system-md-project": return projectDir ? join(projectDir, ".pi", "APPEND_SYSTEM.md") : null;
+    case "agents-md-project": return projectDir ? join(projectDir, "AGENTS.md") : null;
     case "settings-global": return join(agentDir, "settings.json");
     case "settings-project": return projectDir ? join(projectDir, ".pi", "settings.json") : null;
     case "trust": return join(agentDir, "trust.json");

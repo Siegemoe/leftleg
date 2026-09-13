@@ -57,10 +57,11 @@ Delivered this round (see table rows now marked `file`/`companion`): the managem
 Still pending, each with its concrete reason:
 
 - **Serena worker-restart wiring + structured language-server forms**: raw YAML editors shipped for global + project configs (format-guarded, revision-checked); YAML→structured forms would need a YAML library in the companion, and raw editing preserves comments by design instead.
-- **Distill full field set**: core fields (enabled/model/minChars/maxChars) real; timeouts/retries/ratio/render/per-tool enablement are mechanical additions to the existing editor.
 - **Web/Ref env-file editing + OAuth/key replacement**: presence/source grid shipped (values never displayed); editing env files and credential flows are deliberate actions still pending — secrets never enter forms/logs/transcripts by design.
-- **Model registry refresh verification + custom provider editor (models.json)**: refresh op shipped but unverified against a live registry; models.json provider forms pending; models-store.json stays read-only.
-- **Subagent**: role chains real (verbatim identifiers, proven); agentModels advanced editor and the security toggle pending — the installed resolver reads an undocumented ctx.settings/env path, so file-backed toggles would be ineffective (disclosed, not faked).
-- **Skills/prompts/instruction editors** (SYSTEM.md/APPEND_SYSTEM.md/AGENTS.md, provenance, effective-prompt preview): pending.
+- **Model registry refresh verification + structured models.json provider editor**: refresh op shipped but unverified against a live registry; models.json is editable via the validated raw editor, structured provider forms pending; models-store.json stays read-only.
+- **Subagent security toggle**: the installed resolver reads an undocumented ctx.settings/env path, so file-backed toggles would be ineffective (disclosed, not faked). Roles/agentModels shipped.
 - **Trust decisions editing**: trust.json read-only view shipped; the explicit per-project trust action pending (no auto-escalation by design).
+- **Effective-prompt preview**: instruction editors shipped (SYSTEM.md/APPEND_SYSTEM.md/AGENTS.md raw, frontmatter-preserving); live preview of the effective assembled prompt is pending (requires pi-side inspection through the companion).
 - **Live desktop/provider verification**: no live provider calls (task constraint: no paid turns); TUI-only settings cannot be verified from the webview by construction.
+
+Delivered since the last report: Distill full field set (numbers, summarizeErrors, render.*, per-tool enablement), Lens include/exclude patterns, Subagent agentModels JSON editor, instruction-source editors (SYSTEM.md/APPEND_SYSTEM.md global+project, project AGENTS.md) with frontmatter-preserving raw writes.

@@ -142,6 +142,7 @@
   // ---- lens ----
   const lensBooleans = ["prettier", "lsp", "tsc", "bashDetection", "alwaysReport"] as const;
   const lensNumbers = ["lspDelayMs", "maxConcurrency", "prettierTimeoutMs", "linterTimeoutMs", "tscTimeoutMs"] as const;
+  const lensPatterns = ["includePatterns", "excludePatterns"] as const;
   async function saveLensField(path: string, value: unknown) {
     const rev = files["lens-project"]?.revision ?? undefined;
     const parts = path.split(".");
@@ -150,12 +151,47 @@
     await load("lens-project");
     flashSaved();
   }
+  function lensLines(name: string): string {
+    const v = files["lens-project"]?.data?.[name];
+    return Array.isArray(v) ? (v as string[]).join("\n") : "";
+  }
 
   // ---- tool-display ----
   async function saveToolDisplayField(path: string, value: unknown) {
     const rev = files["tool-display-config"]?.revision ?? undefined;
     await mgmtRequest("write", { target: "tool-display-config", mode: "merge", patch: { [path]: value }, revision: rev });
     await load("tool-display-config");
+    flashSaved();
+  }
+
+  // ---- distill full field set ----
+  const distillNumbers = ["minChars", "maxChars", "maxOutputChars", "timeoutSeconds", "timeoutRetryCount", "errorRetryCount", "missedCompressionRatio"] as const;
+  async function saveDistillField(path: string, value: unknown) {
+    const rev = files["distill-config"]?.revision ?? undefined;
+    await mgmtRequest("write", { target: "distill-config", mode: "merge", patch: { [path]: value }, revision: rev });
+    await load("distill-config");
+    flashSaved();
+  }
+  function distillToolNames(): string[] {
+    const tools = files["distill-config"]?.data?.tools as Record<string, unknown> | undefined;
+    return tools ? Object.keys(tools) : [];
+  }
+  function distillToolEnabled(name: string): boolean {
+    const tools = files["distill-config"]?.data?.tools as Record<string, { enabled?: boolean }> | undefined;
+    return tools?.[name]?.enabled === true;
+  }
+
+  // ---- instruction files (raw markdown) ----
+  const INSTRUCTION_TARGETS = [
+    { target: "system-md", label: "~/.pi/agent/SYSTEM.md (global base system prompt)" },
+    { target: "append-system-md", label: "~/.pi/agent/APPEND_SYSTEM.md (global append)" },
+    { target: "system-md-project", label: ".pi/SYSTEM.md (project)" },
+    { target: "append-system-md-project", label: ".pi/APPEND_SYSTEM.md (project)" },
+    { target: "agents-md-project", label: "AGENTS.md (project context)" },
+  ] as const;
+  async function saveRaw(target: string, content: string) {
+    await mgmtRequest("write-raw", { target, content, revision: files[target]?.revision ?? undefined });
+    await load(target, true);
     flashSaved();
   }
 
@@ -216,7 +252,11 @@
       <input value={newRoleName} placeholder="new role name…" oninput={(e) => (newRoleName = e.currentTarget.value)} />
       <button onclick={() => void addRole("settings-global")}>Add role</button>
     </div>
-    <p class="hint">agentModels overrides and security options: pending (the installed security resolver reads an undocumented ctx property — file-backed toggles would be ineffective; disclosed, not faked).</p>
+    <div class="frow">
+      <span class="flabel">agentModels (per-agent overrides — advanced JSON)</span>
+      <textarea class="mono" rows={3} value={JSON.stringify(files["settings-global"]?.data?.agentModels ?? {}, null, 2)} onchange={(e) => { try { const v = JSON.parse(e.currentTarget.value); void nsSave("settings-global", "subagent", { agentModels: v }); } catch { statusNote.set("⚠ agentModels must be valid JSON"); setTimeout(() => statusNote.set(""), 6000); } }}></textarea>
+    </div>
+    <p class="hint">Security options are pending: the installed security resolver reads an undocumented ctx property — file-backed toggles would be ineffective; disclosed, not faked.</p>
   </details>
 
   <!-- Permissions -->
@@ -269,6 +309,52 @@
       <label class="check"><input type="checkbox" checked={(files["tool-display-config"]?.data?.enableNativeUserMessageBox as boolean) ?? false} onchange={(e) => void saveToolDisplayField("enableNativeUserMessageBox", e.currentTarget.checked)} /> enableNativeUserMessageBox (TUI-only rendering)</label>
     </div>
     <p class="hint">registerToolOverrides / customToolOverrides and output-mode fields: pending (advanced). These are TUI rendering options — they do not change which tools the agent can call.</p>
+  </details>
+
+  <!-- Distill full set -->
+  <details class="pkg-block" ontoggle={() => void load("distill-config")}>
+    <summary>Distill — full configuration (extensions/pi-distill/config.json)</summary>
+    <div class="frow">
+      <label class="check"><input type="checkbox" checked={(files["distill-config"]?.data?.enabled as boolean) ?? false} onchange={(e) => void saveDistillField("enabled", e.currentTarget.checked)} /> enabled</label>
+      <input class="mono" value={String(files["distill-config"]?.data?.model ?? "")} onchange={(e) => void saveDistillField("model", e.currentTarget.value || undefined)} placeholder="model (blank = current-model fallback)" />
+    </div>
+    <div class="frow wrap">
+      {#each distillNumbers as n (n)}
+        <span class="flabel">{n}</span>
+        <input class="num" type="number" value={String(files["distill-config"]?.data?.[n] ?? "")} onchange={(e) => void saveDistillField(n, e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value))} />
+      {/each}
+      <label class="check"><input type="checkbox" checked={(files["distill-config"]?.data?.summarizeErrors as boolean) ?? false} onchange={(e) => void saveDistillField("summarizeErrors", e.currentTarget.checked)} /> summarizeErrors</label>
+    </div>
+    <span class="flabel">render (presentation)</span>
+    <div class="frow wrap">
+      <label class="check"><input type="checkbox" checked={((files["distill-config"]?.data?.render as Record<string, unknown> | undefined)?.enabled as boolean) ?? false} onchange={(e) => void saveDistillField("render.enabled", e.currentTarget.checked)} /> render.enabled</label>
+      <label class="check"><input type="checkbox" checked={((files["distill-config"]?.data?.render as Record<string, unknown> | undefined)?.showPrompt as boolean) ?? false} onchange={(e) => void saveDistillField("render.showPrompt", e.currentTarget.checked)} /> showPrompt</label>
+      <label class="check"><input type="checkbox" checked={((files["distill-config"]?.data?.render as Record<string, unknown> | undefined)?.showResult as boolean) ?? false} onchange={(e) => void saveDistillField("render.showResult", e.currentTarget.checked)} /> showResult</label>
+    </div>
+    <span class="flabel">Per-tool enablement</span>
+    {#each distillToolNames() as t (t)}
+      <label class="check"><input type="checkbox" checked={distillToolEnabled(t)} onchange={(e) => void saveDistillField(`tools.${t}.enabled`, e.currentTarget.checked)} /> {t}</label>
+    {:else}
+      <div class="hint none">No per-tool overrides configured.</div>
+    {/each}
+  </details>
+
+  <!-- Instruction files -->
+  <details class="pkg-block">
+    <summary>Instruction sources (SYSTEM.md / APPEND_SYSTEM.md / AGENTS.md — raw markdown)</summary>
+    <p class="hint">Pi loads these as instruction sources (replace vs append semantics are pi's own). Edits apply on pi's reload rules — not injected into the running conversation. Raw edits preserve frontmatter.</p>
+    {#each INSTRUCTION_TARGETS as t (t.target)}
+      <div class="frow">
+        <span class="flabel">{t.label}</span>
+        <button class="ghost" onclick={() => void load(t.target, true)}>{files[t.target] ? "Reload" : "Load"}</button>
+      </div>
+      {#if files[t.target]}
+        <textarea class="mono yaml" rows={8} value={files[t.target]?.raw ?? ""} oninput={(e) => { files = { ...files, [t.target]: { data: null, raw: e.currentTarget.value, revision: files[t.target]?.revision ?? null, exists: true } }; }}></textarea>
+        <div class="frow">
+          <button onclick={() => void saveRaw(t.target, files[t.target]?.raw ?? "")}>Save</button>
+        </div>
+      {/if}
+    {/each}
   </details>
 
   <!-- Serena -->
