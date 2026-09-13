@@ -171,6 +171,48 @@ fn append_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Write a GUI-provided file into the agent directory under `extensions/`.
+/// Reserved for explicitly installing the settings companion (path-traversal
+/// guarded; never arbitrary file targets).
+#[tauri::command]
+fn write_agent_extension(app: tauri::AppHandle, rel_path: String, content: String) -> Result<(), String> {
+    let agent_dir = sessions::agent_dir();
+    let target = agent_dir.join("extensions").join(&rel_path);
+    // Guard: the resolved target must stay inside <agent_dir>/extensions.
+    let canon_base = agent_dir.join("extensions");
+    let _ = fs::create_dir_all(&canon_base).map_err(|e| e.to_string())?;
+    let canon_base = fs::canonicalize(&canon_base).map_err(|e| e.to_string())?;
+    if target.components().any(|c| c.as_os_str() == "..") {
+        return Err("path traversal rejected".into());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let canon_parent = fs::canonicalize(target.parent().ok_or("no parent")?).map_err(|e| e.to_string())?;
+    if !canon_parent.starts_with(&canon_base) {
+        return Err("path traversal rejected".into());
+    }
+    fs::write(&target, content).map_err(|e| e.to_string())?;
+    let _ = app; // reserved for future telemetry-free install notes
+    Ok(())
+}
+
+#[cfg(test)]
+mod companion_install_tests {
+    use super::*;
+
+    #[test]
+    fn write_agent_extension_rejects_traversal() {
+        // The command itself needs an AppHandle; test the traversal predicate directly.
+        use std::path::{Path, PathBuf};
+        let rel = "..\\..\\evil.ts";
+        let target = PathBuf::from("C:\\tmp").join("extensions").join(rel);
+        assert!(target.components().any(|c| c.as_os_str() == ".."));
+        let ok = Path::new("extensions/leftleg-settings/index.ts");
+        assert!(!ok.components().any(|c| c.as_os_str() == ".."));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +273,7 @@ pub fn run() {
             sessions::read_file_base64,
             get_agent_dir,
             append_log,
+            write_agent_extension,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

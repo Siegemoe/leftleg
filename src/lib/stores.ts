@@ -5,6 +5,7 @@ import type {
 } from "./types";
 import * as api from "./api";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+import { handleMgmtNotify, abortPendingMgmt } from "./settings/mgmt";
 
 // ---------- stores ----------
 
@@ -499,6 +500,9 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
       // Fire-and-forget methods: surface what extensions already publish.
       switch (method) {
         case "notify":
+          // Management-channel replies are consumed here — they must never
+          // surface as user toasts.
+          if (handleMgmtNotify((evt as { message?: string }).message ?? "")) break;
           pushNotification(evt.notifyType as "info" | "warning" | "error" | undefined, (evt as { message?: string }).message ?? "");
           break;
         case "setStatus": {
@@ -958,9 +962,11 @@ export function handlePiExit(project: string, pid: number, expected: boolean) {
   if (project !== get(projectDir)) {
     const session = get(activeSessionByProject)[project];
     if (!expected) setSessionStatus(session, "attention", "process exited");
+    abortPendingMgmt("pi process exited before the management reply");
     return;
   }
   connected.set(false);
+  abortPendingMgmt("pi process exited before the management reply");
   // Surfaces owned by the dead process: clear extension state with it —
   // including any outstanding dialog, which would otherwise cover the
   // recovery controls and fail on answer (the process is gone).

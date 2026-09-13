@@ -57,3 +57,8 @@ export function readFileBase64(path: string): Promise<string> {
 export function getAgentDir(): Promise<string> {
   return invoke("get_agent_dir");
 }
+
+/** Explicitly install the settings companion into <agent_dir>/extensions (guarded). */
+export function writeAgentExtension(relPath: string, content: string): Promise<void> {
+  return invoke("write_agent_extension", { relPath, content });
+}

@@ -1,0 +1,66 @@
+# Settings coverage matrix
+
+Status legend — **support**: `native-rpc` | `file` (canonical file, patched) | `companion` (via settings-mgmt command) | `read-only` | `tui-only` (affects terminal Pi, not Leftleg) | `gui` (Leftleg-owned) | `pending` (not yet implemented; reason listed) | `unsupported` (documented reason).
+
+General rules honored by every implemented control:
+
+- Absent configuration = inherited/inheritable; "missing" is never rendered as `false`/`0`.
+- `set_model`/`set_thinking_level` are **current-runtime** controls (session choices, no persist). Queue modes and compaction/retry switches persist via SettingsManager (verified: docs/rpc.md, settings.md §Project Overrides).
+- Management requests use the versioned `settings-mgmt` companion command over RPC `prompt` (extension commands execute immediately, never billable, never chat items). Availability is gated on `get_commands` + process generation so an absent companion can never fall through to an LLM prompt.
+- File writes are patch-merges that preserve unknown fields, siblings, and unrelated namespaces; atomic + revision-checked.
+
+| Category | Setting / control | Owner | Scopes | Source of truth | Default | Read | Write | Effect timing | Support | Proof |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Current runtime | model, thinkingLevel, isStreaming, queue | Pi session | runtime | `get_state` via RPC | — | RPC | `set_model`/`set_thinking_level` (no persist) | immediate | native-rpc | acceptance: model switch leaves startup defaults |
+| Current runtime | steering/follow-up/compaction/retry switches | Pi (SettingsManager) | global | settings.json | see file | RPC + file | RPC setters (persist) | immediate | native-rpc | settings.md §Message Delivery/Retry |
+| Agent behavior | defaultProvider / defaultModel / defaultThinkingLevel | Pi | global+project | settings.json | absent | companion | companion patch | next Pi start | file | round-trip test |
+| Agent behavior | modelThinkingLevels, thinkingBudgets, hideThinkingBlock, showCacheMissNotices | Pi | global+project | settings.json | absent/false | companion | companion patch | next start | file | matrix |
+| Agent behavior | compaction.enabled/reserveTokens/keepRecentTokens | Pi | global+project (merged) | settings.json | true/16384/20000 | companion | companion patch | next turn/session | file | round-trip test |
+| Agent behavior | branchSummary.reserveTokens/skipPrompt | Pi | global+project | settings.json | 16384/false | companion | companion patch | next use | file | matrix |
+| Agent behavior | retry.enabled/maxRetries/baseDelayMs + retry.provider.* | Pi | global+project | settings.json | true/3/2000/SDK/0/60000 | companion | companion patch | next call | file | scenario 1 (override + inherit + conflict) |
+| Agent behavior | steeringMode / followUpMode | Pi (SettingsManager) | global | settings.json | one-at-a-time | RPC+file | RPC setters | immediate | native-rpc | existing |
+| Delivery | transport, httpIdleTimeoutMs, websocketConnectTimeoutMs | Pi | global+project | settings.json | auto/300000/15000 | companion | companion patch | next call | file | matrix |
+| Network | httpProxy | Pi | global only | settings.json | absent | companion | companion patch (global writes blocked for project scope) | next start | file | matrix |
+| Warnings | warnings.anthropicExtraUsage | Pi | global+project | settings.json | true | companion | companion patch | next start | file | matrix |
+| Images | images.autoResize / images.blockImages | Pi | global+project | settings.json | true/false | companion | companion patch | next attachment | file | matrix |
+| Shell | shellPath, shellCommandPrefix, npmCommand (argv) | Pi | global+project | settings.json | absent | companion | companion patch | next tool exec | file | matrix; effective-shell display notes pwsh adapter ownership |
+| Tools | defaultTools (built-ins only) | Pi | global+project | settings.json | absent = standard defaults | companion + ctx.getActiveTools | companion patch | next start | file | tool matrix + built-in vs extension disclosure |
+| Tools (runtime) | active tools selection | Pi session | runtime | ctx | — | companion | ctx.setActiveTools | immediate | companion | pending: needs live-process proof |
+| Sessions config | sessionDir | Pi | global+project | settings.json | absent | companion | companion patch | next start | file | matrix (configuration only, not session management) |
+| Cycling | enabledModels patterns | Pi | global+project | settings.json | absent | companion | companion patch | next Ctrl+P | file | matrix; slash/colon/free-suffix preserved |
+| Markdown | markdown.codeBlockIndent/mermaid | Pi TUI | global+project | settings.json | "  "/"streaming" | companion | companion patch | TUI only | tui-only | labeled TUI |
+| UI & TUI | theme (pi), quietStartup, externalEditor, doubleEscapeAction, treeFilterMode, editorPaddingX, outputPad, autocompleteMaxVisible, showHardwareCursor, tuiMode, fullscreen*, collapseChangelog | Pi TUI | global (some project) | settings.json | per settings.md | companion | companion patch | TUI only | tui-only | labeled "affects terminal Pi" |
+| Telemetry | enableInstallTelemetry, enableAnalytics, trackingId (inspect-only), httpProxy offline flags (env) | Pi | global | settings.json + env | true/false/— | companion | companion patch; env shown read-only | next start | file | matrix |
+| Trust | defaultProjectTrust | Pi | global only | settings.json | "ask" | companion | companion patch | next RPC start (restart note) | file | scenario 3 |
+| Trust | saved decisions | Pi | global | trust.json | absent | companion | companion write (explicit user action only) | next start | file | scenario 3; no auto-escalation |
+| Models | registry contents / custom providers / model overrides | Pi | global | models.json (user) vs models-store.json (cache) | — | companion | models.json patch + ctx.modelRegistry.refresh() | refresh | companion | pending refresh proof; models-store.json never edited |
+| Auth | provider credentials | Pi | global | auth storage | — | companion (masked presence/source) | provider flow / key replace via companion, never echoed | next call | companion | pending: masked listing first; no raw auth-file editor |
+| Resources | packages / extensions / skills / prompts / themes arrays + enableSkillCommands | Pi | global+project | settings.json | []/true | companion | companion patch + resource inventory | next start | file | scenario 5 (toggle without losing siblings) |
+| GUI | Leftleg theme, sidebar, fonts, settledView, pins, projectMeta, notifications | Leftleg | GUI | gui state (Leftleg-owned) | — | GUI | GUI | immediate | gui | existing UI |
+| Pkg: serena | package toggle + Serena YAML (languages, tools, modes, budgets) | Serena | global `.serena/serena_config.yml` + project `.serena/project.yml` | YAML file | per Serena | companion (raw YAML passthrough editor) | YAML edit preserving comments where possible | worker restart | pending | reason: YAML comment-preserving patch needs dedicated editor |
+| Pkg: lens | .pi-lens.json switches/patterns/timeouts + piLensRenderer | Lens | project + global | .pi-lens.json / settings.json | per docs | companion | patch | next scan | pending | reason: field list verified in inventory, forms pending |
+| Pkg: plan | pi-plan namespace (planModel/planThinking/goalModel/fallbackModels + btw/goal/plansDir) | Plan | global | settings.json["pi-plan"] | per source | companion | NAMESPACE-PATCHED (never whole-namespace replace) | next plan op | pending | reason: namespace-safety proof pending |
+| Pkg: subagent | subagent.roles/agentModels/autoReview + agent files | Subagent | global+trusted project | settings.json + agent dir files | — | companion | patch | next spawn | pending | reason: role-chain editor + security-resolver path pending |
+| Pkg: distill | extensions/pi-distill/config.json (all fields, per-tool, render) | Distill | agent dir | config.json | config.example.json | companion | patch | next turn | pending | reason: field editor pending |
+| Pkg: web/ref | env-based provider config (SEARXNG/BRAVE/FIRECRAWL/CRAWL4AI; pi-ref-tools settings) | Web/Ref | env → .env files | env + settings.json | per README | companion (masked presence/source) | env file edit (deliberate) | next call | pending | reason: env-file editor must never expose secret values |
+| Pkg: permission | permission rules (allow/ask/deny, last-match) + external_directory | Permission ext | global+project | settings.json["permission"] | none | companion | ordered-list patch | next call | pending | reason: rule-order editor pending |
+| Pkg: todo / background-tasks | 99extensions.json namespaces (todo, background-tasks) | 99 extensions | agent dir | 99extensions.json | per config.ts | companion | NAMESPACE-patched | next render/turn | pending | reason: shared-file namespace proof pending |
+| Pkg: i18n / tool-display | locale config.json; tool-display config.json | Distill-contrib | agent dir | config.json files | en-US / per types | companion | patch | next start | pending | reason: field editor pending |
+| Pkg: checkpoint / worktrees / pwsh / session-manager | enable/disable + diagnostics only | each | global packages list | settings.json.packages | enabled | companion | packages patch | next start | file | covered by packages toggle |
+| Skills/prompts/instructions | resource inventory + SYSTEM.md/APPEND_SYSTEM.md/AGENTS.md editors | Pi | global+project | files | — | companion | file edit | next start / prompt expansion | pending | reason: editors + provenance preview pending |
+| Diagnostics | Leftleg build identity + Pi exe/version/agent dir + companion version | mixed | — | resolved at runtime | — | GUI | none (read-only) | — | gui | matrix |
+
+## Pending (with reasons)
+
+Delivered this round (see table rows now marked `file`/`companion`): the management bridge + companion (proven by real-process integration tests), the settings workspace (rail/scope/search/apply-verify), Agent Behavior + Models + Tools & Shell + Trust & Privacy file-backed forms with inheritance and reset-to-inherit, packages enable/disable with sibling-safe patching, i18n locale, Distill core fields, 99extensions namespace-safe editor, commands list, companion installer, resource inventory, raw JSON editors.
+
+Still pending, each with its concrete reason:
+
+- **Serena worker-restart wiring + structured language-server forms**: raw YAML editors shipped for global + project configs (format-guarded, revision-checked); YAML→structured forms would need a YAML library in the companion, and raw editing preserves comments by design instead.
+- **Distill full field set**: core fields (enabled/model/minChars/maxChars) real; timeouts/retries/ratio/render/per-tool enablement are mechanical additions to the existing editor.
+- **Web/Ref env-file editing + OAuth/key replacement**: presence/source grid shipped (values never displayed); editing env files and credential flows are deliberate actions still pending — secrets never enter forms/logs/transcripts by design.
+- **Model registry refresh verification + custom provider editor (models.json)**: refresh op shipped but unverified against a live registry; models.json provider forms pending; models-store.json stays read-only.
+- **Subagent**: role chains real (verbatim identifiers, proven); agentModels advanced editor and the security toggle pending — the installed resolver reads an undocumented ctx.settings/env path, so file-backed toggles would be ineffective (disclosed, not faked).
+- **Skills/prompts/instruction editors** (SYSTEM.md/APPEND_SYSTEM.md/AGENTS.md, provenance, effective-prompt preview): pending.
+- **Trust decisions editing**: trust.json read-only view shipped; the explicit per-project trust action pending (no auto-escalation by design).
+- **Live desktop/provider verification**: no live provider calls (task constraint: no paid turns); TUI-only settings cannot be verified from the webview by construction.
