@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
+  import { PanelLeft } from "@lucide/svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import Chat from "./components/Chat.svelte";
   import StatusBar from "./components/StatusBar.svelte";
@@ -40,10 +41,7 @@
         title={$sidebarOpen ? "Hide sidebar" : "Show sidebar"}
         onclick={() => sidebarOpen.update((v) => !v)}
       >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <rect x="3" y="4" width="18" height="16" rx="2" />
-          <line x1="9" y1="4" x2="9" y2="20" />
-        </svg>
+        <PanelLeft size={17} strokeWidth={2} />
       </button>
       <span class="project mono" title={$projectDir}>{$projectDir || "no project"}</span>
       <span class="spacer"></span>

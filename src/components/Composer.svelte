@@ -2,6 +2,7 @@
   import { sendPrompt, abort, streaming, statusNote, queue, extWidgets, composerDraft, commands } from "../lib/stores";
   import { buildPromptMessage, type ComposerAttachment } from "../lib/prompt-message";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+  import { FileText, Paperclip, Send, Square } from "@lucide/svelte";
   import { readFileBase64, piRequest } from "../lib/api";
 
   interface Attachment {
@@ -263,7 +264,7 @@
           {#if a.isImage}
             <img src={dataUrlOf(a)} alt={a.name} />
           {:else}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <FileText size={14} strokeWidth={2} />
           {/if}
           <span class="name" title={a.name}>{a.name}</span>
           <button class="ghost rm" onclick={() => removeAttachment(i)} title="Remove">×</button>
@@ -274,11 +275,7 @@
 
   <div class="input-row">
     <button class="ghost add" onclick={addFiles} title="Attach images or files">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <circle cx="12" cy="12" r="9" />
-        <line x1="12" y1="8" x2="12" y2="16" />
-        <line x1="8" y1="12" x2="16" y2="12" />
-      </svg>
+      <Paperclip size={18} strokeWidth={2} />
     </button>
     <textarea
       bind:this={textareaEl}
@@ -292,7 +289,7 @@
     ></textarea>
     {#if $streaming}
       <button class="danger stop" onclick={abort} title="Abort current run">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        <Square size={14} strokeWidth={2} />
         Stop
       </button>
     {:else}
@@ -302,9 +299,7 @@
         onclick={doSend}
         title="Send"
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4z" />
-        </svg>
+        <Send size={15} strokeWidth={2.2} />
       </button>
     {/if}
   </div>
@@ -464,7 +459,7 @@
     object-fit: cover;
     border-radius: 4px;
   }
-  .chip svg { flex-shrink: 0; color: var(--text-3); }
+  .chip :global(svg) { flex-shrink: 0; color: var(--text-3); }
   .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
   .rm { padding: 0 4px; font-size: 13px; line-height: 1; border: none; color: var(--text-3); }
   .rm:hover { color: var(--danger); }

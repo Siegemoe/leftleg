@@ -2,15 +2,22 @@
   // Toast stack for pi extension notifications (extension_ui_request method "notify").
   // info/warning auto-dismiss (timers live in the store); errors stay until dismissed.
   import { notifications, dismissNotification } from "../lib/stores";
-
-  const icons: Record<string, string> = { info: "ℹ", warning: "⚠", error: "✖" };
+  import { CircleX, Info, TriangleAlert } from "@lucide/svelte";
 </script>
 
 {#if $notifications.length > 0}
   <div class="stack" role="status" aria-live="polite">
     {#each $notifications as n (n.id)}
       <div class="toast {n.notifyType}">
-        <span class="icon">{icons[n.notifyType] ?? "ℹ"}</span>
+        <span class="icon">
+          {#if n.notifyType === "warning"}
+            <TriangleAlert size={13} strokeWidth={2} />
+          {:else if n.notifyType === "error"}
+            <CircleX size={13} strokeWidth={2} />
+          {:else}
+            <Info size={13} strokeWidth={2} />
+          {/if}
+        </span>
         <span class="msg">{n.message}</span>
         <button class="ghost dismiss" onclick={() => dismissNotification(n.id)} title="Dismiss" aria-label="Dismiss notification">×</button>
       </div>

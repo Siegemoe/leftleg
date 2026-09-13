@@ -13,6 +13,7 @@
     filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, projectDisplayName,
     resolveThreadPill, splitSections, toSidebarSessions, type SidebarSection, type SidebarSession,
   } from "../lib/sidebar-model";
+  import { ChevronRight, Folder, Monitor, Moon, Search, Settings, Sun } from "@lucide/svelte";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import SessionRow from "./SessionRow.svelte";
 
@@ -233,9 +234,7 @@
     <button class="primary new-session" onclick={() => newSession()}>+ New Session</button>
     <div class="search-row">
       <div class="search">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" />
-        </svg>
+        <Search size={13} strokeWidth={2} />
         <input
           placeholder="Search sessions…"
           bind:value={$sessionQuery}
@@ -252,9 +251,7 @@
           {#if $projectScope}
             <span class="scope-icon">{$projectMeta[$projectScope]?.icon ?? "📁"}</span>
           {:else}
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            </svg>
+            <Folder size={13} strokeWidth={2} />
           {/if}
         </button>
         {#if scopeOpen}
@@ -432,9 +429,7 @@
             ondrop={(e) => { e.preventDefault(); dropOnSection("settled"); }}
           >
             {expanded ? "Settled" : `Settled (${sec.settled.length})`}
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="transform: rotate({expanded ? 90 : 0}deg)">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+            <ChevronRight size={10} strokeWidth={2.4} style="transform: rotate({expanded ? 90 : 0}deg)" />
           </button>
           {#if expanded}
             {#each visible as s (s.path)}
@@ -479,9 +474,7 @@
           ondrop={(e) => { e.preventDefault(); dropOnSection("settled"); }}
         >
           Settled ({unifiedSettled.length})
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="transform: rotate({expanded ? 90 : 0}deg)">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
+          <ChevronRight size={10} strokeWidth={2.4} style="transform: rotate({expanded ? 90 : 0}deg)" />
         </button>
         {#if expanded}
           {#each unifiedVisible as s (s.path)}
@@ -522,24 +515,19 @@
   <div class="footer">
     <div class="footer-row">
       <button class="ghost icon-btn" title="Settings" onclick={() => { settingsProject.set(null); settingsOpen.set(true); }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
+        <Settings size={15} strokeWidth={2} />
       </button>
       <button class="project-btn" onclick={chooseProject} title="Change project folder">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        </svg>
+        <Folder size={14} strokeWidth={2} />
         <span class="proj-name">{displayName($projectDir) || "Open folder…"}</span>
       </button>
       <button class="ghost icon-btn" title="Theme: {$theme} — click to cycle light / dark / system" onclick={cycleTheme}>
         {#if $theme === "light"}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <Sun size={14} strokeWidth={2} />
         {:else if $theme === "dark"}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <Moon size={14} strokeWidth={2} />
         {:else}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <Monitor size={14} strokeWidth={2} />
         {/if}
       </button>
     </div>

@@ -3,6 +3,7 @@
   import ToolCard from "./ToolCard.svelte";
   import { renderMarkdown, renderStreamingMarkdown } from "../lib/markdown";
   import { retryFailedUser, dismissFailedUser } from "../lib/stores";
+  import { Lightbulb, TriangleAlert } from "@lucide/svelte";
 
   let { item }: { item: UiItem } = $props();
 
@@ -50,7 +51,7 @@
       {/if}
       {#if item.status === "failed"}
         <div class="delivery-note">
-          <span class="delivery-text">⚠ Not delivered{item.error ? ` — ${item.error}` : ""}</span>
+          <span class="delivery-text"><TriangleAlert size={12} strokeWidth={2} class="ic-inline" /> Not delivered{item.error ? ` — ${item.error}` : ""}</span>
           <button class="retry" onclick={() => onRetry(item.id)} title="Send this message again">Retry</button>
           <button class="dismiss" onclick={() => onDismiss(item.id)} title="Discard this message" aria-label="Discard failed message">×</button>
         </div>
@@ -64,7 +65,7 @@
         {#if block.type === "thinking"}
           <details class="thinking" open={!block.done}>
             <summary>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a6 6 0 0 0-3.4 10.9c.6.5.9 1.1.9 1.8V17h5v-1.3c0-.7.3-1.3.9-1.8A6 6 0 0 0 12 3z"/><line x1="10" y1="20" x2="14" y2="20"/></svg>
+              <Lightbulb size={12} strokeWidth={2} class="ic-inline" />
               {block.done ? "Thought process" : "Thinking…"}
             </summary>
             <div class="think-body">{block.text}</div>
@@ -76,7 +77,7 @@
         {/if}
       {/each}
       {#if item.errorMessage}
-        <div class="error-note">⚠ {item.errorMessage}</div>
+        <div class="error-note"><TriangleAlert size={12} strokeWidth={2} class="ic-inline" /> {item.errorMessage}</div>
       {/if}
       {#if item.streaming}
         <span class="cursor"></span>
@@ -146,6 +147,7 @@
     cursor: pointer;
   }
   .retry:hover { background: var(--danger); color: #fff; }
+  :global(.ic-inline) { vertical-align: -2px; flex-shrink: 0; }
   .dismiss {
     flex-shrink: 0;
     font-size: 13px;

@@ -1,6 +1,7 @@
 <script lang="ts">
   // One session row in the T3-style sidebar: status pill, title, relative
   // time, hover actions, and drag affordances. Purely presentational.
+  import { Ellipsis, Pin } from "@lucide/svelte";
   import type { SidebarPill, SidebarSession } from "../lib/sidebar-model";
 
   let {
@@ -106,12 +107,10 @@
       title={session.pinned ? "Unpin" : "Pin"}
       onclick={(e) => { e.stopPropagation(); onpintoggle(); }}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill={session.pinned ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
-      </svg>
+      <Pin size={12} strokeWidth={2} />
     </button>
     <button class="ghost act" title="More actions" onclick={(e) => { e.stopPropagation(); onmenu(e); }}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+      <Ellipsis size={12} strokeWidth={2} />
     </button>
   </span>
 </div>
@@ -202,4 +201,5 @@
   }
   .act:hover { color: var(--text); }
   .act.pin.pinned { opacity: 1; color: var(--accent); }
+  .act.pin.pinned :global(svg) { fill: currentColor; }
 </style>
