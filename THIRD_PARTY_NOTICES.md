@@ -1,5 +1,12 @@
 # Third-party notices
 
+## Fonts
+
+- **Plus Jakarta Sans** — bundled in `src/assets/fonts/` (variable weights
+  200–800, normal + italic, latin/latin-ext subsets) under the
+  [SIL Open Font License 1.1](https://openfontlicense.org/). © The Plus Jakarta
+  Sans Project Authors.
+
 ## T3 Code
 
 Portions of Leftleg's sessions sidebar are adapted from
