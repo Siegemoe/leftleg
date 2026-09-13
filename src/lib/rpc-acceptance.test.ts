@@ -36,12 +36,12 @@ vi.mock("./api", () => {
 });
 
 import {
-  abort, activeSessionPath, boot, commands, composerDraft, connected, dismissFailedUser,
-  dismissNotification, disconnected, extDialog, extStatuses, extWidgets, handleEvent,
-  handlePiExit, items, lastProcByProject, notifications, openSession, pins, projectDir,
-  projectMeta, projectScope, queue, restartPi, retryFailedUser, rpcState, sendPrompt,
-  sessionQuery, sessionStates, settledView, sidebarWidth, statusNote, streaming,
-  activeSessionByProject, visitedAt, togglePin,
+  abort, activeSessionPath, boot, cloneSession, commands, composerDraft, connected,
+  dismissFailedUser, dismissNotification, disconnected, exportSessionHtml, extDialog,
+  extStatuses, extWidgets, handleEvent, handlePiExit, items, lastProcByProject, notifications,
+  openSession, pins, projectDir, projectMeta, projectScope, queue, restartPi, retryFailedUser,
+  rpcState, sendPrompt, sessionQuery, sessionStates, settledView, sidebarWidth, statusNote,
+  streaming, activeSessionByProject, visitedAt, togglePin,
 } from "./stores";
 import type { FakePi } from "./test/fake-pi";
 import { FakePiHub, OTHER_PROJECT, type FakePiHubOptions } from "./test/fake-pi-hub";
@@ -49,6 +49,12 @@ import {
   FIXTURE_COMMANDS, FIXTURE_SESSIONS, PROJECT_DIR, RECORDED_ERROR_RUN, RECORDED_EXTENSION_EVENTS,
   RECORDED_RUN, SESSION_A, SESSION_A_MESSAGES, SESSION_B, SESSION_B_MESSAGES, SESSION_OTHER,
 } from "./test/fixtures";
+
+// exportSessionHtml opens a save dialog; pin it for deterministic journeys.
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
+  save: vi.fn().mockResolvedValue("/tmp/session-export.html"),
+}));
 
 type ApiShape = {
   piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null) => Promise<unknown>;
@@ -594,6 +600,35 @@ describe("recorded protocol replay (compatibility drift guard)", () => {
     expect(assistant.stopReason).toBe("error");
     expect(assistant.errorMessage).toBe("provider quota exceeded");
     expect(get(sessionStates)[SESSION_A]).toEqual({ status: "attention", note: "error in response" });
+  });
+});
+
+describe("journey: session actions", () => {
+  beforeEach(async () => {
+    await boot();
+    await drain();
+  });
+
+  it("exports the active session to the chosen path", async () => {
+    const res = await exportSessionHtml();
+    await drain();
+
+    expect(res.ok).toBe(true);
+    expect(res.path).toBe("/tmp/session-export.html");
+    expect(get(statusNote)).toContain("Session exported");
+  });
+
+  it("clone duplicates the session and switches to it", async () => {
+    const before = fake.messages.get(SESSION_A)!.length;
+
+    const res = await cloneSession();
+    await drain();
+
+    expect(res.ok).toBe(true);
+    const cloned = `${PROJECT_DIR}/sessions/fresh-1.jsonl`;
+    expect(fake.sessionFile).toBe(cloned);
+    expect(fake.messages.get(cloned)!.length).toBe(before);
+    expect(get(activeSessionPath)).toBe(cloned);
   });
 });
 

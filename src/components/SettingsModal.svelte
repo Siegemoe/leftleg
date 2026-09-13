@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settingsOpen, settingsProject, rpcState, models, theme, applyTheme, projectDir, projectMeta, sessions, compact, renameSession, setModel, setThinkingLevel, setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, chooseProject, updateProjectMeta, forgetProject, restoreProject } from "../lib/stores";
+  import { settingsOpen, settingsProject, rpcState, models, theme, applyTheme, projectDir, projectMeta, sessions, commands, autoRetry, compact, renameSession, setModel, setThinkingLevel, setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, abortRetry, exportSessionHtml, cloneSession, chooseProject, updateProjectMeta, forgetProject, restoreProject } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { getAgentDir } from "../lib/api";
   import { piRequest } from "../lib/api";
@@ -8,7 +8,7 @@
 
   let close = () => settingsOpen.set(false);
 
-  let tab = $state<"general" | "projects">($settingsProject ? "projects" : "general");
+  let tab = $state<"general" | "projects" | "extensions">($settingsProject ? "projects" : "general");
 
   const PROJECT_ICONS = ["📁", "⚡", "🧠", "🚀", "🎨", "🛠", "📊", "🧪", "🏠", "⭐"];
 
@@ -119,6 +119,7 @@
       <nav class="tabs">
         <button class:active={tab === "general"} onclick={() => (tab = "general")}>General</button>
         <button class:active={tab === "projects"} onclick={() => (tab = "projects")}>Projects</button>
+        <button class:active={tab === "extensions"} onclick={() => (tab = "extensions")}>Extensions</button>
       </nav>
       <button class="ghost x" onclick={close}>✕</button>
     </header>
@@ -234,6 +235,21 @@
         </div>
       </section>
 
+      <!-- Reliability -->
+      <section>
+        <h3>Reliability</h3>
+        <div class="row">
+          <label class="check">
+            <input type="checkbox" checked={$autoRetry} onchange={(e) => { const v = e.currentTarget.checked; autoRetry.set(v); void setAutoRetry(v); }} />
+            Auto-retry on transient errors
+          </label>
+          <p class="hint">Retries overloaded / rate-limited / 5xx turns automatically. Leftleg remembers the last value you set.</p>
+        </div>
+        <div class="row">
+          <button onclick={() => void abortRetry()}>Abort running retry</button>
+        </div>
+      </section>
+
       <!-- Session -->
       <section>
         <h3>Session</h3>
@@ -241,6 +257,11 @@
           <label for="session-name">Name</label>
           <input id="session-name" type="text" placeholder="Unnamed session" bind:value={sessionName} oninput={onNameInput} />
         </div>
+        <div class="row btn-row">
+          <button onclick={() => void exportSessionHtml()}>Export as HTML…</button>
+          <button onclick={() => void cloneSession()}>Clone session</button>
+        </div>
+        <p class="hint">Export renders the transcript to a file. Clone duplicates this session at the current position into a new one.</p>
       </section>
 
       <!-- About -->
@@ -253,7 +274,7 @@
         </p>
       </section>
     </div>
-    {:else}
+    {:else if tab === "projects"}
     <div class="projects">
       <div class="proj-list">
         {#each knownProjects as dir (dir)}
@@ -318,6 +339,26 @@
           <p class="hint">Select a project to manage its name, icon, default model, and visibility.</p>
         {/if}
       </div>
+    </div>
+    {:else if tab === "extensions"}
+    <div class="extensions">
+      <section class="wide">
+        <h3>Commands</h3>
+        <p class="hint">Extension commands, prompt templates, and skills registered by pi. Type <span class="mono">/</span> in the composer to run one.</p>
+        {#if $commands.length > 0}
+          <div class="cmd-list">
+            {#each $commands as c (c.name)}
+              <div class="cmd-row">
+                <span class="cmd-name mono">/{c.name}</span>
+                {#if c.source}<span class="tag">{c.source}</span>{/if}
+                <span class="cmd-desc" title={c.description}>{c.description ?? ""}</span>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="hint none">No commands registered — install pi extensions to populate this list.</div>
+        {/if}
+      </section>
     </div>
     {/if}
   </div>
@@ -416,6 +457,37 @@
   .icon-btn-pick.active { background: var(--accent-soft); }
   .danger-row button.danger { border-color: var(--danger); color: var(--danger); background: transparent; }
   .danger-row button.danger:hover { background: var(--danger); color: #fff; }
+  .btn-row { flex-direction: row; gap: 8px; }
+  .extensions {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .cmd-list {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+  }
+  .cmd-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .cmd-row:last-child { border-bottom: none; }
+  .cmd-name { color: var(--accent); flex-shrink: 0; }
+  .cmd-desc {
+    color: var(--text-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .grid {
     flex: 1;
     overflow-y: auto;

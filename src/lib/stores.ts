@@ -4,7 +4,7 @@ import type {
   ToolItem, AssistantItem, Block, ModelInfo, ThinkingLevel, ExtCommand, UserItem,
 } from "./types";
 import * as api from "./api";
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 
 // ---------- stores ----------
 
@@ -71,6 +71,8 @@ export const sessionQuery = writable<string>("");
 export const projectScope = writable<string | null>(null);
 /** How the Settled history section renders across projects. */
 export const settledView = writable<"per-project" | "unified">("per-project");
+/** Mirror of pi's auto-retry flag as last set from Leftleg (pi's get_state doesn't report it). */
+export const autoRetry = writable<boolean>(true);
 
 export function togglePin(path: string) {
   const isPinned = get(pins).includes(path);
@@ -795,6 +797,62 @@ export async function compact() {
   try { await api.piRequest({ type: "compact" }, 600); } catch { /* ignore */ }
 }
 
+/** Abort an in-flight auto-retry (pi keeps retrying transient errors otherwise). */
+export async function abortRetry() {
+  try { await api.piRequest({ type: "abort_retry" }, 30); } catch { /* ignore */ }
+}
+
+/** Export the active session to a user-chosen HTML file (pi renders it). */
+export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string; error?: string }> {
+  try {
+    const target = await saveFileDialog({
+      title: "Export session as HTML",
+      defaultPath: "session.html",
+      filters: [{ name: "HTML", extensions: ["html"] }],
+    });
+    if (!target) return { ok: false };
+    const res = await api.piRequest<{ success: boolean; error?: string; data?: { path: string } }>(
+      { type: "export_html", outputPath: target },
+      120,
+    );
+    if (!res.success) {
+      transientNote(`Couldn't export session: ${res.error ?? "rejected by pi"}`);
+      return { ok: false, error: res.error ?? "export failed" };
+    }
+    const path = res.data?.path ?? target;
+    transientNote(`Session exported: ${path}`, 6000);
+    return { ok: true, path };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+/** Duplicate the active branch into a new session and switch to it. */
+export async function cloneSession(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await api.piRequest<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "clone" }, 120);
+    if (!res.success) {
+      transientNote(`Couldn't clone session: ${res.error ?? "rejected by pi"}`);
+      return { ok: false, error: res.error ?? "clone failed" };
+    }
+    if (res.data?.cancelled) {
+      transientNote("Session clone was cancelled by an extension");
+      return { ok: false, error: "cancelled" };
+    }
+    await refreshRpcState();
+    await reloadMessages();
+    await refreshStats();
+    await refreshSessions();
+    if (get(activeSessionPath)) markVisited(get(activeSessionPath)!);
+    void persistLastSession(get(activeSessionPath));
+    transientNote("Session cloned", 4000);
+    return { ok: true };
+  } catch (e) {
+    transientNote(`Error: ${e}`);
+    return { ok: false, error: String(e) };
+  }
+}
+
 export async function respondToExtDialog(response: Record<string, unknown>) {
   const d = get(extDialog);
   if (!d) return;
@@ -974,6 +1032,7 @@ export async function boot() {
   visitedAt.set((gui.visitedAt as Record<string, number>) ?? {});
   sidebarWidth.set((gui.sidebarWidth as number) ?? 256);
   settledView.set((gui.settledView as "per-project" | "unified") ?? "per-project");
+  autoRetry.set((gui.autoRetry as boolean) ?? true);
 
   // Persist theme + sidebar changes
   theme.subscribe(async (v) => {
@@ -1002,6 +1061,10 @@ export async function boot() {
   });
   settledView.subscribe(async (v) => {
     gui.settledView = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  autoRetry.subscribe(async (v) => {
+    gui.autoRetry = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
 

@@ -288,6 +288,22 @@ export class FakePi {
       }
       case "compact":
         return this.respond(cmd, true, { tokensBefore: 100, estimatedTokensAfter: 40 });
+      case "abort_retry":
+        return this.respond(cmd, true);
+      case "export_html":
+        return this.respond(cmd, true, { path: String(cmd.outputPath ?? `${this.projectDir}/session-export.html`) });
+      case "clone": {
+        if (this.cancelNextSwitch) {
+          this.cancelNextSwitch = false;
+          return this.respond(cmd, true, { cancelled: true });
+        }
+        // Duplicate the active branch into a new session and switch to it.
+        this.freshCount += 1;
+        const target = `${this.projectDir}/sessions/fresh-${this.freshCount}.jsonl`;
+        this.messages.set(target, this.currentMessages.map((m) => structuredClone(m)));
+        this.sessionFile = target;
+        return this.respond(cmd, true, { cancelled: false });
+      }
       default:
         return this.respond(cmd, false, undefined, `unknown command: ${String(cmd.type)}`);
     }
