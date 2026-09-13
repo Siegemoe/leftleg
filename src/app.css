@@ -1,5 +1,15 @@
+/* Orbitron (SIL OFL) — bundled variable font (weights 400–900, latin subset).
+   Downloaded from Google Fonts; see THIRD_PARTY_NOTICES.md for licenses. */
+@font-face {
+  font-family: "Orbitron";
+  src: url("./assets/fonts/orbitron-latin.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-ui: "Orbitron", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "SF Mono", monospace;
 
   --radius: 10px;

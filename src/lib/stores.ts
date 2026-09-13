@@ -69,6 +69,8 @@ export const sidebarWidth = writable<number>(256);
 export const sessionQuery = writable<string>("");
 /** Project scope filter; null shows all projects. */
 export const projectScope = writable<string | null>(null);
+/** How the Settled history section renders across projects. */
+export const settledView = writable<"per-project" | "unified">("per-project");
 
 export function togglePin(path: string) {
   const isPinned = get(pins).includes(path);
@@ -971,6 +973,7 @@ export async function boot() {
   projectMeta.set((gui.projectMeta as Record<string, ProjectMeta>) ?? {});
   visitedAt.set((gui.visitedAt as Record<string, number>) ?? {});
   sidebarWidth.set((gui.sidebarWidth as number) ?? 256);
+  settledView.set((gui.settledView as "per-project" | "unified") ?? "per-project");
 
   // Persist theme + sidebar changes
   theme.subscribe(async (v) => {
@@ -995,6 +998,10 @@ export async function boot() {
   });
   sidebarWidth.subscribe(async (v) => {
     gui.sidebarWidth = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  settledView.subscribe(async (v) => {
+    gui.settledView = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
 

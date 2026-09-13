@@ -40,8 +40,8 @@ import {
   dismissNotification, disconnected, extDialog, extStatuses, extWidgets, handleEvent,
   handlePiExit, items, lastProcByProject, notifications, openSession, pins, projectDir,
   projectMeta, projectScope, queue, restartPi, retryFailedUser, rpcState, sendPrompt,
-  sessionQuery, sessionStates, sidebarWidth, statusNote, streaming, activeSessionByProject,
-  visitedAt, togglePin,
+  sessionQuery, sessionStates, settledView, sidebarWidth, statusNote, streaming,
+  activeSessionByProject, visitedAt, togglePin,
 } from "./stores";
 import type { FakePi } from "./test/fake-pi";
 import { FakePiHub, OTHER_PROJECT, type FakePiHubOptions } from "./test/fake-pi-hub";
@@ -157,6 +157,7 @@ function resetStores() {
   sidebarWidth.set(256);
   sessionQuery.set("");
   projectScope.set(null);
+  settledView.set("per-project");
 }
 
 let hub: FakePiHub;

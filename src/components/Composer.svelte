@@ -147,6 +147,7 @@
   // ---- slash-command palette (commands come from pi via get_commands) ----
   let slashSuppressed = $state(false);
   let slashIdx = $state(0);
+  let paletteEl: HTMLDivElement | null = $state(null);
   const slashOpen = $derived(text.startsWith("/") && !text.includes(" ") && !text.includes("\n") && !slashSuppressed);
   const slashToken = $derived(slashOpen ? text.slice(1).toLowerCase() : "");
   const slashMatches = $derived(
@@ -156,6 +157,16 @@
         : $commands.filter((c) => c.name.toLowerCase().startsWith(slashToken) || c.name.toLowerCase().includes(slashToken))
       : []
   );
+
+  // Keep the keyboard-highlighted command in view when the list overflows —
+  // ArrowUp/ArrowDown must be able to peruse the full list without a mouse.
+  $effect(() => {
+    const idx = slashIdx;
+    const matches = slashMatches;
+    if (!slashOpen || !paletteEl || matches.length === 0) return;
+    const el = paletteEl.querySelectorAll<HTMLElement>(".slash-item")[Math.min(idx, matches.length - 1)];
+    el?.scrollIntoView({ block: "nearest" });
+  });
 
   function applySlash(c: { name: string }) {
     text = `/${c.name} `;
@@ -226,7 +237,7 @@
   {/each}
 
   {#if slashOpen && slashMatches.length > 0}
-    <div class="slash-palette" role="listbox" aria-label="Slash commands">
+    <div class="slash-palette" role="listbox" aria-label="Slash commands" bind:this={paletteEl}>
       {#each slashMatches as c, i (c.name)}
         <button
           type="button"

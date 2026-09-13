@@ -6,8 +6,8 @@
   import {
     activeSessionPath, applyTheme, chooseProject, connected, newSession, openSession, pins,
     projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, sessionQuery,
-    sessionStates, sessions, settingsOpen, settingsProject, sidebarWidth, theme, togglePin,
-    visitedAt,
+    sessionStates, sessions, settledView, settingsOpen, settingsProject, sidebarWidth, theme,
+    togglePin, visitedAt,
   } from "../lib/stores";
   import {
     filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, projectDisplayName,
@@ -73,6 +73,16 @@
   });
 
   const searching = $derived($sessionQuery.trim().length > 0);
+
+  /** Unified history: every project's settled sessions in one list. */
+  const unifiedSettled = $derived.by(() => {
+    if ($settledView !== "unified") return [];
+    const all = groups.flatMap((g) => splitSections({ sessions: g.sessions, pinOrder: $pins }).settled);
+    return all.sort((a, b) => b.timestampMs - a.timestampMs);
+  });
+  const unifiedVisible = $derived(
+    showAllSettled["__all__"] ? unifiedSettled : unifiedSettled.slice(0, SETTLED_PREVIEW_COUNT),
+  );
 
   const searchResults = $derived.by(() => {
     if (!searching) return null;
@@ -281,6 +291,18 @@
     </div>
   </div>
 
+  <div class="view-row">
+    <span class="view-label">History</span>
+    <select
+      class="history-select"
+      bind:value={$settledView}
+      title="Which sessions show under Settled"
+    >
+      <option value="per-project">per project</option>
+      <option value="unified">one list</option>
+    </select>
+  </div>
+
   <div class="list" bind:this={listEl}>
     {#if searching}
       <div class="section-label">Results</div>
@@ -383,7 +405,7 @@
             ondroprow={() => dropOnRow(s)}
           />
         {/each}
-        {#if sec.settled.length > 0 || dragPath !== null}
+        {#if $settledView === "per-project" && (sec.settled.length > 0 || dragPath !== null)}
           {@const expanded = settledExpanded[g.dir] ?? true}
           {@const visible = showAllSettled[g.dir] ? sec.settled : sec.settled.slice(0, SETTLED_PREVIEW_COUNT)}
           <button
@@ -431,6 +453,51 @@
       {:else}
         <div class="empty">No sessions yet</div>
       {/each}
+      {#if $settledView === "unified" && unifiedSettled.length > 0}
+        {@const expanded = settledExpanded["__all__"] ?? true}
+        <button
+          class="section-label as-btn settled-label unified"
+          class:drop-active={dropSection === "settled"}
+          onclick={() => (settledExpanded = { ...settledExpanded, __all__: !expanded })}
+          ondragover={(e) => { e.preventDefault(); dropSection = "settled"; }}
+          ondrop={(e) => { e.preventDefault(); dropOnSection("settled"); }}
+        >
+          Settled ({unifiedSettled.length})
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="transform: rotate({expanded ? 90 : 0}deg)">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+        {#if expanded}
+          {#each unifiedVisible as s (s.path)}
+            <SessionRow
+              session={s}
+              pill={pillOf(s)}
+              isActive={$activeSessionPath === s.path}
+              showProject={true}
+              projectLabel={displayName(s.projectDir)}
+              timeLabel={timeOf(s)}
+              renaming={renamingPath === s.path}
+              renameValue={renameValue}
+              dragging={dragPath === s.path}
+              dropTarget={dropSection !== null && dropSection !== "pinned"}
+              onopen={() => void openSession(s.path)}
+              onpintoggle={() => togglePin(s.path)}
+              onmenu={(e) => openMenu(e, s)}
+              onrenamecommit={commitRename}
+              onrenamecancel={cancelRename}
+              onrenameinput={(v) => (renameValue = v)}
+              ondragstart={(e) => onDragStart(e, s)}
+              ondragend={resetDrag}
+              ondroprow={() => dropOnRow(s)}
+            />
+          {/each}
+          {#if unifiedSettled.length > unifiedVisible.length}
+            <button class="ghost show-all" onclick={() => (showAllSettled = { ...showAllSettled, __all__: true })}>
+              Show all {unifiedSettled.length}
+            </button>
+          {/if}
+        {/if}
+      {/if}
     {/if}
   </div>
 
@@ -500,6 +567,30 @@
     gap: 6px;
     align-items: center;
   }
+  .view-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 2px;
+  }
+  .view-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--text-3);
+  }
+  .history-select {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    padding: 3px 6px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+  }
+  .settled-label.unified { margin-top: 4px; }
   .search {
     flex: 1;
     display: flex;
