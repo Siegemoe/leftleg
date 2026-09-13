@@ -2,12 +2,16 @@
   import type { UiItem } from "../lib/types";
   import ToolCard from "./ToolCard.svelte";
   import { renderMarkdown, renderStreamingMarkdown } from "../lib/markdown";
-  import { retryFailedUser } from "../lib/stores";
+  import { retryFailedUser, dismissFailedUser } from "../lib/stores";
 
   let { item }: { item: UiItem } = $props();
 
   async function onRetry(id: string | undefined) {
     if (id) await retryFailedUser(id);
+  }
+
+  function onDismiss(id: string | undefined) {
+    if (id) dismissFailedUser(id);
   }
 
   // markdown render keyed on text length so streaming re-renders cheaply
@@ -48,6 +52,7 @@
         <div class="delivery-note">
           <span class="delivery-text">⚠ Not delivered{item.error ? ` — ${item.error}` : ""}</span>
           <button class="retry" onclick={() => onRetry(item.id)} title="Send this message again">Retry</button>
+          <button class="dismiss" onclick={() => onDismiss(item.id)} title="Discard this message" aria-label="Discard failed message">×</button>
         </div>
       {/if}
     </div>
@@ -141,6 +146,18 @@
     cursor: pointer;
   }
   .retry:hover { background: var(--danger); color: #fff; }
+  .dismiss {
+    flex-shrink: 0;
+    font-size: 13px;
+    line-height: 1;
+    padding: 1px 5px;
+    border: none;
+    background: transparent;
+    color: var(--danger);
+    cursor: pointer;
+    opacity: 0.8;
+  }
+  .dismiss:hover { opacity: 1; }
   .user-bubble :global(.md p) { margin: 0.15em 0; }
   .user-bubble :global(a) { color: #e6e0ff; }
   .user-bubble :global(code) { background: rgba(255,255,255,0.18); }

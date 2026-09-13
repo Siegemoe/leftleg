@@ -36,10 +36,10 @@ vi.mock("./api", () => {
 });
 
 import {
-  abort, activeSessionPath, boot, commands, composerDraft, connected, dismissNotification,
-  disconnected, extDialog, extStatuses, extWidgets, handleEvent, handlePiExit, items,
-  notifications, openSession, projectDir, queue, restartPi, retryFailedUser, rpcState, sendPrompt,
-  sessionStates, statusNote, streaming,
+  abort, activeSessionPath, boot, commands, composerDraft, connected, dismissFailedUser,
+  dismissNotification, disconnected, extDialog, extStatuses, extWidgets, handleEvent,
+  handlePiExit, items, notifications, openSession, projectDir, queue, restartPi,
+  retryFailedUser, rpcState, sendPrompt, sessionStates, statusNote, streaming,
 } from "./stores";
 import { FakePi, type FakePiOptions } from "./test/fake-pi";
 import {
@@ -305,19 +305,42 @@ describe("journey: prompt delivery", () => {
     expect(get(items).at(-1)).toMatchObject({ kind: "assistant" });
   });
 
-  it("a later successful send supersedes stale failed bubbles", async () => {
+  it("keeps an unrelated failed bubble until it is retried or dismissed", async () => {
     fake.failNextPrompt = "temporarily rejected";
     await sendPrompt("first attempt", []);
     await drain();
-    expect((get(items).at(-1) as UserItem).status).toBe("failed");
+    let failed = get(items).find((i) => i.kind === "user" && (i as UserItem).status === "failed") as UserItem | undefined;
+    expect(failed?.text).toBe("first attempt");
 
+    // An unrelated successful send must NOT remove the failed attempt — it was
+    // never delivered, so its Retry affordance stays.
     fake.runPlan = [{ kind: "text", text: "ok" }];
     await sendPrompt("second attempt", []);
     await drain();
+    failed = get(items).find((i) => i.kind === "user" && (i as UserItem).status === "failed") as UserItem | undefined;
+    expect(failed?.text).toBe("first attempt");
+    expect(failed?.id).toBeTruthy();
 
+    // Retrying delivers the content and clears the failure.
+    const retry = await retryFailedUser(failed!.id!);
+    await drain();
+    expect(retry.ok).toBe(true);
+    expect(get(items).some((i) => i.kind === "user" && (i as UserItem).status === "failed")).toBe(false);
     const users = get(items).filter((i) => i.kind === "user") as UserItem[];
-    // resumed history + the successful send; the stale failed bubble is gone
-    expect(users.map((u) => u.text)).toEqual(["List the files in src", "second attempt"]);
+    expect(users.map((u) => u.text)).toEqual(["List the files in src", "second attempt", "first attempt"]);
+  });
+
+  it("a failed bubble can be dismissed without re-sending it", async () => {
+    fake.failNextPrompt = "rejected";
+    await sendPrompt("doomed", []);
+    await drain();
+    const failed = get(items).find((i) => i.kind === "user" && (i as UserItem).status === "failed") as UserItem;
+
+    dismissFailedUser(failed.id!);
+
+    expect(get(items).some((i) => i.kind === "user" && (i as UserItem).status === "failed")).toBe(false);
+    // Dismissing never sends anything.
+    expect(fake.messages.get(SESSION_A)?.some((m) => m.role === "user" && m.content === "doomed")).toBe(false);
   });
 
   it("prompt while pi is down: no bubble, explicit failure", async () => {
@@ -432,6 +455,27 @@ describe("journey: process exit and recovery", () => {
     expect(get(disconnected)).toBe(false);
     expect(get(statusNote)).toBe("pi stopped");
   });
+
+  it("falls back visibly to a fresh start when the crashed session was never persisted", async () => {
+    // pi can report a sessionFile before the file exists on disk (the file is
+    // created when the first message is persisted). The resume start is then
+    // rejected by the file check — recovery must still succeed.
+    activeSessionPath.set(`${PROJECT_DIR}/sessions/unpersisted.jsonl`);
+    fake.exit(false);
+    await drain();
+    expect(get(disconnected)).toBe(true);
+
+    await restartPi();
+    await drain();
+
+    expect(get(connected)).toBe(true);
+    expect(get(disconnected)).toBe(false);
+    expect(fake.started).toBe(2);
+    // No phantom resume: pi is in a fresh session and the note says so.
+    expect(fake.sessionFile).toBe(`${PROJECT_DIR}/sessions/fresh-1.jsonl`);
+    expect(get(activeSessionPath)).toBe(`${PROJECT_DIR}/sessions/fresh-1.jsonl`);
+    expect(get(statusNote)).toContain("starting fresh");
+  });
 });
 
 describe("journey: extension surfaces", () => {
@@ -475,14 +519,19 @@ describe("journey: extension surfaces", () => {
       type: "extension_ui_request", id: "w1", method: "setWidget", widgetKey: "plan",
       widgetLines: ["--- Plan ---"], widgetPlacement: "aboveEditor",
     } as never);
+    fake.emit({ type: "extension_ui_request", id: "d2", method: "confirm", title: "Allow?", message: "run cmd" } as never);
     await drain();
     expect(get(extStatuses)).toEqual({ review: "busy" });
+    expect(get(extDialog)).not.toBeNull();
 
     fake.exit(false);
     await drain();
 
     expect(get(extStatuses)).toEqual({});
     expect(get(extWidgets)).toEqual({});
+    // The dialog must not survive the process: it would cover recovery
+    // controls and fail on answer (the process that asked is gone).
+    expect(get(extDialog)).toBeNull();
   });
 });
 

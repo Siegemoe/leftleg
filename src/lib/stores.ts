@@ -516,8 +516,8 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
     const res = await api.piRequest<{ success: boolean; error?: string }>(cmd, 600);
     if (res.success) {
       updateUserItem(bubbleId, { status: "accepted" });
-      // A successful send supersedes earlier failed attempts.
-      items.update((a) => a.filter((x) => !(x.kind === "user" && x.status === "failed")));
+      // Unrelated failed attempts are NOT removed here: they were never
+      // delivered, so their Retry affordance stays until retried or dismissed.
       result = { ok: true };
     } else {
       const error = res.error ?? "prompt rejected by pi";
@@ -547,6 +547,11 @@ export async function retryFailedUser(id: string): Promise<PromptResult> {
     });
   items.update((a) => a.filter((x) => !(x.kind === "user" && x.id === id)));
   return sendPrompt(item.text, images);
+}
+
+/** Discard a failed bubble without re-sending it (the user gave up on it). */
+export function dismissFailedUser(id: string) {
+  items.update((a) => a.filter((x) => !(x.kind === "user" && x.id === id && x.status === "failed")));
 }
 
 export async function abort() {
@@ -683,9 +688,12 @@ export async function refreshCommands() {
  */
 export function handlePiExit(expected: boolean) {
   connected.set(false);
-  // Surfaces owned by the dead process: clear extension state with it.
+  // Surfaces owned by the dead process: clear extension state with it —
+  // including any outstanding dialog, which would otherwise cover the
+  // recovery controls and fail on answer (the process is gone).
   extStatuses.set({});
   extWidgets.set({});
+  extDialog.set(null);
   finalizeStreaming();
   streaming.set(false);
   if (expected) {
@@ -706,9 +714,20 @@ export async function restartPi() {
   const resumePath = get(activeSessionPath);
   disconnected.set(false);
   try {
-    await api.piStart(dir, resumePath);
+    let resumed = false;
+    try {
+      await api.piStart(dir, resumePath);
+      resumed = true;
+    } catch (resumeError) {
+      // pi can report a sessionFile before the file exists on disk (it is
+      // created when the first message is persisted). The resume start is
+      // then rejected by the file check — fall back visibly to a fresh start
+      // and don't claim a resume that didn't happen.
+      transientNote(`Couldn't resume session (${resumeError}) — starting fresh.`);
+      await api.piStart(dir);
+    }
     connected.set(true);
-    transientNote("pi restarted — session resumed", 5000);
+    if (resumed) transientNote("pi restarted — session resumed", 5000);
     await refreshRpcState();
     if (get(activeSessionPath)) await reloadMessages();
     await refreshStats();

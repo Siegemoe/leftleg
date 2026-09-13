@@ -74,15 +74,31 @@
     if (!text.trim() && attachments.length === 0) return;
     sending = true;
     try {
+      // Capture exactly what is being submitted. The composer stays editable
+      // while pi decides, so acceptance must clear only this revision — later
+      // typing or an extension-provided draft must survive.
+      const submittedText = text;
+      const submittedAttachments = attachments;
       // Build the message: images go through the images param;
       // text files get inlined as fenced blocks so pi can see their content.
-      const { msg, images } = buildPromptMessage(text, attachments);
+      const { msg, images } = buildPromptMessage(submittedText, submittedAttachments);
       const res = await sendPrompt(msg, images);
-      // Only clear the draft once pi actually accepted the prompt. A rejected
-      // submission keeps text + attachments so the user can fix or retry.
+      // A rejected submission keeps text + attachments so the user can fix or retry.
       if (res.ok) {
-        text = "";
-        attachments = [];
+        if (text === submittedText && attachments === submittedAttachments) {
+          // Untouched while in flight — clear everything.
+          text = "";
+          attachments = [];
+        } else {
+          // Edited meanwhile: strip only the submitted part, keep the rest
+          // (new typing, or a draft an extension pushed via set_editor_text).
+          if (submittedText && text.startsWith(submittedText)) {
+            text = text.slice(submittedText.length);
+          }
+          if (submittedAttachments.length > 0) {
+            attachments = attachments.filter((a) => !submittedAttachments.includes(a));
+          }
+        }
         autoGrow();
       }
     } finally {
