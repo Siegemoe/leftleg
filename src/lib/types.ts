@@ -111,6 +111,16 @@ export interface UserItem {
   kind: "user";
   text: string;
   images: { name: string; dataUrl: string }[];
+  /**
+   * Delivery state of an optimistically-added bubble.
+   * - "sending": request in flight
+   * - "accepted": pi confirmed the prompt (or it came from session history)
+   * - "failed": pi rejected it (success:false) or the RPC failed — kept visible with a Retry affordance
+   * Items rebuilt from history have no status (accepted by definition).
+   */
+  status?: "sending" | "accepted" | "failed";
+  id?: string; // client-side id for retry targeting (only on optimistic bubbles)
+  error?: string;
 }
 
 export interface AssistantItem {
@@ -134,10 +144,25 @@ export type UiItem = UserItem | AssistantItem | ToolItem | BashItem;
 
 // ---- pi events ----
 
+/** Payload of the Tauri `pi-exit` event (emitted when the pi subprocess dies). */
+export interface PiExitEvent {
+  /** true: we killed it on purpose (user stop/restart) — no crash banner. */
+  expected: boolean;
+}
+
+/** A command pi can execute via `prompt` (extension command, prompt template, or skill). */
+export interface ExtCommand {
+  name: string;
+  description?: string;
+  source?: string;
+}
+
 export interface AssistantDeltaEvent {
   type: string;
   contentIndex?: number;
   delta?: string;
+  /** Full content carried by text_end/thinking_end events. */
+  content?: string;
   id?: string;
   toolName?: string;
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };

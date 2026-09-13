@@ -2,8 +2,13 @@
   import type { UiItem } from "../lib/types";
   import ToolCard from "./ToolCard.svelte";
   import { renderMarkdown, renderStreamingMarkdown } from "../lib/markdown";
+  import { retryFailedUser } from "../lib/stores";
 
   let { item }: { item: UiItem } = $props();
+
+  async function onRetry(id: string | undefined) {
+    if (id) await retryFailedUser(id);
+  }
 
   // markdown render keyed on text length so streaming re-renders cheaply
   let html = $derived(
@@ -24,7 +29,7 @@
 
 {#if item.kind === "user"}
   <div class="row user">
-    <div class="bubble user-bubble">
+    <div class="bubble user-bubble" class:failed={item.status === "failed"}>
       {#if item.images.length > 0}
         <div class="thumbs">
           {#each item.images as img}
@@ -38,6 +43,12 @@
       {/if}
       {#if item.text}
         <div class="md">{@html renderMarkdown(item.text)}</div>
+      {/if}
+      {#if item.status === "failed"}
+        <div class="delivery-note">
+          <span class="delivery-text">⚠ Not delivered{item.error ? ` — ${item.error}` : ""}</span>
+          <button class="retry" onclick={() => onRetry(item.id)} title="Send this message again">Retry</button>
+        </div>
       {/if}
     </div>
   </div>
@@ -98,6 +109,38 @@
     color: #fff;
     border-bottom-right-radius: 5px;
   }
+  .user-bubble.failed {
+    background: var(--bg-surface-2);
+    color: var(--text-2);
+    border: 1px solid var(--danger);
+    border-bottom-right-radius: 14px;
+  }
+  .user-bubble.failed :global(.md) { opacity: 0.8; }
+  .delivery-note {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid var(--danger);
+    font-size: 12px;
+    color: var(--danger);
+  }
+  .delivery-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .retry {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    padding: 2px 10px;
+    border: 1px solid var(--danger);
+    border-radius: 99px;
+    color: var(--danger);
+    background: transparent;
+    cursor: pointer;
+  }
+  .retry:hover { background: var(--danger); color: #fff; }
   .user-bubble :global(.md p) { margin: 0.15em 0; }
   .user-bubble :global(a) { color: #e6e0ff; }
   .user-bubble :global(code) { background: rgba(255,255,255,0.18); }

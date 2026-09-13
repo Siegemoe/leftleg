@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { sendPrompt, abort, streaming, statusNote, queue } from "../lib/stores";
+  import { sendPrompt, abort, streaming, statusNote, queue, extWidgets, composerDraft, commands } from "../lib/stores";
+  import { buildPromptMessage, type ComposerAttachment } from "../lib/prompt-message";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { readFileBase64, piRequest } from "../lib/api";
 
@@ -75,41 +76,77 @@
     try {
       // Build the message: images go through the images param;
       // text files get inlined as fenced blocks so pi can see their content.
-      const images = attachments
-        .filter((a) => a.isImage)
-        .map((a) => ({ data: a.data, mimeType: a.mimeType, name: a.name }));
-      let msg = text.trim();
-      const textFiles = attachments.filter((a) => !a.isImage);
-      if (textFiles.length > 0) {
-        const parts: string[] = msg ? [msg] : [];
-        for (const f of textFiles) {
-          let content = "";
-          try {
-            const bin = atob(f.data);
-            content = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
-          } catch {
-            content = "(unreadable)";
-          }
-          if (content.length > 40000) content = content.slice(0, 40000) + "\n… (truncated)";
-          const lang = ext(f.name) || "";
-          parts.push(`Attached file: ${f.name}\n\`\`\`${lang}\n${content}\n\`\`\``);
-        }
-        msg = parts.join("\n\n");
+      const { msg, images } = buildPromptMessage(text, attachments);
+      const res = await sendPrompt(msg, images);
+      // Only clear the draft once pi actually accepted the prompt. A rejected
+      // submission keeps text + attachments so the user can fix or retry.
+      if (res.ok) {
+        text = "";
+        attachments = [];
+        autoGrow();
       }
-      text = "";
-      attachments = [];
-      autoGrow();
-      await sendPrompt(msg, images);
     } finally {
       sending = false;
     }
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (slashOpen && slashMatches.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); slashIdx = (slashIdx + 1) % slashMatches.length; return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); slashIdx = (slashIdx - 1 + slashMatches.length) % slashMatches.length; return; }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        applySlash(slashMatches[Math.min(slashIdx, slashMatches.length - 1)]);
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); slashSuppressed = true; return; }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       doSend();
     }
+  }
+
+  function onInput() {
+    autoGrow();
+    if (!text.startsWith("/")) slashSuppressed = false;
+  }
+
+  // ---- extension surfaces ----
+
+  // Adopt set_editor_text requests (only the latest nonce wins).
+  let lastDraftNonce = 0;
+  $effect(() => {
+    const draft = $composerDraft;
+    if (!draft || draft.nonce === lastDraftNonce) return;
+    lastDraftNonce = draft.nonce;
+    text = draft.text;
+    autoGrow();
+    textareaEl?.focus();
+  });
+
+  const aboveWidgets = $derived(Object.entries($extWidgets).filter(([, w]) => w.placement === "aboveEditor"));
+  const belowWidgets = $derived(Object.entries($extWidgets).filter(([, w]) => w.placement === "belowEditor"));
+
+  // ---- slash-command palette (commands come from pi via get_commands) ----
+  let slashSuppressed = $state(false);
+  let slashIdx = $state(0);
+  const slashOpen = $derived(text.startsWith("/") && !text.includes(" ") && !text.includes("\n") && !slashSuppressed);
+  const slashToken = $derived(slashOpen ? text.slice(1).toLowerCase() : "");
+  const slashMatches = $derived(
+    slashOpen
+      ? slashToken === ""
+        ? $commands
+        : $commands.filter((c) => c.name.toLowerCase().startsWith(slashToken) || c.name.toLowerCase().includes(slashToken))
+      : []
+  );
+
+  function applySlash(c: { name: string }) {
+    text = `/${c.name} `;
+    slashSuppressed = false;
+    slashIdx = 0;
+    autoGrow();
+    textareaEl?.focus();
   }
 
   // Paste images directly from the clipboard (screenshots, copied files).
@@ -165,6 +202,33 @@
 {/if}
 
 <div class="composer">
+  {#each aboveWidgets as [key, w] (key)}
+    <div class="ext-widget" title="Extension widget: {key}">
+      <span class="wkey mono">{key}</span>
+      <pre>{(w.lines ?? []).join("\n")}</pre>
+    </div>
+  {/each}
+
+  {#if slashOpen && slashMatches.length > 0}
+    <div class="slash-palette" role="listbox" aria-label="Slash commands">
+      {#each slashMatches as c, i (c.name)}
+        <button
+          type="button"
+          class="slash-item"
+          class:selected={i === Math.min(slashIdx, slashMatches.length - 1)}
+          role="option"
+          aria-selected={i === Math.min(slashIdx, slashMatches.length - 1)}
+          onmouseenter={() => (slashIdx = i)}
+          onclick={() => applySlash(c)}
+        >
+          <span class="s-name mono">/{c.name}</span>
+          {#if c.source}<span class="s-src">{c.source}</span>{/if}
+          {#if c.description}<span class="s-desc">{c.description}</span>{/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   {#if attachments.length > 0}
     <div class="attachments">
       {#each attachments as a, i}
@@ -192,7 +256,7 @@
     <textarea
       bind:this={textareaEl}
       bind:value={text}
-      oninput={autoGrow}
+      oninput={onInput}
       onkeydown={onKeydown}
       onpaste={onPaste}
       spellcheck="true"
@@ -220,8 +284,15 @@
   <div class="hint">
     {$streaming
       ? `Agent running — sent messages steer the current run. ${$statusNote ? "" : ""}`
-      : "Enter to send · Shift+Enter newline · + to attach"}
+      : "Enter to send · Shift+Enter newline · + to attach · / for commands"}
   </div>
+
+  {#each belowWidgets as [key, w] (key)}
+    <div class="ext-widget" title="Extension widget: {key}">
+      <span class="wkey mono">{key}</span>
+      <pre>{(w.lines ?? []).join("\n")}</pre>
+    </div>
+  {/each}
 </div>
 
 <style>
@@ -263,11 +334,85 @@
     color: var(--text-3);
   }
   .composer {
+    position: relative;
     flex-shrink: 0;
     padding: 0 24px 14px;
     max-width: 908px;
     width: 100%;
     margin: 0 auto;
+  }
+  .ext-widget {
+    margin: 0 44px 8px;
+    padding: 6px 10px;
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    position: relative;
+  }
+  .ext-widget pre {
+    margin: 0;
+    padding: 0;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-2);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono, ui-monospace, monospace);
+  }
+  .ext-widget .wkey {
+    display: block;
+    font-size: 9.5px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 2px;
+  }
+  .slash-palette {
+    position: absolute;
+    bottom: calc(100% - 8px);
+    left: 44px;
+    right: 44px;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    z-index: 30;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .slash-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    padding: 6px 8px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12.5px;
+  }
+  .slash-item.selected { background: var(--bg-surface-2); }
+  .s-name { color: var(--accent); flex-shrink: 0; }
+  .s-src {
+    font-size: 10px;
+    color: var(--text-3);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+  .s-desc {
+    color: var(--text-3);
+    font-size: 11.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .attachments {
     display: flex;

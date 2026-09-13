@@ -24,12 +24,26 @@ impl PiState {
 }
 
 /// Start (or restart) a `pi --mode rpc` process for the given project dir.
+/// `session_path`, when given, resumes that session via `--session` so the
+/// subprocess boots into the session the UI highlights.
 // (private: tauri's #[command] macro conflicts with #[macro_export] re-exports
 // when pub commands are defined at the crate root)
 #[tauri::command]
-fn pi_start(app: tauri::AppHandle, state: State<PiState>, cwd: String) -> Result<(), String> {
+fn pi_start(
+    app: tauri::AppHandle,
+    state: State<PiState>,
+    cwd: String,
+    session_path: Option<String>,
+) -> Result<(), String> {
     if !std::path::Path::new(&cwd).is_dir() {
         return Err(format!("not a directory: {cwd}"));
+    }
+    if let Some(path) = &session_path {
+        // pi would exit at startup on a missing file; fail loudly here instead
+        // so the caller can fall back to a fresh start with a visible note.
+        if !std::path::Path::new(path).is_file() {
+            return Err(format!("session file not found: {path}"));
+        }
     }
     // Stop any existing process first.
     if let Some(existing) = state.get() {
@@ -37,7 +51,7 @@ fn pi_start(app: tauri::AppHandle, state: State<PiState>, cwd: String) -> Result
     }
     *state.inner.lock().unwrap() = None;
 
-    let proc = PiProcess::spawn(app, &cwd)?;
+    let proc = PiProcess::spawn(app, &cwd, session_path.as_deref())?;
     *state.inner.lock().unwrap() = Some(proc);
     Ok(())
 }

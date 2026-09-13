@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -68,20 +68,40 @@ pub fn classify_line(bytes: &[u8]) -> LineAction {
     LineAction::Emit(value)
 }
 
+/// Build the argv for `pi --mode rpc` (optionally resuming a session file).
+/// `cmd /C` is needed because npm installs `pi` as a .cmd shim on Windows.
+pub fn build_pi_args(session_path: Option<&str>) -> Vec<String> {
+    let mut args = vec![
+        "/C".to_string(),
+        "pi".to_string(),
+        "--mode".to_string(),
+        "rpc".to_string(),
+    ];
+    if let Some(path) = session_path {
+        args.push("--session".to_string());
+        args.push(path.to_string());
+    }
+    args
+}
+
 /// Handle to a running `pi --mode rpc` subprocess.
 pub struct PiProcess {
     child: Arc<Mutex<Child>>,
     stdin: Arc<Mutex<Option<std::process::ChildStdin>>>,
     pub pending: Arc<PendingMap>,
     seq: AtomicU64,
+    /// Set before a deliberate kill so the webview can tell a user stop
+    /// from a crash when `pi-exit` fires.
+    expecting_exit: AtomicBool,
 }
 
 impl PiProcess {
     /// Spawn `pi --mode rpc` in the given working directory and start the
     /// stdout reader thread that forwards events to the webview.
-    pub fn spawn(app: AppHandle, cwd: &str) -> Result<Arc<PiProcess>, String> {
+    /// `session_path` resumes that session file via `--session` at startup.
+    pub fn spawn(app: AppHandle, cwd: &str, session_path: Option<&str>) -> Result<Arc<PiProcess>, String> {
         let mut cmd = Command::new("cmd");
-        cmd.args(["/C", "pi", "--mode", "rpc"])
+        cmd.args(build_pi_args(session_path))
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -102,6 +122,7 @@ impl PiProcess {
             stdin: Arc::new(Mutex::new(Some(stdin))),
             pending: Arc::new(PendingMap::default()),
             seq: AtomicU64::new(1),
+            expecting_exit: AtomicBool::new(false),
         });
 
         // Reader thread: strict JSONL framing — split on '\n' only, strip '\r'.
@@ -127,10 +148,11 @@ impl PiProcess {
                     }
                 }
             }
-            // Stream ended: pi exited.
+            // Stream ended: pi exited. Tell the webview whether we killed it
+            // on purpose (stop/restart) or it died on its own (crash).
             pending.clear();
-            let _ = &proc_ref;
-            let _ = app_handle.emit("pi-exit", ());
+            let expected = proc_ref.expecting_exit.load(Ordering::SeqCst);
+            let _ = app_handle.emit("pi-exit", serde_json::json!({ "expected": expected }));
         });
 
         Ok(proc)
@@ -159,11 +181,29 @@ impl PiProcess {
     }
 
     pub fn kill(&self) {
+        self.expecting_exit.store(true, Ordering::SeqCst);
         let mut guard = self.stdin.lock().unwrap();
         *guard = None; // drop stdin first so pi exits cleanly
         if let Ok(mut child) = self.child.lock() {
             let _ = child.kill();
             let _ = child.wait();
+        }
+    }
+}
+
+/// Await a correlated response. A dropped channel means the pi process died
+/// while the request was in flight — report that, not a bogus timeout.
+pub fn wait_response(
+    rx: std::sync::mpsc::Receiver<Value>,
+    timeout: Duration,
+) -> Result<Value, String> {
+    match rx.recv_timeout(timeout) {
+        Ok(value) => Ok(value),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            Err("timed out waiting for response from pi".to_string())
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err("pi exited before responding".to_string())
         }
     }
 }
@@ -186,11 +226,11 @@ pub fn request(
     proc.pending.insert(id.clone(), tx);
     let line = serde_json::to_string(&cmd).map_err(|e| e.to_string())?;
     proc.send_line(&line)?;
-    match rx.recv_timeout(timeout) {
+    match wait_response(rx, timeout) {
         Ok(value) => Ok(value),
-        Err(_) => {
+        Err(e) => {
             proc.pending.remove(&id);
-            Err(format!("timed out waiting for response to {id}"))
+            Err(e)
         }
     }
 }
@@ -264,5 +304,37 @@ mod tests {
         map.insert("b".to_string(), std::sync::mpsc::channel().0);
         map.clear();
         assert!(map.remove("b").is_none(), "clear must empty the map");
+    }
+
+    #[test]
+    fn pi_args_include_session_flag_only_when_resuming() {
+        let base = build_pi_args(None);
+        assert_eq!(base, vec!["/C", "pi", "--mode", "rpc"]);
+
+        let resumed = build_pi_args(Some("C:\\proj\\session.jsonl"));
+        assert_eq!(resumed, vec!["/C", "pi", "--mode", "rpc", "--session", "C:\\proj\\session.jsonl"]);
+    }
+
+    #[test]
+    fn wait_response_reports_disconnect_as_process_exit() {
+        let (tx, rx) = std::sync::mpsc::channel::<Value>();
+        drop(tx); // pi died: the sender side is gone
+        let err = wait_response(rx, Duration::from_millis(50)).unwrap_err();
+        assert!(err.contains("pi exited before responding"), "got: {err}");
+    }
+
+    #[test]
+    fn wait_response_reports_real_timeouts() {
+        let (_tx, rx) = std::sync::mpsc::channel::<Value>();
+        let err = wait_response(rx, Duration::from_millis(20)).unwrap_err();
+        assert!(err.contains("timed out"), "got: {err}");
+    }
+
+    #[test]
+    fn wait_response_returns_the_correlated_value() {
+        let (tx, rx) = std::sync::mpsc::channel::<Value>();
+        tx.send(serde_json::json!({"type":"response","id":"ll-1","success":true})).unwrap();
+        let v = wait_response(rx, Duration::from_millis(50)).unwrap();
+        assert_eq!(v["success"], true);
     }
 }

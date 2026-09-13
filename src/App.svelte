@@ -6,8 +6,9 @@
   import StatusBar from "./components/StatusBar.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ExtDialog from "./components/ExtDialog.svelte";
-  import { handleEvent, projectDir, sidebarOpen, settingsOpen, statusNote, extDialog, connected } from "./lib/stores";
-  import type { PiEvent } from "./lib/types";
+  import Notifications from "./components/Notifications.svelte";
+  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
+  import type { PiEvent, PiExitEvent } from "./lib/types";
 
   let cleanup: (() => void) | null = null;
 
@@ -16,10 +17,8 @@
       const unlisten = await listen<PiEvent>("pi-event", (e) => {
         handleEvent(e.payload).catch(console.error);
       });
-      const unlistenExit = await listen("pi-exit", () => {
-        connected.set(false);
-        statusNote.set("pi process exited unexpectedly — reopen the project from the sidebar");
-        setTimeout(() => statusNote.set(""), 10000);
+      const unlistenExit = await listen<PiExitEvent>("pi-exit", (e) => {
+        handlePiExit(e.payload?.expected ?? false);
       });
       cleanup = () => { unlisten(); unlistenExit(); };
     })();
@@ -46,6 +45,12 @@
       <span class="project mono" title={$projectDir}>{$projectDir || "no project"}</span>
       <span class="spacer"></span>
     </header>
+    {#if $disconnected}
+      <div class="exit-banner">
+        <span>⚠ pi exited unexpectedly — your session can be restored.</span>
+        <button class="resume" onclick={() => void restartPi()}>Restart &amp; resume</button>
+      </div>
+    {/if}
     <Chat />
     <StatusBar />
   </main>
@@ -54,6 +59,8 @@
 {#if $settingsOpen}
   <SettingsModal />
 {/if}
+
+<Notifications />
 
 {#if $extDialog}
   <ExtDialog />
@@ -87,6 +94,27 @@
     justify-content: center;
     padding: 6px;
   }
+  .exit-banner {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: color-mix(in srgb, var(--danger) 10%, var(--bg-surface));
+    border-bottom: 1px solid var(--danger);
+    color: var(--text-2);
+    font-size: 12.5px;
+  }
+  .exit-banner .resume {
+    font-size: 12px;
+    padding: 3px 12px;
+    border: 1px solid var(--danger);
+    border-radius: 99px;
+    color: var(--danger);
+    background: transparent;
+    cursor: pointer;
+  }
+  .exit-banner .resume:hover { background: var(--danger); color: #fff; }
   .project {
     color: var(--text-3);
     font-size: 12px;

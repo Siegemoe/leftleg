@@ -1,7 +1,7 @@
 import { writable, get, type Writable } from "svelte/store";
 import type {
   AgentMessage, PiEvent, RpcState, SessionInfo, SessionStats, UiItem,
-  ToolItem, AssistantItem, Block, ModelInfo, ThinkingLevel,
+  ToolItem, AssistantItem, Block, ModelInfo, ThinkingLevel, ExtCommand, UserItem,
 } from "./types";
 import * as api from "./api";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
@@ -23,10 +23,58 @@ export const models = writable<ModelInfo[]>([]);
 export const stats = writable<SessionStats | null>(null);
 export const activeSessionPath = writable<string | null>(null);
 export const statusNote = writable<string>(""); // transient status line (compaction, retry...)
+/** True after an unexpected pi process death until the user restarts it. */
+export const disconnected = writable<boolean>(false);
 
 // Per-session visual state for the sidebar: what each thread is doing.
 export type SessionStatus = "idle" | "active" | "attention" | "error";
 export const sessionStates = writable<Record<string, { status: SessionStatus; note: string }>>({});
+
+// ---- extension surfaces (pi extension UI protocol, fire-and-forget methods) ----
+
+export interface ExtNotification {
+  id: string;
+  notifyType: "info" | "warning" | "error";
+  message: string;
+}
+export const notifications = writable<ExtNotification[]>([]);
+
+/** statusKey → statusText (extension-set entries shown in the status bar). */
+export const extStatuses = writable<Record<string, string>>({});
+
+export interface ExtWidget {
+  lines?: string[];
+  placement: "aboveEditor" | "belowEditor";
+}
+/** widgetKey → widget content (rendered above/below the composer). */
+export const extWidgets = writable<Record<string, ExtWidget>>({});
+
+/** Commands pi can execute via a leading `/` (extension commands, templates, skills). */
+export const commands = writable<ExtCommand[]>([]);
+
+/** set_editor_text requests: the composer adopts the latest nonce. */
+export const composerDraft = writable<{ text: string; nonce: number } | null>(null);
+
+let notifSeq = 0;
+const NOTIFY_TTL_MS: Record<string, number> = { info: 6000, warning: 12000, error: 0 }; // 0 = sticky
+
+export function pushNotification(notifyType: "info" | "warning" | "error" | undefined, message: string): string {
+  const type = notifyType ?? "info";
+  const id = `ntf-${++notifSeq}`;
+  notifications.update((a) => [...a.slice(-4), { id, notifyType: type, message }]);
+  const ttl = NOTIFY_TTL_MS[type] ?? 6000;
+  if (ttl > 0) setTimeout(() => dismissNotification(id), ttl);
+  return id;
+}
+
+export function dismissNotification(id: string) {
+  notifications.update((a) => a.filter((n) => n.id !== id));
+}
+
+let draftNonce = 0;
+export function requestComposerText(text: string) {
+  composerDraft.set({ text, nonce: ++draftNonce });
+}
 
 function setSessionStatus(path: string | null, status: SessionStatus, note = "") {
   if (!path) return;
@@ -148,6 +196,31 @@ function currentTextBlock(item: AssistantItem, contentIndex: number | undefined)
   return item.blocks[contentIndex] ?? null;
 }
 
+/** Close out a dangling streaming assistant item (agent done, or the process died). */
+function finalizeStreaming() {
+  if (streamingAssistant) {
+    streamingAssistant.streaming = false;
+    for (const b of streamingAssistant.blocks) if (b.type !== "toolcall") b.done = true;
+    streamingAssistant = null;
+  }
+}
+
+let itemSeq = 0;
+function newId(): string {
+  itemSeq += 1;
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? `ui-${crypto.randomUUID()}`
+    : `ui-${Date.now()}-${itemSeq}`;
+}
+
+/** Set a visible note that clears itself — unless something else replaced it first. */
+function transientNote(note: string, ms = 8000) {
+  statusNote.set(note);
+  setTimeout(() => {
+    if (get(statusNote) === note) statusNote.set("");
+  }, ms);
+}
+
 export async function handleEvent(evt: PiEvent) {
   switch (evt.type) {
     case "agent_start":
@@ -157,12 +230,11 @@ export async function handleEvent(evt: PiEvent) {
     case "agent_end":
     case "agent_settled": {
       streaming.set(false);
-      setSessionStatus(get(activeSessionPath), "idle");
-      if (streamingAssistant) {
-        streamingAssistant.streaming = false;
-        for (const b of streamingAssistant.blocks) if (b.type !== "toolcall") b.done = true;
-        streamingAssistant = null;
-      }
+      // Don't clobber an "attention" mark (e.g. an errored response that just
+      // ended) — the user still needs to see it until the next action.
+      const cur = get(sessionStates)[get(activeSessionPath) ?? ""];
+      if (cur?.status !== "attention") setSessionStatus(get(activeSessionPath), "idle");
+      finalizeStreaming();
       break;
     }
     case "message_start": {
@@ -315,8 +387,46 @@ export async function handleEvent(evt: PiEvent) {
           placeholder: evt.placeholder as string,
           prefill: (evt as { prefill?: string }).prefill as string,
         });
+        break;
       }
-      // notify / setStatus / setWidget / setTitle are fire-and-forget: ignore in v0.
+      // Fire-and-forget methods: surface what extensions already publish.
+      switch (method) {
+        case "notify":
+          pushNotification(evt.notifyType as "info" | "warning" | "error" | undefined, (evt as { message?: string }).message ?? "");
+          break;
+        case "setStatus": {
+          const key = (evt.statusKey as string) ?? "";
+          if (!key) break;
+          const text = evt.statusText;
+          extStatuses.update((s) => {
+            const next = { ...s };
+            if (text === undefined || text === null) delete next[key];
+            else next[key] = String(text);
+            return next;
+          });
+          break;
+        }
+        case "setWidget": {
+          const key = (evt.widgetKey as string) ?? "";
+          if (!key) break;
+          const lines = evt.widgetLines as string[] | undefined;
+          extWidgets.update((w) => {
+            const next = { ...w };
+            if (!lines) delete next[key];
+            else next[key] = { lines, placement: (evt.widgetPlacement as "aboveEditor" | "belowEditor" | undefined) ?? "aboveEditor" };
+            return next;
+          });
+          break;
+        }
+        case "setTitle":
+          document.title = (evt.title as string) || "Leftleg";
+          break;
+        case "set_editor_text":
+          requestComposerText((evt as { text?: string }).text ?? "");
+          break;
+        default:
+          break; // unknown fire-and-forget method — nothing to render (yet)
+      }
       break;
     }
     default:
@@ -344,7 +454,11 @@ export async function refreshStats() {
 
 export async function refreshRpcState() {
   const res = await api.piRequest<{ success: boolean; data?: RpcState }>({ type: "get_state" }, 30);
-  if (res.success && res.data) rpcState.set(res.data);
+  if (res.success && res.data) {
+    rpcState.set(res.data);
+    // pi owns session identity: the UI highlights whatever pi says is active.
+    activeSessionPath.set(res.data.sessionFile ?? null);
+  }
 }
 
 export async function refreshSessions() {
@@ -358,13 +472,32 @@ export async function refreshModels() {
   } catch { /* ignore */ }
 }
 
-export async function sendPrompt(text: string, images: { data: string; mimeType: string; name: string }[]) {
+export interface PromptResult {
+  ok: boolean;
+  error?: string;
+}
+
+function updateUserItem(id: string, patch: Partial<import("./types").UserItem>) {
+  items.update((a) => a.map((x) => (x.kind === "user" && x.id === id) ? { ...x, ...patch } : x));
+}
+
+function failUserItem(id: string, error: string) {
+  updateUserItem(id, { status: "failed", error });
+  transientNote(`Prompt not delivered: ${error}`);
+}
+
+/**
+ * Send a user prompt. The optimistic bubble is marked per delivery state:
+ * in-flight → "sending", accepted → "accepted", rejected/errored → "failed"
+ * (kept on screen with its error so the composer text and Retry stay meaningful).
+ * Never throws; callers get `{ ok, error }` and only clear their draft on ok.
+ */
+export async function sendPrompt(text: string, images: { data: string; mimeType: string; name: string }[]): Promise<PromptResult> {
   const trimmed = text.trim();
-  if (!trimmed && images.length === 0) return;
+  if (!trimmed && images.length === 0) return { ok: false, error: "Nothing to send" };
   if (!get(connected) || !get(projectDir)) {
-    statusNote.set("Pick a project folder first — the pi process isn't running.");
-    setTimeout(() => statusNote.set(""), 8000);
-    return;
+    transientNote("Pick a project folder first — the pi process isn't running.");
+    return { ok: false, error: "pi process not running" };
   }
   const isStreaming = get(streaming);
   const cmd: Record<string, unknown> = { type: "prompt", message: trimmed };
@@ -372,18 +505,48 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
     cmd.images = images.map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType }));
   }
   if (isStreaming) cmd.streamingBehavior = "steer";
-  // Optimistic user bubble
+  // Optimistic user bubble, visibly in flight until pi answers.
+  const bubbleId = newId();
   items.update((a) => [...a, {
-    kind: "user", text: trimmed,
+    kind: "user", text: trimmed, id: bubbleId, status: "sending",
     images: images.map((i) => ({ name: i.name, dataUrl: `data:${i.mimeType};base64,${i.data}` })),
   }]);
+  let result: PromptResult;
   try {
-    await api.piRequest(cmd, 600);
+    const res = await api.piRequest<{ success: boolean; error?: string }>(cmd, 600);
+    if (res.success) {
+      updateUserItem(bubbleId, { status: "accepted" });
+      // A successful send supersedes earlier failed attempts.
+      items.update((a) => a.filter((x) => !(x.kind === "user" && x.status === "failed")));
+      result = { ok: true };
+    } else {
+      const error = res.error ?? "prompt rejected by pi";
+      failUserItem(bubbleId, error);
+      result = { ok: false, error };
+    }
   } catch (e) {
-    statusNote.set(`Error: ${e}`);
-    setTimeout(() => statusNote.set(""), 8000);
+    const error = typeof e === "string" ? e : String(e);
+    failUserItem(bubbleId, error);
+    result = { ok: false, error };
   }
-  refreshRpcState();
+  // pi may die between the response and this refresh; never let it escalate
+  // into an unhandled rejection.
+  void refreshRpcState().catch(() => {});
+  return result;
+}
+
+/** Re-send a failed bubble's content, dropping the failed bubble first. */
+export async function retryFailedUser(id: string): Promise<PromptResult> {
+  const item = get(items).find((x) => x.kind === "user" && x.id === id) as import("./types").UserItem | undefined;
+  if (!item || item.status !== "failed") return { ok: false, error: "not retryable" };
+  const images = item.images
+    .filter((i) => i.dataUrl)
+    .map((i) => {
+      const m = i.dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+      return { data: m?.[2] ?? "", mimeType: m?.[1] ?? "image/png", name: i.name };
+    });
+  items.update((a) => a.filter((x) => !(x.kind === "user" && x.id === id)));
+  return sendPrompt(item.text, images);
 }
 
 export async function abort() {
@@ -406,22 +569,30 @@ export async function newSession() {
     }
     await refreshSessions();
     await refreshStats();
+    void persistLastSession(get(activeSessionPath));
   } catch (e) {
-    statusNote.set(`Error: ${e}`);
+    transientNote(`Error: ${e}`);
   }
 }
 
 export async function openSession(path: string) {
   try {
-    const res = await api.piRequest<{ success: boolean; data?: { cancelled: boolean } }>({ type: "switch_session", sessionPath: path }, 120);
-    if (res.success && !res.data?.cancelled) {
-      activeSessionPath.set(path);
-      await reloadMessages();
-      await refreshRpcState();
-      await refreshStats();
+    const res = await api.piRequest<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "switch_session", sessionPath: path }, 120);
+    if (!res.success) {
+      transientNote(`Couldn't open session: ${res.error ?? "rejected by pi"}`);
+      return;
     }
+    if (res.data?.cancelled) {
+      transientNote("Session switch was cancelled by an extension");
+      return;
+    }
+    // Re-read pi's state so the UI highlights what pi actually loaded.
+    await refreshRpcState();
+    await reloadMessages();
+    await refreshStats();
+    void persistLastSession(get(activeSessionPath));
   } catch (e) {
-    statusNote.set(`Error: ${e}`);
+    transientNote(`Error: ${e}`);
   }
 }
 
@@ -483,6 +654,72 @@ export async function respondToExtDialog(response: Record<string, unknown>) {
 
 // ---------- bootstrap ----------
 
+/** GUI state loaded during boot; reused for last-session persistence. */
+let guiStateCache: Record<string, unknown> | null = null;
+
+async function persistLastSession(path: string | null) {
+  const dir = get(projectDir);
+  if (!dir || !path || !guiStateCache) return;
+  const map = (guiStateCache.lastSessionByProject as Record<string, string> | undefined) ?? {};
+  if (map[dir] === path) return;
+  map[dir] = path;
+  guiStateCache.lastSessionByProject = map;
+  try { await api.writeGuiState(guiStateCache); } catch { /* ignore */ }
+}
+
+/** Fetch pi's executable command list (extension commands, templates, skills). */
+export async function refreshCommands() {
+  try {
+    const res = await api.piRequest<{ success: boolean; data?: { commands: ExtCommand[] } }>({ type: "get_commands" }, 30);
+    commands.set(res.success && res.data ? (res.data.commands ?? []) : []);
+  } catch {
+    commands.set([]);
+  }
+}
+
+/**
+ * The pi subprocess died. Distinguish a deliberate stop from a crash: a crash
+ * keeps the last session path and offers a one-click restart-and-resume.
+ */
+export function handlePiExit(expected: boolean) {
+  connected.set(false);
+  // Surfaces owned by the dead process: clear extension state with it.
+  extStatuses.set({});
+  extWidgets.set({});
+  finalizeStreaming();
+  streaming.set(false);
+  if (expected) {
+    transientNote("pi stopped", 4000);
+  } else {
+    disconnected.set(true);
+    transientNote("pi exited unexpectedly", 10000);
+  }
+}
+
+/** Restart pi and resume the session that was active before the exit. */
+export async function restartPi() {
+  const dir = get(projectDir);
+  if (!dir) {
+    transientNote("No project folder to restart pi in.");
+    return;
+  }
+  const resumePath = get(activeSessionPath);
+  disconnected.set(false);
+  try {
+    await api.piStart(dir, resumePath);
+    connected.set(true);
+    transientNote("pi restarted — session resumed", 5000);
+    await refreshRpcState();
+    if (get(activeSessionPath)) await reloadMessages();
+    await refreshStats();
+    await refreshSessions();
+    await refreshCommands();
+  } catch (e) {
+    disconnected.set(true);
+    transientNote(`Couldn't restart pi: ${e}`);
+  }
+}
+
 /** Pick a project folder, persist it, restart pi by reloading the app. */
 export async function chooseProject() {
   const picked = await openFileDialog({
@@ -504,6 +741,7 @@ export async function boot() {
   // 1. Load GUI state
   let gui: Record<string, unknown> = {};
   try { gui = await api.readGuiState(); } catch { /* first run */ }
+  guiStateCache = gui;
   const t = (gui.theme as "light" | "dark" | "system") ?? "system";
   applyTheme(t);
   const dir = (gui.projectDir as string) ?? "";
@@ -528,20 +766,40 @@ export async function boot() {
   await refreshSessions();
   if (!dir) return;
 
-  // 2. Start pi
+  // 2. Start pi — resuming the session the sidebar will highlight, so the
+  // subprocess boots INTO that session instead of a fresh one.
   try {
-    await api.piStart(dir);
+    const projSessions = get(sessions).filter((s) => s.cwd === dir);
+    const lastMap = (gui.lastSessionByProject as Record<string, string> | undefined) ?? {};
+    const remembered = lastMap[dir];
+    const resumePath = projSessions.some((s) => s.path === remembered)
+      ? remembered
+      : projSessions[0]?.path;
+    let resumed = false;
+    try {
+      await api.piStart(dir, resumePath);
+      resumed = true;
+    } catch (e) {
+      // e.g. the remembered session file was deleted — fall back visibly.
+      transientNote(`Couldn't resume session (${e}) — starting fresh.`);
+      await api.piStart(dir);
+    }
     connected.set(true);
     await refreshRpcState();
-    await refreshModels();
-    // 3. Resume most recent session for this project if there is one
-    const list = get(sessions).filter((s) => s.cwd === dir);
-    if (list.length > 0) {
-      activeSessionPath.set(list[0].path);
-      await reloadMessages();
+    // Trust pi: if it didn't boot into the requested session, try once to
+    // switch it there; whatever pi reports afterwards is shown as active.
+    if (resumed && resumePath && get(activeSessionPath) !== resumePath) {
+      try {
+        const r = await api.piRequest<{ success: boolean }>({ type: "switch_session", sessionPath: resumePath }, 120);
+        if (r.success) await refreshRpcState();
+      } catch { /* pi's own state wins */ }
     }
+    await refreshModels();
+    await refreshCommands();
+    if (get(activeSessionPath)) await reloadMessages();
     await refreshStats();
+    void persistLastSession(get(activeSessionPath));
   } catch (e) {
-    statusNote.set(`Failed to start pi: ${e}`);
+    transientNote(`Failed to start pi: ${e}`);
   }
 }

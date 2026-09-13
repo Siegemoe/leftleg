@@ -10,8 +10,8 @@ export function piSend(line: Record<string, unknown>): Promise<void> {
   return invoke("pi_send", { line });
 }
 
-export function piStart(cwd: string): Promise<void> {
-  return invoke("pi_start", { cwd });
+export function piStart(cwd: string, sessionPath?: string | null): Promise<void> {
+  return invoke("pi_start", { cwd, sessionPath: sessionPath ?? null });
 }
 
 export function piStop(): Promise<void> {

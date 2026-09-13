@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { rpcState, stats, streaming, queue, statusNote } from "../lib/stores";
+  import { rpcState, stats, streaming, queue, statusNote, extStatuses } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
   import type { ThinkingLevel } from "../lib/types";
 
@@ -66,6 +66,10 @@
     </span>
   {/if}
 
+  {#each Object.entries($extStatuses) as [key, text] (key)}
+    <span class="pill ext-status" title="Extension status: {key}">{text}</span>
+  {/each}
+
   {#if $queue.steering.length + $queue.followUp.length > 0}
     <span class="pill queued">
       queued: {$queue.steering.length + $queue.followUp.length}
@@ -122,6 +126,7 @@
   }
   .fill { height: 100%; display: block; border-radius: 3px; }
   .queued { color: var(--accent); border-color: var(--accent); }
+  .ext-status { color: var(--text-2); border-color: var(--border-strong); }
   .warn { color: orange; border-color: orange; }
   .note { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .version { color: var(--text-3); letter-spacing: 0.3px; user-select: none; }
