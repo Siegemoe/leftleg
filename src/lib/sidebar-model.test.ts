@@ -19,7 +19,7 @@ function info(over: Partial<SessionInfo>): SessionInfo {
   };
 }
 
-function session(over: Partial<Parameters<typeof resolveThreadPill>[0]> & { path?: string; title?: string; pinned?: boolean; projectDir?: string }) {
+function session(over: Partial<Parameters<typeof resolveThreadPill>[0]> & { path?: string; title?: string; pinned?: boolean; settled?: boolean; projectDir?: string }) {
   return {
     path: over.path ?? "/p/s.jsonl",
     title: over.title ?? "a session",
@@ -27,6 +27,7 @@ function session(over: Partial<Parameters<typeof resolveThreadPill>[0]> & { path
     timestampMs: over.timestampMs ?? 1000,
     status: over.status ?? ("idle" as const),
     pinned: over.pinned ?? false,
+    settled: over.settled ?? false,
     seen: over.seen ?? true,
   };
 }
@@ -100,16 +101,17 @@ describe("groupSessionsByProject", () => {
 });
 
 describe("splitSections", () => {
-  it("pinned keeps manual order; active is live; settled is history by end time", () => {
-    const s1 = session({ path: "/1", timestampMs: 100 });
-    const s2 = session({ path: "/2", timestampMs: 300, status: "active" });
-    const s3 = session({ path: "/3", timestampMs: 200 });
-    const s4 = session({ path: "/4", timestampMs: 400, pinned: true });
-    const sections = splitSections({ sessions: [s1, s2, s3, s4], pinOrder: ["/4", "/2"] });
-    // only pinned ones in pin order (s2 is in pinOrder but not pinned — ignored)
-    expect(sections.pinned.map((s) => s.path)).toEqual(["/4"]);
-    expect(sections.active.map((s) => s.path)).toEqual(["/2"]);
-    expect(sections.settled.map((s) => s.path)).toEqual(["/3", "/1"]);
+  it("settling is explicit: new/idle sessions stay in Active, archived ones in Settled", () => {
+    const s1 = session({ path: "/1", timestampMs: 100 });                          // idle, never settled
+    const s2 = session({ path: "/2", timestampMs: 300, status: "active" });        // live
+    const s3 = session({ path: "/3", timestampMs: 200, settled: true });           // explicitly archived
+    const s4 = session({ path: "/4", timestampMs: 400, pinned: true });            // pinned
+    const s5 = session({ path: "/5", timestampMs: 500, pinned: true, settled: true }); // pinned wins over archived
+    const sections = splitSections({ sessions: [s1, s2, s3, s4, s5], pinOrder: ["/4", "/2"] });
+    expect(sections.pinned.map((s) => s.path)).toEqual(["/4", "/5"]);
+    // Active is the working set, newest first — including idle sessions.
+    expect(sections.active.map((s) => s.path)).toEqual(["/2", "/1"]);
+    expect(sections.settled.map((s) => s.path)).toEqual(["/3"]);
   });
 });
 
@@ -119,9 +121,11 @@ describe("toSidebarSessions + formatRelativeTime", () => {
       infos: [info({ name: "named", firstMessage: "fallback" }), info({ path: "/2", firstMessage: "fallback" }), info({ path: "/3" })],
       statusOf: () => "idle",
       pinnedSet: new Set(),
+      settledSet: new Set(["/3"]),
       seenOf: () => true,
     });
     expect(out.map((s) => s.title)).toEqual(["named", "fallback", "Empty session"]);
+    expect(out[2].settled).toBe(true);
   });
 
   it("relative stamps stay compact", () => {

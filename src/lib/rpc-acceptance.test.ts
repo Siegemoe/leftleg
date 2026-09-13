@@ -38,10 +38,11 @@ vi.mock("./api", () => {
 import {
   abort, activeSessionPath, boot, cloneSession, commands, composerDraft, connected,
   dismissFailedUser, dismissNotification, disconnected, exportSessionHtml, extDialog,
-  extStatuses, extWidgets, handleEvent, handlePiExit, items, lastProcByProject, notifications,
-  openSession, pins, projectDir, projectMeta, projectScope, queue, restartPi, retryFailedUser,
-  rpcState, sendPrompt, sessionQuery, sessionStates, settledView, sidebarWidth, statusNote,
-  streaming, activeSessionByProject, visitedAt, togglePin,
+  extStatuses, extWidgets, handleEvent, handlePiExit, items, lastProcByProject, newSession,
+  notifications, openSession, pins, projectDir, projectMeta, projectScope, queue, restartPi,
+  retryFailedUser, rpcState, sendPrompt, sessionQuery, sessionStates, settled, settledView,
+  settleSession, sessions, sidebarWidth, statusNote, streaming, activeSessionByProject,
+  unsettleSession, visitedAt, togglePin,
 } from "./stores";
 import type { FakePi } from "./test/fake-pi";
 import { FakePiHub, OTHER_PROJECT, type FakePiHubOptions } from "./test/fake-pi-hub";
@@ -164,6 +165,7 @@ function resetStores() {
   sessionQuery.set("");
   projectScope.set(null);
   settledView.set("per-project");
+  settled.set([]);
 }
 
 let hub: FakePiHub;
@@ -702,5 +704,26 @@ describe("journey: multi-project orchestration", () => {
     expect(hub.gui.pins).toContain(SESSION_A);
     togglePin(SESSION_A);
     expect(hub.gui.pins).not.toContain(SESSION_A);
+  });
+
+  it("new sessions populate the list without being auto-settled; settle/unsettle persists", async () => {
+    await newSession();
+    await drain();
+    const fresh = get(activeSessionPath)!;
+
+    // The fresh session shows up in the session list…
+    expect(get(sessions).some((s) => s.path === fresh)).toBe(true);
+    // …and is NOT archived on creation — settling is explicit.
+    expect(get(settled)).not.toContain(fresh);
+
+    settleSession(fresh);
+    await drain();
+    expect(get(settled)).toContain(fresh);
+    expect(hub.gui.settled).toContain(fresh);
+
+    unsettleSession(fresh);
+    await drain();
+    expect(get(settled)).not.toContain(fresh);
+    expect(hub.gui.settled).not.toContain(fresh);
   });
 });

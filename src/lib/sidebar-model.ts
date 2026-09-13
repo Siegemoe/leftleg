@@ -29,6 +29,8 @@ export interface SidebarSession {
   timestampMs: number;
   status: "idle" | "active" | "attention" | "error";
   pinned: boolean;
+  /** Explicitly archived by the user (GUI state) — not inferred from idleness. */
+  settled: boolean;
   /** A session is unseen when it changed after it was last opened. */
   seen: boolean;
 }
@@ -140,9 +142,11 @@ export interface SidebarSections {
 }
 
 /**
- * Split one project's sessions into T3-style sections. Pinned keeps manual
- * order; Active is live work (newest first); Settled is history ordered by
- * when the work ended (T3's sortSettledThreadsForSidebar semantics).
+ * Split one project's sessions into sections. Pinned keeps manual order.
+ * Active is the working set: everything not explicitly settled (new and idle
+ * sessions included, newest first) — settling is a user decision, never an
+ * inference from idleness. Settled is the archive, ordered by end time
+ * (T3's sortSettledThreadsForSidebar semantics).
  */
 export function splitSections(input: {
   sessions: readonly SidebarSession[];
@@ -155,10 +159,12 @@ export function splitSections(input: {
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
   const pinnedInOrder = input.sessions.filter((s) => s.pinned).sort((a, b) => pinnedIndex(a) - pinnedIndex(b));
-  const rest = input.sessions.filter((s) => !s.pinned);
-  const isActive = (s: SidebarSession) => s.status !== "idle";
-  const active = rest.filter(isActive).sort((a, b) => b.timestampMs - a.timestampMs);
-  const settled = rest.filter((s) => !isActive(s)).sort((a, b) => b.timestampMs - a.timestampMs);
+  const settled = input.sessions
+    .filter((s) => s.settled && !s.pinned)
+    .sort((a, b) => b.timestampMs - a.timestampMs);
+  const active = input.sessions
+    .filter((s) => !s.pinned && !s.settled)
+    .sort((a, b) => b.timestampMs - a.timestampMs);
   return { pinned: pinnedInOrder, active, settled };
 }
 
@@ -184,6 +190,7 @@ export function toSidebarSessions(input: {
   infos: readonly SessionInfo[];
   statusOf: (path: string) => SidebarSession["status"];
   pinnedSet: ReadonlySet<string>;
+  settledSet: ReadonlySet<string>;
   seenOf: (path: string, timestampMs: number) => boolean;
 }): SidebarSession[] {
   return input.infos.map((info) => ({
@@ -193,6 +200,7 @@ export function toSidebarSessions(input: {
     timestampMs: info.fileModified,
     status: input.statusOf(info.path),
     pinned: input.pinnedSet.has(info.path),
+    settled: input.settledSet.has(info.path),
     seen: input.seenOf(info.path, info.fileModified),
   }));
 }

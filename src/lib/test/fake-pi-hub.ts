@@ -116,7 +116,29 @@ export class FakePiHub {
     return Promise.resolve(key ? this.isRunning(key) : false);
   };
 
-  listSessions = (): Promise<SessionInfo[]> => Promise.resolve(this.sessions.map((s) => ({ ...s })));
+  listSessions = (): Promise<SessionInfo[]> => {
+    // Mirror sessions.rs: report every session the processes know about,
+    // including freshly created ones (a new session must populate the list).
+    const known = new Set(this.sessions.map((s) => s.path));
+    const extras: SessionInfo[] = [];
+    for (const [project, entry] of this.fakes) {
+      for (const path of entry.fake.messages.keys()) {
+        if (!known.has(path)) {
+          known.add(path);
+          extras.push({
+            path,
+            cwd: project,
+            timestamp: new Date().toISOString(),
+            fileModified: Date.now(),
+            sessionId: path.split(/[\\/]/).pop() ?? path,
+            name: null,
+            firstMessage: null,
+          });
+        }
+      }
+    }
+    return Promise.resolve([...this.sessions, ...extras]);
+  };
   readGuiState = (): Promise<Record<string, unknown>> => Promise.resolve(JSON.parse(JSON.stringify(this.gui)));
   writeGuiState = async (state: Record<string, unknown>): Promise<void> => {
     this.gui = JSON.parse(JSON.stringify(state));

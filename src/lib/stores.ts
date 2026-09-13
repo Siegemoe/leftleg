@@ -62,6 +62,8 @@ export interface ProjectMeta {
 export const projectMeta = writable<Record<string, ProjectMeta>>({});
 /** Pinned session paths in manual display order. */
 export const pins = writable<string[]>([]);
+/** Explicitly settled (archived) session paths — GUI-owned; pi has no such concept. */
+export const settled = writable<string[]>([]);
 /** Last-opened timestamp per session — powers the unseen-completion pill. */
 export const visitedAt = writable<Record<string, number>>({});
 export const sidebarWidth = writable<number>(256);
@@ -77,6 +79,19 @@ export const autoRetry = writable<boolean>(true);
 export function togglePin(path: string) {
   const isPinned = get(pins).includes(path);
   pins.update((p) => (isPinned ? p.filter((x) => x !== path) : [...p, path]));
+  // Pin/settle are disjoint filing states: pinning pulls a session out of the archive.
+  if (!isPinned) settled.update((s) => s.filter((x) => x !== path));
+}
+
+/** File a session into the settled (archived) shelf. Unpins it first. */
+export function settleSession(path: string) {
+  pins.update((p) => p.filter((x) => x !== path));
+  settled.update((s) => (s.includes(path) ? s : [...s, path]));
+}
+
+/** Return a session from the archive to the active working set. */
+export function unsettleSession(path: string) {
+  settled.update((s) => s.filter((x) => x !== path));
 }
 
 export function reorderPin(path: string, toIndex: number) {
@@ -1028,6 +1043,7 @@ export async function boot() {
   sidebarOpen.set((gui.sidebarOpen as boolean) ?? true);
   // Sidebar state: sections, pins, project preferences, seen/unseen tracking.
   pins.set((gui.pins as string[]) ?? []);
+  settled.set((gui.settled as string[]) ?? []);
   projectMeta.set((gui.projectMeta as Record<string, ProjectMeta>) ?? {});
   visitedAt.set((gui.visitedAt as Record<string, number>) ?? {});
   sidebarWidth.set((gui.sidebarWidth as number) ?? 256);
@@ -1045,6 +1061,10 @@ export async function boot() {
   });
   pins.subscribe(async (v) => {
     gui.pins = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  settled.subscribe(async (v) => {
+    gui.settled = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
   projectMeta.subscribe(async (v) => {

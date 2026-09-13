@@ -5,9 +5,9 @@
   // with pinned reorder, row context menu, resizable width.
   import {
     activeSessionPath, applyTheme, chooseProject, connected, newSession, openSession, pins,
-    projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, sessionQuery,
-    sessionStates, sessions, settledView, settingsOpen, settingsProject, sidebarWidth, theme,
-    togglePin, visitedAt,
+    projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
+    sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
+    settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
   } from "../lib/stores";
   import {
     filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, projectDisplayName,
@@ -31,6 +31,7 @@
   let dropSection = $state<SidebarSection | null>(null);
   let settledExpanded = $state<Record<string, boolean>>({});
   let showAllSettled = $state<Record<string, boolean>>({});
+  let showAllActive = $state<Record<string, boolean>>({});
   let scopeOpen = $state(false);
   let scopeQuery = $state("");
   let listEl: HTMLDivElement | null = $state(null);
@@ -40,6 +41,7 @@
       infos: $sessions,
       statusOf: (p) => $sessionStates[p]?.status ?? "idle",
       pinnedSet: new Set($pins),
+      settledSet: new Set($settled),
       seenOf: (p, ts) => ($visitedAt[p] ?? 0) >= ts,
     }),
   );
@@ -106,13 +108,13 @@
   }
 
   function openMenu(e: MouseEvent, s: SidebarSession) {
-    const pinned = s.pinned;
     menu = {
       x: e.clientX,
       y: e.clientY,
       items: [
         { label: "Open", action: () => void openSession(s.path) },
-        { label: pinned ? "Unpin" : "Pin", action: () => togglePin(s.path) },
+        { label: s.pinned ? "Unpin" : "Pin", action: () => togglePin(s.path) },
+        { label: s.settled ? "Unsettle" : "Settle", action: () => (s.settled ? unsettleSession(s.path) : settleSession(s.path)) },
         { label: "Rename…", action: () => beginRename(s) },
         { label: "Copy path", action: () => void navigator.clipboard.writeText(s.path) },
         { label: "Copy session ID", action: () => void navigator.clipboard.writeText(s.path.split(/[\\/]/).pop() ?? s.path) },
@@ -160,8 +162,16 @@
     if (!dragPath) return resetDrag();
     const dragging = sidebarSessions.find((s) => s.path === dragPath);
     if (dragging) {
-      if (section === "pinned" && !dragging.pinned) togglePin(dragPath);
-      if (section !== "pinned" && dragging.pinned) togglePin(dragPath);
+      if (section === "pinned") {
+        if (!dragging.pinned) togglePin(dragPath);
+      } else if (section === "settled") {
+        // Dropping onto Settled archives the session (and unpins it).
+        settleSession(dragPath);
+      } else {
+        // Dropping onto Active pulls it out of the archive and unpins it.
+        unsettleSession(dragPath);
+        if (dragging.pinned) togglePin(dragPath);
+      }
     }
     resetDrag();
   }
@@ -383,7 +393,8 @@
         {#if sec.active.length > 0}
           <div class="section-label">Active</div>
         {/if}
-        {#each sec.active as s (s.path)}
+        {@const activeVisible = showAllActive[g.dir] ? sec.active : sec.active.slice(0, SETTLED_PREVIEW_COUNT)}
+        {#each activeVisible as s (s.path)}
           <SessionRow
             session={s}
             pill={pillOf(s)}
@@ -405,6 +416,11 @@
             ondroprow={() => dropOnRow(s)}
           />
         {/each}
+        {#if sec.active.length > activeVisible.length}
+          <button class="ghost show-all" onclick={() => (showAllActive = { ...showAllActive, [g.dir]: true })}>
+            Show all {sec.active.length}
+          </button>
+        {/if}
         {#if $settledView === "per-project" && (sec.settled.length > 0 || dragPath !== null)}
           {@const expanded = settledExpanded[g.dir] ?? true}
           {@const visible = showAllSettled[g.dir] ? sec.settled : sec.settled.slice(0, SETTLED_PREVIEW_COUNT)}
