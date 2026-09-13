@@ -38,21 +38,24 @@ vi.mock("./api", () => {
 import {
   abort, activeSessionPath, boot, commands, composerDraft, connected, dismissFailedUser,
   dismissNotification, disconnected, extDialog, extStatuses, extWidgets, handleEvent,
-  handlePiExit, items, notifications, openSession, projectDir, queue, restartPi,
-  retryFailedUser, rpcState, sendPrompt, sessionStates, statusNote, streaming,
+  handlePiExit, items, lastProcByProject, notifications, openSession, pins, projectDir,
+  projectMeta, projectScope, queue, restartPi, retryFailedUser, rpcState, sendPrompt,
+  sessionQuery, sessionStates, sidebarWidth, statusNote, streaming, activeSessionByProject,
+  visitedAt, togglePin,
 } from "./stores";
-import { FakePi, type FakePiOptions } from "./test/fake-pi";
+import type { FakePi } from "./test/fake-pi";
+import { FakePiHub, OTHER_PROJECT, type FakePiHubOptions } from "./test/fake-pi-hub";
 import {
   FIXTURE_COMMANDS, FIXTURE_SESSIONS, PROJECT_DIR, RECORDED_ERROR_RUN, RECORDED_EXTENSION_EVENTS,
-  RECORDED_RUN, SESSION_A, SESSION_A_MESSAGES, SESSION_B, SESSION_B_MESSAGES,
+  RECORDED_RUN, SESSION_A, SESSION_A_MESSAGES, SESSION_B, SESSION_B_MESSAGES, SESSION_OTHER,
 } from "./test/fixtures";
 
 type ApiShape = {
-  piRequest: (command: Record<string, unknown>, timeoutSecs?: number) => Promise<unknown>;
-  piSend: (line: Record<string, unknown>) => Promise<void>;
-  piStart: (cwd: string, sessionPath?: string | null) => Promise<void>;
-  piStop: () => Promise<void>;
-  piStatus: () => Promise<boolean>;
+  piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null) => Promise<unknown>;
+  piSend: (line: Record<string, unknown>, project?: string | null) => Promise<void>;
+  piStart: (project: string, sessionPath?: string | null, forceRestart?: boolean) => Promise<number>;
+  piStop: (project?: string | null) => Promise<void>;
+  piStatus: (project?: string | null) => Promise<boolean>;
   listSessions: () => Promise<SessionInfo[]>;
   readGuiState: () => Promise<Record<string, unknown>>;
   writeGuiState: (state: Record<string, unknown>) => Promise<void>;
@@ -60,31 +63,46 @@ type ApiShape = {
   getAgentDir: () => Promise<string>;
 };
 
-function makeFake(opts: FakePiOptions = {}): FakePi {
-  return new FakePi({
-    sessions: FIXTURE_SESSIONS,
+function makeHub(opts: FakePiHubOptions = {}): FakePiHub {
+  return new FakePiHub({
     guiState: { projectDir: PROJECT_DIR },
-    messagesBySession: { [SESSION_A]: SESSION_A_MESSAGES, [SESSION_B]: SESSION_B_MESSAGES },
+    commands: FIXTURE_COMMANDS,
     ...opts,
   });
 }
 
-/** Wire the fake into the api module + App.svelte's event plumbing. */
-function wire(p: FakePi) {
+/** Thin view over the hub's ACTIVE process so the single-project journeys
+ * keep driving "the" process while the hub manages multi-project state. */
+function activeFake(h: FakePiHub): FakePi {
+  return new Proxy({} as FakePi, {
+    get: (_, prop) => Reflect.get(h.active as object, prop),
+    set: (_, prop, value) => {
+      Reflect.set(h.active as object, prop, value);
+      return true;
+    },
+  });
+}
+
+/** Wire the hub into the api module + App.svelte's event plumbing. */
+function wire(h: FakePiHub) {
   (globalThis as unknown as Record<string, unknown>).__leftlegApiTransport = {
-    piRequest: (command: Record<string, unknown>, timeoutSecs?: number) => p.piRequest(command, timeoutSecs),
-    piSend: (line: Record<string, unknown>) => p.piSend(line),
-    piStart: (cwd: string, sessionPath?: string | null) => p.piStart(cwd, sessionPath),
-    piStop: () => p.piStop(),
-    piStatus: () => p.piStatus(),
-    listSessions: () => p.listSessions(),
-    readGuiState: () => p.readGuiState(),
-    writeGuiState: (state: Record<string, unknown>) => p.writeGuiState(state),
-    readFileBase64: (path: string) => p.readFileBase64(path),
-    getAgentDir: () => p.getAgentDir(),
+    piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null) =>
+      h.piRequest(command, timeoutSecs, project),
+    piSend: (line: Record<string, unknown>, project?: string | null) => h.piSend(line, project),
+    piStart: (project: string, sessionPath?: string | null, forceRestart?: boolean) =>
+      h.piStart(project, sessionPath, forceRestart),
+    piStop: (project?: string | null) => h.piStop(project),
+    piStatus: (project?: string | null) => h.piStatus(project),
+    listSessions: () => h.listSessions(),
+    readGuiState: () => h.readGuiState(),
+    writeGuiState: (state: Record<string, unknown>) => h.writeGuiState(state),
+    readFileBase64: (path: string) => h.readFileBase64(path),
+    getAgentDir: () => h.getAgentDir(),
   } satisfies ApiShape;
-  p.onEvent = (evt) => { void handleEvent(evt); };
-  p.onExit = (payload) => handlePiExit(payload.expected);
+  h.onEvent = (project, pid, evt) => {
+    void handleEvent(evt, { project, proc: pid });
+  };
+  h.onExit = (project, pid, expected) => handlePiExit(project, pid, expected);
 }
 
 function unplug() {
@@ -131,14 +149,25 @@ function resetStores() {
   extWidgets.set({});
   commands.set([]);
   composerDraft.set(null);
+  activeSessionByProject.set({});
+  lastProcByProject.set({});
+  pins.set([]);
+  projectMeta.set({});
+  visitedAt.set({});
+  sidebarWidth.set(256);
+  sessionQuery.set("");
+  projectScope.set(null);
 }
 
+let hub: FakePiHub;
+/** Proxy over the hub's ACTIVE process — single-project journeys keep driving "the" process. */
 let fake: FakePi;
 
 beforeEach(() => {
   resetStores();
-  fake = makeFake();
-  wire(fake);
+  hub = makeHub();
+  wire(hub);
+  fake = activeFake(hub);
 });
 
 afterEach(() => {
@@ -151,7 +180,7 @@ describe("journey: startup and session identity", () => {
     await drain();
 
     expect(get(connected)).toBe(true);
-    expect(fake.started).toBe(1);
+    expect(hub.spawnCount(PROJECT_DIR)).toBe(1);
     // The subprocess was started with --session so prompts land in the
     // highlighted session, and the UI reflects pi's own answer.
     expect(fake.sessionFile).toBe(SESSION_A);
@@ -163,31 +192,30 @@ describe("journey: startup and session identity", () => {
     expect(tool.status).toBe("done");
     expect(tool.output).toContain("main.ts");
     // Last active session is remembered for the next launch.
-    const map = fake.gui.lastSessionByProject as Record<string, string>;
+    const map = hub.gui.lastSessionByProject as Record<string, string>;
     expect(map[PROJECT_DIR]).toBe(SESSION_A);
   });
 
   it("boots a fresh session when the project has none yet", async () => {
-    fake = makeFake({
-      sessions: FIXTURE_SESSIONS.filter((s) => s.cwd !== PROJECT_DIR),
-      guiState: { projectDir: PROJECT_DIR },
-    });
-    wire(fake);
+    hub = makeHub({ sessions: FIXTURE_SESSIONS.filter((s) => s.cwd !== PROJECT_DIR) });
+    wire(hub);
+    fake = activeFake(hub);
 
     await boot();
     await drain();
 
-    expect(fake.started).toBe(1);
+    expect(hub.spawnCount(PROJECT_DIR)).toBe(1);
     expect(fake.sessionFile).toBe(`${PROJECT_DIR}/sessions/fresh-1.jsonl`);
     expect(get(activeSessionPath)).toBe(`${PROJECT_DIR}/sessions/fresh-1.jsonl`);
     expect(get(items)).toEqual([]);
   });
 
   it("falls back to the most recent project session when the remembered one is gone", async () => {
-    fake = makeFake({
+    hub = makeHub({
       guiState: { projectDir: PROJECT_DIR, lastSessionByProject: { [PROJECT_DIR]: "/gone/deleted.jsonl" } },
     });
-    wire(fake);
+    wire(hub);
+    fake = activeFake(hub);
 
     await boot();
     await drain();
@@ -197,19 +225,19 @@ describe("journey: startup and session identity", () => {
   });
 
   it("falls back to a fresh start when pi cannot be started with a session, visibly", async () => {
-    const original = fake.piStart;
+    const original = hub.piStart;
     let calls = 0;
-    fake.piStart = async (cwd: string, sessionPath?: string | null) => {
+    hub.piStart = async (project: string, sessionPath?: string | null, forceRestart?: boolean) => {
       calls += 1;
       if (calls === 1) throw new Error("spawn failed");
-      return original(cwd, sessionPath);
+      return original(project, sessionPath, forceRestart);
     };
 
     await boot();
     await drain();
 
     expect(get(statusNote)).toContain("starting fresh");
-    expect(fake.started).toBe(1);
+    expect(hub.spawnCount(PROJECT_DIR)).toBe(1);
     expect(get(connected)).toBe(true);
     expect(get(activeSessionPath)).toBe(`${PROJECT_DIR}/sessions/fresh-1.jsonl`);
   });
@@ -228,7 +256,7 @@ describe("journey: session selection", () => {
     expect(fake.sessionFile).toBe(SESSION_B);
     expect(get(activeSessionPath)).toBe(SESSION_B);
     expect(get(items).map((i) => i.kind)).toEqual(["user", "assistant"]);
-    const map = fake.gui.lastSessionByProject as Record<string, string>;
+    const map = hub.gui.lastSessionByProject as Record<string, string>;
     expect(map[PROJECT_DIR]).toBe(SESSION_B);
   });
 
@@ -423,7 +451,7 @@ describe("journey: process exit and recovery", () => {
 
     expect(get(connected)).toBe(true);
     expect(get(disconnected)).toBe(false);
-    expect(fake.started).toBe(2);
+    expect(hub.spawnCount(PROJECT_DIR)).toBe(2);
     expect(fake.sessionFile).toBe(SESSION_A);
     expect(get(activeSessionPath)).toBe(SESSION_A);
     // The transcript now reflects pi's own history: the interrupted prompt
@@ -448,7 +476,7 @@ describe("journey: process exit and recovery", () => {
   });
 
   it("deliberate stop is quiet: no crash banner", async () => {
-    await fake.piStop();
+    await hub.piStop();
     await drain();
 
     expect(get(connected)).toBe(false);
@@ -470,7 +498,7 @@ describe("journey: process exit and recovery", () => {
 
     expect(get(connected)).toBe(true);
     expect(get(disconnected)).toBe(false);
-    expect(fake.started).toBe(2);
+    expect(hub.spawnCount(PROJECT_DIR)).toBe(2);
     // No phantom resume: pi is in a fresh session and the note says so.
     expect(fake.sessionFile).toBe(`${PROJECT_DIR}/sessions/fresh-1.jsonl`);
     expect(get(activeSessionPath)).toBe(`${PROJECT_DIR}/sessions/fresh-1.jsonl`);
@@ -565,5 +593,78 @@ describe("recorded protocol replay (compatibility drift guard)", () => {
     expect(assistant.stopReason).toBe("error");
     expect(assistant.errorMessage).toBe("provider quota exceeded");
     expect(get(sessionStates)[SESSION_A]).toEqual({ status: "attention", note: "error in response" });
+  });
+});
+
+describe("journey: multi-project orchestration", () => {
+  beforeEach(async () => {
+    await boot();
+    await drain();
+  });
+
+  it("opening another project's session spawns its process, switches focus, and leaves the first running", async () => {
+    fake.holdNextRun = true;
+    await sendPrompt("work on demo", []);
+    await drain();
+    expect(get(streaming)).toBe(true);
+
+    await openSession(SESSION_OTHER);
+    await drain();
+
+    expect(get(projectDir)).toBe(OTHER_PROJECT);
+    expect(get(activeSessionPath)).toBe(SESSION_OTHER);
+    expect(hub.active.sessionFile).toBe(SESSION_OTHER);
+    expect(hub.isRunning(PROJECT_DIR)).toBe(true);
+    expect(hub.spawnCount(OTHER_PROJECT)).toBe(1);
+    // The chat surface was reset for the incoming project.
+    expect(get(items)).toEqual([]);
+    expect(get(streaming)).toBe(false);
+
+    // The background project finishes its run: sidebar status updates, chat untouched.
+    const demo = hub.forProject(PROJECT_DIR)!;
+    demo.finishHeldRun();
+    await drain();
+    expect(get(sessionStates)[SESSION_A]).toEqual({ status: "idle", note: "" });
+    expect(get(items)).toEqual([]);
+
+    // Going back reuses the running process (no new spawn) and restores history
+    // including the work the background process recorded.
+    const spawnsBefore = hub.spawnCount(PROJECT_DIR);
+    await openSession(SESSION_A);
+    await drain();
+    expect(get(projectDir)).toBe(PROJECT_DIR);
+    expect(hub.spawnCount(PROJECT_DIR)).toBe(spawnsBefore);
+    expect(get(items).map((i) => i.kind)).toEqual(["user", "assistant", "tool", "assistant", "user", "assistant"]);
+  });
+
+  it("a background project's crash marks its session without touching the active chat", async () => {
+    // Move focus to the other project so the demo project runs in the background.
+    await openSession(SESSION_OTHER);
+    await drain();
+    const demo = hub.forProject(PROJECT_DIR)!;
+    demo.exit(false);
+    await drain();
+
+    expect(get(connected)).toBe(true);
+    expect(get(disconnected)).toBe(false);
+    expect(hub.isRunning(PROJECT_DIR)).toBe(false);
+    expect(get(sessionStates)[SESSION_A]).toEqual({ status: "attention", note: "process exited" });
+  });
+
+  it("stale envelopes from a replaced process are dropped", async () => {
+    const current = get(lastProcByProject)[PROJECT_DIR];
+
+    await handleEvent({ type: "agent_start" }, { project: PROJECT_DIR, proc: current - 1 });
+    expect(get(streaming)).toBe(false); // stale — dropped
+
+    await handleEvent({ type: "agent_start" }, { project: PROJECT_DIR, proc: current });
+    expect(get(streaming)).toBe(true); // live — applied
+  });
+
+  it("pinning a session persists into GUI state", async () => {
+    togglePin(SESSION_A);
+    expect(hub.gui.pins).toContain(SESSION_A);
+    togglePin(SESSION_A);
+    expect(hub.gui.pins).not.toContain(SESSION_A);
   });
 });

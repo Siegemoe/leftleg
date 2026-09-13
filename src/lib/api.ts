@@ -1,25 +1,41 @@
 import { invoke } from "@tauri-apps/api/core";
 
 // All RPC commands go through the Rust bridge, which correlates ids.
+// Commands without an explicit `project` target the ACTIVE project's process;
+// background projects are addressed by passing their dir.
 
-export function piRequest<T = unknown>(command: Record<string, unknown>, timeoutSecs = 120): Promise<T> {
-  return invoke("pi_request", { command, timeoutSecs });
+export function piRequest<T = unknown>(
+  command: Record<string, unknown>,
+  timeoutSecs = 120,
+  project?: string | null,
+): Promise<T> {
+  return invoke("pi_request", { command, timeoutSecs, project: project ?? null });
 }
 
-export function piSend(line: Record<string, unknown>): Promise<void> {
-  return invoke("pi_send", { line });
+export function piSend(line: Record<string, unknown>, project?: string | null): Promise<void> {
+  return invoke("pi_send", { line, project: project ?? null });
 }
 
-export function piStart(cwd: string, sessionPath?: string | null): Promise<void> {
-  return invoke("pi_start", { cwd, sessionPath: sessionPath ?? null });
+/** Start (or refocus) a project's process. Returns the process id, which the
+ * UI records so stale envelopes from a replaced process can be dropped. */
+export function piStart(
+  project: string,
+  sessionPath?: string | null,
+  forceRestart?: boolean,
+): Promise<number> {
+  return invoke("pi_start", {
+    project,
+    sessionPath: sessionPath ?? null,
+    forceRestart: forceRestart ?? false,
+  });
 }
 
-export function piStop(): Promise<void> {
-  return invoke("pi_stop");
+export function piStop(project?: string | null): Promise<void> {
+  return invoke("pi_stop", { project: project ?? null });
 }
 
-export function piStatus(): Promise<boolean> {
-  return invoke("pi_status");
+export function piStatus(project?: string | null): Promise<boolean> {
+  return invoke("pi_status", { project: project ?? null });
 }
 
 export function listSessions() {

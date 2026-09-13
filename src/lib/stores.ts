@@ -12,6 +12,8 @@ export const theme = writable<"light" | "dark" | "system">("system");
 export const projectDir = writable<string>("");
 export const sidebarOpen = writable<boolean>(true);
 export const settingsOpen = writable<boolean>(false);
+/** Which project the settings modal is scoped to (null = general view). */
+export const settingsProject = writable<string | null>(null);
 
 export const connected = writable<boolean>(false);
 export const rpcState = writable<RpcState | null>(null);
@@ -29,6 +31,81 @@ export const disconnected = writable<boolean>(false);
 // Per-session visual state for the sidebar: what each thread is doing.
 export type SessionStatus = "idle" | "active" | "attention" | "error";
 export const sessionStates = writable<Record<string, { status: SessionStatus; note: string }>>({});
+
+// ---- multi-process orchestration (T3-style: one pi per project) ----
+
+/** The session each project's process has active (powers background routing). */
+export const activeSessionByProject = writable<Record<string, string | null>>({});
+/** Spawn id per project — envelopes from older process ids are dropped. */
+export const lastProcByProject = writable<Record<string, number>>({});
+
+export function recordProcess(project: string, pid: number | undefined | null) {
+  if (typeof pid !== "number") return;
+  lastProcByProject.update((m) => ({ ...m, [project]: pid }));
+}
+
+function projectLabel(dir: string): string {
+  const meta = get(projectMeta)[dir];
+  if (meta?.name) return meta.name;
+  return dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
+}
+
+// ---- sidebar state (T3-style sections; GUI-owned preferences) ----
+
+export interface ProjectMeta {
+  name?: string;
+  icon?: string;
+  defaultModel?: { provider: string; id: string };
+  forgotten?: boolean;
+}
+/** GUI-owned per-project preferences; pi stays authoritative for agent state. */
+export const projectMeta = writable<Record<string, ProjectMeta>>({});
+/** Pinned session paths in manual display order. */
+export const pins = writable<string[]>([]);
+/** Last-opened timestamp per session — powers the unseen-completion pill. */
+export const visitedAt = writable<Record<string, number>>({});
+export const sidebarWidth = writable<number>(256);
+/** Sidebar search query; non-empty switches the list into search mode. */
+export const sessionQuery = writable<string>("");
+/** Project scope filter; null shows all projects. */
+export const projectScope = writable<string | null>(null);
+
+export function togglePin(path: string) {
+  const isPinned = get(pins).includes(path);
+  pins.update((p) => (isPinned ? p.filter((x) => x !== path) : [...p, path]));
+}
+
+export function reorderPin(path: string, toIndex: number) {
+  pins.update((p) => {
+    const without = p.filter((x) => x !== path);
+    const idx = Math.max(0, Math.min(toIndex, without.length));
+    return [...without.slice(0, idx), path, ...without.slice(idx)];
+  });
+}
+
+export function isPinned(path: string): boolean {
+  return get(pins).includes(path);
+}
+
+export function markVisited(path: string) {
+  visitedAt.update((v) => ({ ...v, [path]: Date.now() }));
+}
+
+export function updateProjectMeta(dir: string, patch: ProjectMeta) {
+  projectMeta.update((m) => ({ ...m, [dir]: { ...m[dir], ...patch } }));
+}
+
+export function forgetProject(dir: string) {
+  projectMeta.update((m) => ({ ...m, [dir]: { ...m[dir], forgotten: true } }));
+}
+
+export function restoreProject(dir: string) {
+  projectMeta.update((m) => {
+    const next = { ...m[dir], forgotten: undefined };
+    delete next.forgotten;
+    return { ...m, [dir]: next };
+  });
+}
 
 // ---- extension surfaces (pi extension UI protocol, fire-and-forget methods) ----
 
@@ -221,7 +298,18 @@ function transientNote(note: string, ms = 8000) {
   }, ms);
 }
 
-export async function handleEvent(evt: PiEvent) {
+export async function handleEvent(evt: PiEvent, origin?: { project: string; proc: number }) {
+  if (origin) {
+    // Drop stale envelopes from a replaced process, and route background
+    // projects to sidebar-status handling only (their events must not touch
+    // the active chat surface).
+    const known = get(lastProcByProject)[origin.project];
+    if (known !== undefined && known !== origin.proc) return;
+    if (origin.project !== get(projectDir)) {
+      handleBackgroundEvent(evt, origin.project);
+      return;
+    }
+  }
   switch (evt.type) {
     case "agent_start":
       streaming.set(true);
@@ -457,7 +545,10 @@ export async function refreshRpcState() {
   if (res.success && res.data) {
     rpcState.set(res.data);
     // pi owns session identity: the UI highlights whatever pi says is active.
-    activeSessionPath.set(res.data.sessionFile ?? null);
+    const file = res.data.sessionFile ?? null;
+    activeSessionPath.set(file);
+    const dir = get(projectDir);
+    if (dir) activeSessionByProject.update((m) => ({ ...m, [dir]: file }));
   }
 }
 
@@ -567,10 +658,13 @@ export async function newSession() {
     items.set([]);
     activeSessionPath.set(null);
     await refreshRpcState();
-    // Fresh sessions otherwise inherit pi's fallback model (often Opus) — pin ours.
+    // Fresh sessions otherwise inherit pi's fallback model (often Opus) — pin
+    // the project's default (GUI preference), or the stack default (rule 7).
+    const dir = get(projectDir);
+    const wanted = (dir ? get(projectMeta)[dir]?.defaultModel : undefined) ?? DEFAULT_MODEL;
     const cur = get(rpcState)?.model;
-    if (cur?.provider !== DEFAULT_MODEL.provider || cur?.id !== DEFAULT_MODEL.id) {
-      await setModel(DEFAULT_MODEL.provider, DEFAULT_MODEL.id);
+    if (cur?.provider !== wanted.provider || cur?.id !== wanted.id) {
+      await setModel(wanted.provider, wanted.id);
     }
     await refreshSessions();
     await refreshStats();
@@ -580,7 +674,55 @@ export async function newSession() {
   }
 }
 
+/**
+ * Make a project the active one: spawn its process (or refocus a live one)
+ * and load the requested session. Cross-project session opens route here —
+ * no app reload, and background projects keep running with their events
+ * feeding only the sidebar.
+ */
+export async function switchToProject(dir: string, sessionPath?: string) {
+  try {
+    const pid = await api.piStart(dir, sessionPath ?? null);
+    recordProcess(dir, pid);
+    // Reset the chat surface for the incoming project.
+    items.set([]);
+    finalizeStreaming();
+    streaming.set(false);
+    queue.set({ steering: [], followUp: [] });
+    projectDir.set(dir);
+    connected.set(true);
+    disconnected.set(false);
+    await refreshRpcState();
+    // Trust pi: on a reused process it may not be in the requested session.
+    if (sessionPath && get(activeSessionPath) !== sessionPath) {
+      try {
+        const r = await api.piRequest<{ success: boolean; error?: string; data?: { cancelled: boolean } }>(
+          { type: "switch_session", sessionPath },
+          120,
+        );
+        if (r.success && !r.data?.cancelled) await refreshRpcState();
+        else transientNote(`Couldn't open session: ${r.error ?? "cancelled by extension"}`);
+      } catch { /* pi's own state wins */ }
+    }
+    await refreshModels();
+    await refreshCommands();
+    await reloadMessages();
+    await refreshStats();
+    await refreshSessions();
+    if (get(activeSessionPath)) markVisited(get(activeSessionPath)!);
+    void persistLastSession(get(activeSessionPath));
+  } catch (e) {
+    transientNote(`Couldn't open project: ${e}`);
+  }
+}
+
 export async function openSession(path: string) {
+  const info = get(sessions).find((s) => s.path === path);
+  if (info?.cwd && info.cwd !== get(projectDir)) {
+    // Cross-project open: focus (or spawn) that project's process on this session.
+    await switchToProject(info.cwd, path);
+    return;
+  }
   try {
     const res = await api.piRequest<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "switch_session", sessionPath: path }, 120);
     if (!res.success) {
@@ -595,6 +737,7 @@ export async function openSession(path: string) {
     await refreshRpcState();
     await reloadMessages();
     await refreshStats();
+    markVisited(path);
     void persistLastSession(get(activeSessionPath));
   } catch (e) {
     transientNote(`Error: ${e}`);
@@ -683,10 +826,65 @@ export async function refreshCommands() {
 }
 
 /**
- * The pi subprocess died. Distinguish a deliberate stop from a crash: a crash
- * keeps the last session path and offers a one-click restart-and-resume.
+ * Events from a project whose process is not the active one. They never touch
+ * items/streaming — only the sidebar status of that project's active session
+ * (and its notifications). Mirrors T3's per-thread liveness pills.
  */
-export function handlePiExit(expected: boolean) {
+function handleBackgroundEvent(evt: PiEvent, project: string) {
+  const session = get(activeSessionByProject)[project];
+  switch (evt.type) {
+    case "agent_start":
+      setSessionStatus(session, "active", "working");
+      break;
+    case "agent_end":
+    case "agent_settled": {
+      const cur = get(sessionStates)[session ?? ""];
+      if (cur?.status !== "attention") setSessionStatus(session, "idle");
+      break;
+    }
+    case "message_end": {
+      const m = evt.message;
+      if (m?.role === "assistant" && m.stopReason === "error") {
+        setSessionStatus(session, "attention", "error in response");
+      }
+      break;
+    }
+    case "extension_error":
+      setSessionStatus(session, "attention", "extension error");
+      break;
+    case "extension_ui_request":
+      // Only notify is worth surfacing for background projects; widget/status
+      // surfaces belong to the active project.
+      if (evt.method === "notify") {
+        pushNotification(
+          evt.notifyType as "info" | "warning" | "error" | undefined,
+          `${projectLabel(project)}: ${(evt as { message?: string }).message ?? ""}`,
+        );
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * A pi process died. For the active project this is the crash-banner path;
+ * background projects just lose their liveness pill. `pid` filters stale
+ * exits from processes that were replaced while this event was in flight.
+ */
+export function handlePiExit(project: string, pid: number, expected: boolean) {
+  const known = get(lastProcByProject)[project];
+  if (known !== undefined && known !== pid) return; // replaced process — ignore
+  lastProcByProject.update((m) => {
+    const next = { ...m };
+    delete next[project];
+    return next;
+  });
+  if (project !== get(projectDir)) {
+    const session = get(activeSessionByProject)[project];
+    if (!expected) setSessionStatus(session, "attention", "process exited");
+    return;
+  }
   connected.set(false);
   // Surfaces owned by the dead process: clear extension state with it —
   // including any outstanding dialog, which would otherwise cover the
@@ -704,7 +902,7 @@ export function handlePiExit(expected: boolean) {
   }
 }
 
-/** Restart pi and resume the session that was active before the exit. */
+/** Restart the active project's pi process, resuming the active session. */
 export async function restartPi() {
   const dir = get(projectDir);
   if (!dir) {
@@ -716,7 +914,10 @@ export async function restartPi() {
   try {
     let resumed = false;
     try {
-      await api.piStart(dir, resumePath);
+      // A deliberate restart must respawn even if some other process for the
+      // project is somehow alive.
+      const pid = await api.piStart(dir, resumePath, true);
+      recordProcess(dir, pid);
       resumed = true;
     } catch (resumeError) {
       // pi can report a sessionFile before the file exists on disk (it is
@@ -724,7 +925,8 @@ export async function restartPi() {
       // then rejected by the file check — fall back visibly to a fresh start
       // and don't claim a resume that didn't happen.
       transientNote(`Couldn't resume session (${resumeError}) — starting fresh.`);
-      await api.piStart(dir);
+      const pid = await api.piStart(dir);
+      recordProcess(dir, pid);
     }
     connected.set(true);
     if (resumed) transientNote("pi restarted — session resumed", 5000);
@@ -739,7 +941,7 @@ export async function restartPi() {
   }
 }
 
-/** Pick a project folder, persist it, restart pi by reloading the app. */
+/** Pick a project folder, persist it, and make it the active project — no app reload. */
 export async function chooseProject() {
   const picked = await openFileDialog({
     directory: true,
@@ -747,13 +949,11 @@ export async function chooseProject() {
     title: "Choose project folder for pi",
   });
   if (typeof picked !== "string") return;
-  projectDir.set(picked);
-  try {
-    const gui = await api.readGuiState();
-    gui.projectDir = picked;
-    await api.writeGuiState(gui);
-  } catch { /* ignore */ }
-  location.reload();
+  if (guiStateCache) {
+    guiStateCache.projectDir = picked;
+    try { await api.writeGuiState(guiStateCache); } catch { /* ignore */ }
+  }
+  await switchToProject(picked);
 }
 
 export async function boot() {
@@ -766,6 +966,11 @@ export async function boot() {
   const dir = (gui.projectDir as string) ?? "";
   projectDir.set(dir);
   sidebarOpen.set((gui.sidebarOpen as boolean) ?? true);
+  // Sidebar state: sections, pins, project preferences, seen/unseen tracking.
+  pins.set((gui.pins as string[]) ?? []);
+  projectMeta.set((gui.projectMeta as Record<string, ProjectMeta>) ?? {});
+  visitedAt.set((gui.visitedAt as Record<string, number>) ?? {});
+  sidebarWidth.set((gui.sidebarWidth as number) ?? 256);
 
   // Persist theme + sidebar changes
   theme.subscribe(async (v) => {
@@ -774,6 +979,22 @@ export async function boot() {
   });
   sidebarOpen.subscribe(async (v) => {
     gui.sidebarOpen = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  pins.subscribe(async (v) => {
+    gui.pins = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  projectMeta.subscribe(async (v) => {
+    gui.projectMeta = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  visitedAt.subscribe(async (v) => {
+    gui.visitedAt = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  sidebarWidth.subscribe(async (v) => {
+    gui.sidebarWidth = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
 
@@ -796,12 +1017,14 @@ export async function boot() {
       : projSessions[0]?.path;
     let resumed = false;
     try {
-      await api.piStart(dir, resumePath);
+      const pid = await api.piStart(dir, resumePath);
+      recordProcess(dir, pid);
       resumed = true;
     } catch (e) {
       // e.g. the remembered session file was deleted — fall back visibly.
       transientNote(`Couldn't resume session (${e}) — starting fresh.`);
-      await api.piStart(dir);
+      const pid = await api.piStart(dir);
+      recordProcess(dir, pid);
     }
     connected.set(true);
     await refreshRpcState();

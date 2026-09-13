@@ -144,6 +144,22 @@ export type UiItem = UserItem | AssistantItem | ToolItem | BashItem;
 
 // ---- pi events ----
 
+/** Envelope the Rust bridge emits on `pi-event`: the owning process's project
+ * dir and spawn id, plus the raw pi event. Lets the UI route multi-project
+ * events and drop stale ones from replaced processes. */
+export interface PiEventEnvelope {
+  project: string;
+  proc: number;
+  event: PiEvent;
+}
+
+/** Envelope for `pi-exit`. */
+export interface PiExitEnvelope {
+  project: string;
+  proc: number;
+  expected: boolean;
+}
+
 /** Payload of the Tauri `pi-exit` event (emitted when the pi subprocess dies). */
 export interface PiExitEvent {
   /** true: we killed it on purpose (user stop/restart) — no crash banner. */

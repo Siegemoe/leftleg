@@ -86,6 +86,12 @@ pub fn build_pi_args(session_path: Option<&str>) -> Vec<String> {
 
 /// Handle to a running `pi --mode rpc` subprocess.
 pub struct PiProcess {
+    /// Unique per spawn — the webview uses it to drop stale events from a
+    /// replaced process (a killed process's tail can outlive the spawn that
+    /// replaced it).
+    pub id: u64,
+    /// Project dir this process is rooted in; tags every emitted event.
+    pub cwd: String,
     child: Arc<Mutex<Child>>,
     stdin: Arc<Mutex<Option<std::process::ChildStdin>>>,
     pub pending: Arc<PendingMap>,
@@ -94,6 +100,8 @@ pub struct PiProcess {
     /// from a crash when `pi-exit` fires.
     expecting_exit: AtomicBool,
 }
+
+static NEXT_PROCESS_ID: AtomicU64 = AtomicU64::new(1);
 
 impl PiProcess {
     /// Spawn `pi --mode rpc` in the given working directory and start the
@@ -118,6 +126,8 @@ impl PiProcess {
         let stdout = child.stdout.take().ok_or("no stdout")?;
 
         let proc = Arc::new(PiProcess {
+            id: NEXT_PROCESS_ID.fetch_add(1, Ordering::SeqCst),
+            cwd: cwd.to_string(),
             child: Arc::new(Mutex::new(child)),
             stdin: Arc::new(Mutex::new(Some(stdin))),
             pending: Arc::new(PendingMap::default()),
@@ -133,17 +143,27 @@ impl PiProcess {
             let reader = BufReader::new(stdout);
             for line in reader.split(b'\n') {
                 let Ok(bytes) = line else { break };
+                // Every line is wrapped in an envelope naming the owning
+                // process, so the webview can route multi-project events and
+                // drop stale ones after a respawn.
+                let envelope = |value: Value| {
+                    serde_json::json!({
+                        "project": proc_ref.cwd,
+                        "proc": proc_ref.id,
+                        "event": value,
+                    })
+                };
                 match classify_line(&bytes) {
                     LineAction::Skip => {}
                     LineAction::Emit(value) => {
-                        let _ = app_handle.emit("pi-event", &value);
+                        let _ = app_handle.emit("pi-event", envelope(value));
                     }
                     LineAction::Response { id, value } => {
                         if let Some(tx) = pending.remove(&id) {
                             let _ = tx.send(value); // response consumed by the waiting request
                         } else {
                             // Unknown id (late timeout, restart, etc.) — surface to the webview.
-                            let _ = app_handle.emit("pi-event", &value);
+                            let _ = app_handle.emit("pi-event", envelope(value));
                         }
                     }
                 }
@@ -152,7 +172,14 @@ impl PiProcess {
             // on purpose (stop/restart) or it died on its own (crash).
             pending.clear();
             let expected = proc_ref.expecting_exit.load(Ordering::SeqCst);
-            let _ = app_handle.emit("pi-exit", serde_json::json!({ "expected": expected }));
+            let _ = app_handle.emit(
+                "pi-exit",
+                serde_json::json!({
+                    "project": proc_ref.cwd,
+                    "proc": proc_ref.id,
+                    "expected": expected,
+                }),
+            );
         });
 
         Ok(proc)

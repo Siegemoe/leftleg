@@ -1,11 +1,67 @@
 <script lang="ts">
-  import { settingsOpen, rpcState, models, theme, applyTheme, projectDir, compact, renameSession, setModel, setThinkingLevel, setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, chooseProject } from "../lib/stores";
+  import { settingsOpen, settingsProject, rpcState, models, theme, applyTheme, projectDir, projectMeta, sessions, compact, renameSession, setModel, setThinkingLevel, setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, chooseProject, updateProjectMeta, forgetProject, restoreProject } from "../lib/stores";
+  import { projectDisplayName } from "../lib/sidebar-model";
   import { getAgentDir } from "../lib/api";
   import { piRequest } from "../lib/api";
   import type { ModelInfo, ThinkingLevel } from "../lib/types";
   import { onMount } from "svelte";
 
   let close = () => settingsOpen.set(false);
+
+  let tab = $state<"general" | "projects">($settingsProject ? "projects" : "general");
+
+  const PROJECT_ICONS = ["📁", "⚡", "🧠", "🚀", "🎨", "🛠", "📊", "🧪", "🏠", "⭐"];
+
+  let selectedProject = $state<string | null>($settingsProject);
+  let projName = $state("");
+  let projIcon = $state<string | undefined>(undefined);
+  let projModelKey = $state("");
+
+  // Known projects: every cwd seen in the session list plus remembered meta.
+  let knownProjects = $derived.by(() => {
+    const dirs = new Set<string>(Object.keys($projectMeta));
+    for (const s of $sessions) dirs.add(s.cwd);
+    const sorted = [...dirs].sort((a, b) => {
+      const af = $projectMeta[a]?.forgotten ? 1 : 0;
+      const bf = $projectMeta[b]?.forgotten ? 1 : 0;
+      if (af !== bf) return af - bf;
+      return a.localeCompare(b);
+    });
+    return sorted;
+  });
+
+  // Re-sync the editor fields when the selected project changes.
+  $effect(() => {
+    const dir = selectedProject;
+    if (!dir) return;
+    const meta = $projectMeta[dir];
+    projName = meta?.name ?? "";
+    projIcon = meta?.icon;
+    const m = meta?.defaultModel;
+    projModelKey = m ? `${m.provider}|${m.id}` : "";
+  });
+
+  function selectProject(dir: string) {
+    selectedProject = dir;
+  }
+
+  function saveName() {
+    if (!selectedProject) return;
+    updateProjectMeta(selectedProject, { name: projName.trim() || undefined });
+  }
+
+  function saveIcon(icon: string | undefined) {
+    if (!selectedProject) return;
+    projIcon = icon;
+    updateProjectMeta(selectedProject, { icon });
+  }
+
+  function saveModel(key: string) {
+    if (!selectedProject) return;
+    projModelKey = key;
+    const [provider, id] = key.split("|");
+    updateProjectMeta(selectedProject, { defaultModel: provider && id ? { provider, id } : undefined });
+  }
 
   let modelFilter = $state("");
   let sessionName = $state($rpcState?.sessionName ?? "");
@@ -60,9 +116,14 @@
   <div class="card" role="dialog" aria-modal="true">
     <header>
       <h2>Settings</h2>
+      <nav class="tabs">
+        <button class:active={tab === "general"} onclick={() => (tab = "general")}>General</button>
+        <button class:active={tab === "projects"} onclick={() => (tab = "projects")}>Projects</button>
+      </nav>
       <button class="ghost x" onclick={close}>✕</button>
     </header>
 
+    {#if tab === "general"}
     <div class="grid">
       <!-- Appearance -->
       <section>
@@ -192,6 +253,73 @@
         </p>
       </section>
     </div>
+    {:else}
+    <div class="projects">
+      <div class="proj-list">
+        {#each knownProjects as dir (dir)}
+          {@const forgotten = !!$projectMeta[dir]?.forgotten}
+          <button
+            class="proj-row"
+            class:selected={selectedProject === dir}
+            class:forgotten
+            onclick={() => selectProject(dir)}
+          >
+            <span class="scope-icon">{$projectMeta[dir]?.icon ?? "📁"}</span>
+            <span class="proj-row-name" title={dir}>{projectDisplayName(dir, $projectMeta[dir]?.name)}</span>
+            {#if forgotten}<span class="tag">forgotten</span>{/if}
+            {#if dir === $projectDir}<span class="tag active-tag">active</span>{/if}
+          </button>
+        {:else}
+          <div class="hint none">No projects yet.</div>
+        {/each}
+      </div>
+      <div class="proj-editor">
+        {#if selectedProject}
+          <h3 class="proj-title">
+            {$projectMeta[selectedProject]?.icon ?? "📁"}
+            {projectDisplayName(selectedProject, $projectMeta[selectedProject]?.name)}
+          </h3>
+          <p class="hint mono dir-full">{selectedProject}</p>
+
+          <div class="row">
+            <label for="proj-name">Display name</label>
+            <input id="proj-name" type="text" placeholder={projectDisplayName(selectedProject, undefined)} bind:value={projName} onchange={saveName} />
+          </div>
+
+          <div class="row">
+            <span class="row-label">Icon</span>
+            <div class="icon-row">
+              {#each PROJECT_ICONS as icon (icon)}
+                <button class="icon-btn-pick" class:active={projIcon === icon} onclick={() => saveIcon(icon)}>{icon}</button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="row">
+            <label for="proj-model">Default model for new sessions</label>
+            <select id="proj-model" value={projModelKey} onchange={(e) => saveModel(e.currentTarget.value)}>
+              <option value="">Leftleg default (openrouter / z-ai/glm-5.3-flash)</option>
+              {#each $models as m (m.provider + "/" + m.id)}
+                <option value={m.provider + "|" + m.id}>{m.provider} / {m.id}</option>
+              {/each}
+            </select>
+            <p class="hint">Applies when a new session starts in this project. Existing sessions keep their own model.</p>
+          </div>
+
+          <div class="row danger-row">
+            {#if $projectMeta[selectedProject]?.forgotten}
+              <button onclick={() => restoreProject(selectedProject!)}>Restore project</button>
+            {:else}
+              <button class="danger" onclick={() => forgetProject(selectedProject!)}>Forget project</button>
+              <p class="hint">Hides this project's sessions from the sidebar. The sessions stay on disk; restoring brings them back.</p>
+            {/if}
+          </div>
+        {:else}
+          <p class="hint">Select a project to manage its name, icon, default model, and visibility.</p>
+        {/if}
+      </div>
+    </div>
+    {/if}
   </div>
 </div>
 
@@ -226,6 +354,68 @@
   }
   h2 { margin: 0; font-size: 16px; }
   .x { padding: 4px 9px; }
+  .tabs { display: flex; gap: 4px; }
+  .tabs button {
+    font-size: 12.5px;
+    padding: 4px 12px;
+    border-radius: 99px;
+    background: transparent;
+    color: var(--text-3);
+  }
+  .tabs button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .projects {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: 0;
+  }
+  .proj-list {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .proj-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text-2);
+    text-align: left;
+    width: 100%;
+    min-width: 0;
+  }
+  .proj-row:hover { background: var(--bg-surface-2); }
+  .proj-row.selected { background: var(--accent-soft); color: var(--text); }
+  .proj-row.forgotten { opacity: 0.55; }
+  .proj-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .active-tag { color: var(--accent); border-color: var(--accent); }
+  .proj-editor {
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .proj-title { margin: 0; font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--text); }
+  .dir-full { word-break: break-all; }
+  .icon-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .icon-btn-pick {
+    font-size: 15px;
+    padding: 4px 7px;
+    border-radius: 8px;
+    background: transparent;
+  }
+  .icon-btn-pick.active { background: var(--accent-soft); }
+  .danger-row button.danger { border-color: var(--danger); color: var(--danger); background: transparent; }
+  .danger-row button.danger:hover { background: var(--danger); color: #fff; }
   .grid {
     flex: 1;
     overflow-y: auto;

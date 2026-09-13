@@ -8,17 +8,20 @@
   import ExtDialog from "./components/ExtDialog.svelte";
   import Notifications from "./components/Notifications.svelte";
   import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
-  import type { PiEvent, PiExitEvent } from "./lib/types";
+  import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
 
   let cleanup: (() => void) | null = null;
 
   onMount(() => {
     void (async () => {
-      const unlisten = await listen<PiEvent>("pi-event", (e) => {
-        handleEvent(e.payload).catch(console.error);
+      // Every pi line arrives wrapped in {project, proc, event} so events from
+      // background projects can be routed and stale ones dropped.
+      const unlisten = await listen<PiEventEnvelope>("pi-event", (e) => {
+        const p = e.payload;
+        handleEvent(p.event, { project: p.project, proc: p.proc }).catch(console.error);
       });
-      const unlistenExit = await listen<PiExitEvent>("pi-exit", (e) => {
-        handlePiExit(e.payload?.expected ?? false);
+      const unlistenExit = await listen<PiExitEnvelope>("pi-exit", (e) => {
+        handlePiExit(e.payload.project, e.payload.proc, e.payload.expected);
       });
       cleanup = () => { unlisten(); unlistenExit(); };
     })();
