@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { PanelLeft } from "@lucide/svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import Chat from "./components/Chat.svelte";
   import StatusBar from "./components/StatusBar.svelte";
+  import TitleBar from "./components/TitleBar.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ExtDialog from "./components/ExtDialog.svelte";
   import Notifications from "./components/Notifications.svelte";
   import Artifacts from "./components/Artifacts.svelte";
-  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, artifactsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
+  import { handleEvent, handlePiExit, restartPi, sidebarOpen, settingsOpen, artifactsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
   import { reportError } from "./lib/errors";
@@ -43,22 +43,12 @@
   });
 </script>
 
+<TitleBar />
 <div class="shell">
   {#if $sidebarOpen}
     <Sidebar />
   {/if}
   <main>
-    <header class="topbar">
-      <button
-        class="ghost icon"
-        title={$sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        onclick={() => sidebarOpen.update((v) => !v)}
-      >
-        <PanelLeft size={17} strokeWidth={2} />
-      </button>
-      <span class="project mono" title={$projectDir}>{$projectDir || "no project"}</span>
-      <span class="spacer"></span>
-    </header>
     {#if $updateAvailable}
       <div class="update-banner">
         <span class="update-text">⟳ Update available: v{$updateAvailable.version}</span>
@@ -105,7 +95,7 @@
 <style>
   .shell {
     display: flex;
-    height: 100vh;
+    height: calc(100vh - var(--topbar-h));
     background: var(--bg);
   }
   main {
@@ -113,22 +103,6 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-  }
-  .topbar {
-    height: var(--topbar-h);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-surface);
-  }
-  .icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px;
   }
   .exit-banner {
     flex-shrink: 0;
@@ -168,14 +142,4 @@
   .update-btn:hover { background: var(--accent); color: #fff; }
   .update-dismiss { font-size: 14px; padding: 0 5px; color: var(--text-3); }
   .update-err { color: var(--danger); font-size: 11px; }
-  .project {
-    color: var(--text-3);
-    font-size: 12px;
-    max-width: 40%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    direction: rtl;
-    text-align: left;
-  }
 </style>

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { rpcState, stats, streaming, queue, statusNote, extStatuses, artifactsOpen, projectDir } from "../lib/stores";
+  import { rpcState, stats, streaming, queue, statusNote, extStatuses, models, setModel } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
-  import { Images } from "@lucide/svelte";
+  import { ChevronDown } from "@lucide/svelte";
   import { updateCheck, checkForUpdates, applyUpdate, updateAvailable, updateStatus } from "../lib/updater";
-  import type { ThinkingLevel } from "../lib/types";
+  import type { ThinkingLevel, ModelInfo } from "../lib/types";
 
   function fmtCost(c: number | undefined): string {
     if (c === undefined || c === null) return "";
@@ -42,13 +42,43 @@
   });
   let updateChip = $derived.by(() => {
     const c = $updateCheck;
-    if (c.status === "failed") return { cls: "warn", label: "⟳ updates off?", title: `${c.message} — click to retry` };
-    if (c.status === "available") return { cls: "ready", label: "⟳ install update", title: c.message };
-    return null;
+    if ($updateStatus === "downloading" || $updateStatus === "ready") {
+      return { cls: "ready", label: "⟳ update downloading…", title: "The update is downloading — it will install and relaunch when ready.", act: "none" as const };
+    }
+    if (c.status === "available") {
+      return { cls: "ready", label: "⟳ update ready — install", title: `${c.message} — click to install & restart`, act: "install" as const };
+    }
+    if (c.status === "checking") {
+      return { cls: "", label: "checking for updates…", title: "Checking for updates…", act: "none" as const };
+    }
+    if (c.status === "failed") {
+      return { cls: "warn", label: "⚠ update check failed", title: `${c.message} — click to retry`, act: "check" as const };
+    }
+    if (c.status === "current") {
+      return { cls: "", label: "✓ up to date", title: `Up to date — checked ${checkTime}. Click to re-check.`, act: "check" as const };
+    }
+    return { cls: "", label: "⟳ check for updates", title: "Check for updates now", act: "check" as const };
   });
-  function onUpdateChipClick() {
-    if ($updateCheck.status === "failed") void checkForUpdates();
-    else if ($updateCheck.status === "available" && $updateAvailable && !["downloading", "preparing", "installing"].includes($updateStatus)) void applyUpdate();
+  function onUpdateClick() {
+    if (updateChip.act === "install" && $updateAvailable && !["downloading", "preparing", "installing"].includes($updateStatus)) {
+      void applyUpdate();
+    } else if (updateChip.act === "check") {
+      void checkForUpdates();
+    }
+  }
+
+  // ---------- model dropdown ----------
+  let modelOpen = $state(false);
+  async function pickModel(m: ModelInfo) {
+    modelOpen = false;
+    try {
+      await setModel(m.provider, m.id);
+    } catch (e) {
+      statusNote.set(`Couldn't switch model: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  function onStatusbarPointerDown(e: PointerEvent) {
+    if (modelOpen && !(e.target as Element | null)?.closest(".modelwrap")) modelOpen = false;
   }
 
   function cycleThinking(e: MouseEvent) {
@@ -58,6 +88,8 @@
     setThinkingLevel(next);
   }
 </script>
+
+<svelte:window onpointerdown={onStatusbarPointerDown} />
 
 <footer>
   {#if $statusNote}
@@ -70,9 +102,24 @@
   </span>
 
   {#if $rpcState?.model}
-    <span class="pill" title="{$rpcState.model.provider} / {$rpcState.model.id}">
-      {$rpcState.model.name}
-    </span>
+    <div class="modelwrap">
+      <button class="pill as-btn" title="Switch model — {$rpcState.model.provider} / {$rpcState.model.id}" onclick={() => (modelOpen = !modelOpen)}>
+        {$rpcState.model.name}
+        <ChevronDown size={11} />
+      </button>
+      {#if modelOpen}
+        <div class="modelmenu">
+          {#each $models as m (m.provider + "/" + m.id)}
+            <button class="modelitem" class:active={$rpcState.model?.provider === m.provider && $rpcState.model?.id === m.id} onclick={() => void pickModel(m)}>
+              <span class="mn">{m.name}</span>
+              <span class="mi mono">{m.provider}/{m.id}</span>
+            </button>
+          {:else}
+            <span class="modelitem dim">No models listed yet — they appear once pi reports its catalog.</span>
+          {/each}
+        </div>
+      {/if}
+    </div>
     <button class="pill as-btn" onclick={cycleThinking} title="Click to cycle thinking level (Shift+click reverse)">
       think: {$rpcState.thinkingLevel}
     </button>
@@ -81,7 +128,7 @@
   {#if ctxPercent !== null}
     <span class="pill ctx" title="Context window usage">
       <span class="ctxbar"><span class="fill" style="width: {Math.min(ctxPercent, 100)}%; background: {ctxColor}"></span></span>
-      ctx {ctxPercent}%
+      Context: {ctxPercent.toFixed(2)}%
     </span>
   {/if}
 
@@ -106,15 +153,9 @@
   {/if}
 
   <span class="spacer"></span>
-  {#if $projectDir}
-    <button class="pill as-btn" title="Browse project artifacts — images and docs" onclick={() => artifactsOpen.set(true)}>
-      <Images size={12} strokeWidth={2} />
-      Artifacts
-    </button>
-  {/if}
-  {#if updateChip}
-    <button class="pill update-chip {updateChip.cls}" title={updateChip.title} disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={onUpdateChipClick}>{updateChip.label}</button>
-  {/if}
+  <button class="pill as-btn upd {updateChip.cls}" title={updateChip.title} onclick={onUpdateClick} disabled={updateChip.act === "none"}>
+    {updateChip.label}
+  </button>
   <span class="version" title={versionTitle}>v{__APP_VERSION__}</span>
 </footer>
 
@@ -162,10 +203,48 @@
   .queued { color: var(--accent); border-color: var(--accent); }
   .ext-status { color: var(--text-2); border-color: var(--border-strong); }
   .warn { color: orange; border-color: orange; }
-  .update-chip { cursor: pointer; font: inherit; }
-  .update-chip:hover { border-color: var(--border-strong); }
-  .update-chip.ready { color: var(--accent); border-color: var(--accent); }
-  .update-chip.ready:hover { background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface-2)); }
+  .upd { cursor: pointer; font: inherit; }
+  .upd:hover { border-color: var(--border-strong); }
+  .upd.ready { color: var(--accent); border-color: var(--accent); }
+  .upd.ready:hover { background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface-2)); }
+  .upd.warn { color: orange; border-color: orange; }
+  .upd:disabled { opacity: 0.8; cursor: default; }
+  .modelwrap { position: relative; }
+  .modelmenu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 90;
+    min-width: 320px;
+    max-height: 340px;
+    overflow-y: auto;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+  }
+  .modelitem {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 9px;
+    font-size: 12px;
+    color: var(--text-2);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+  }
+  .modelitem:hover { background: var(--bg-surface-2); color: var(--text); }
+  .modelitem.active { color: var(--accent); }
+  .modelitem.dim { color: var(--text-3); cursor: default; }
+  .mn { font-weight: 600; }
+  .mi { font-size: 10.5px; color: var(--text-3); }
+  .modelitem.active .mi { color: color-mix(in srgb, var(--accent) 70%, var(--text-3)); }
   .note { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .version { color: var(--text-3); letter-spacing: 0.3px; user-select: none; }
 </style>
