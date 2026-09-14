@@ -210,18 +210,6 @@
     }
   }
 
-  // ---- media (image_generate defaults) ----
-  async function saveMediaField(path: string, value: unknown) {
-    try {
-      const rev = revisionFor("media-config");
-      await mgmtRequest("write", { target: "media-config", mode: "merge", ...preparePatch({ [path]: value }), revision: rev });
-      await load("media-config");
-      flashSaved();
-    } catch (e) {
-      noteSaveError(e);
-    }
-  }
-
   // ---- distill full field set ----
   const distillNumbers = ["minChars", "maxChars", "maxOutputChars", "timeoutSeconds", "timeoutRetryCount", "errorRetryCount", "missedCompressionRatio"] as const;
   async function saveDistillField(path: string, value: unknown) {
@@ -454,59 +442,6 @@
     {/if}
   </details>
 
-  <!-- Media (image_generate defaults) -->
-  <details class="pkg-block" ontoggle={() => void load("media-config").catch(() => {})}>
-    <summary>Media (image_generate defaults)</summary>
-    <p class="hint">Defaults for the image_generate tool — model, resolution, quality, format, background. Tool arguments always win; empty fields use the built-in default.</p>
-    {#if files["media-config"]}
-      <div class="frow">
-        <span class="flabel">model</span>
-        <input class="grow mono" value={String(files["media-config"]?.data?.model ?? "")} onchange={(e) => void saveMediaField("model", e.currentTarget.value.trim() || undefined)} placeholder="google/gemini-3.1-flash-image" />
-      </div>
-      <div class="frow">
-        <span class="flabel">resolution</span>
-        <select class="sel" value={String(files["media-config"]?.data?.resolution ?? "")} onchange={(e) => void saveMediaField("resolution", e.currentTarget.value || undefined)}>
-          <option value="">(built-in default)</option>
-          <option value="512">512</option>
-          <option value="1K">1K</option>
-          <option value="2K">2K</option>
-          <option value="4K">4K</option>
-        </select>
-      </div>
-      <div class="frow">
-        <span class="flabel">quality</span>
-        <select class="sel" value={String(files["media-config"]?.data?.quality ?? "")} onchange={(e) => void saveMediaField("quality", e.currentTarget.value || undefined)}>
-          <option value="">(built-in default)</option>
-          <option value="auto">auto</option>
-          <option value="low">low</option>
-          <option value="medium">medium</option>
-          <option value="high">high</option>
-        </select>
-      </div>
-      <div class="frow">
-        <span class="flabel">output format</span>
-        <select class="sel" value={String(files["media-config"]?.data?.output_format ?? "")} onchange={(e) => void saveMediaField("output_format", e.currentTarget.value || undefined)}>
-          <option value="">(built-in default)</option>
-          <option value="png">png</option>
-          <option value="jpeg">jpeg</option>
-          <option value="webp">webp</option>
-          <option value="svg">svg</option>
-        </select>
-      </div>
-      <div class="frow">
-        <span class="flabel">background</span>
-        <select class="sel" value={String(files["media-config"]?.data?.background ?? "")} onchange={(e) => void saveMediaField("background", e.currentTarget.value || undefined)}>
-          <option value="">(built-in default)</option>
-          <option value="auto">auto</option>
-          <option value="transparent">transparent</option>
-          <option value="opaque">opaque</option>
-        </select>
-      </div>
-    {:else}
-      <p class="hint">Open this section to load media-config.</p>
-    {/if}
-  </details>
-
   <!-- ref-tools -->
   <details class="pkg-block" ontoggle={() => nsLoad("settings-global", "pi-ref-tools")}>
     <summary>Ref tools (pi-ref-tools namespace)</summary>
@@ -539,15 +474,6 @@
     user-select: none;
   }
   .frow { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
-  .sel {
-    padding: 4px 8px;
-    background: var(--bg-inset);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-2);
-    font-size: 12px;
-  }
-  .sel:focus { outline: none; border-color: var(--accent); }
   .frow.wrap { flex-wrap: wrap; }
   .flabel { font-size: 12px; color: var(--text-2); min-width: 140px; }
   .fhint { font-size: 10.5px; color: var(--text-3); }

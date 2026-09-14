@@ -4,16 +4,16 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, switchToProject, applyTheme, chooseProject, connected, newSession, openSession, pins,
+    activeSessionPath, switchToProject, connected, newSession, openSession, pins,
     projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
-    settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
+    settingsProject, sidebarWidth, togglePin, unsettleSession, visitedAt,
   } from "../lib/stores";
   import {
     filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, projectDisplayName,
     resolveThreadPill, splitSections, toSidebarSessions, type SidebarSection, type SidebarSession,
   } from "../lib/sidebar-model";
-  import { ChevronRight, Folder, GitBranch, Layers, List, Monitor, Moon, Plus, Search, Settings, Sun } from "@lucide/svelte";
+  import { ChevronRight, Folder, GitBranch, Layers, List, Plus, Search, Settings } from "@lucide/svelte";
   import { gitRepoInfo } from "../lib/api";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import SessionRow from "./SessionRow.svelte";
@@ -239,11 +239,6 @@
     return () => clearInterval(iv);
   });
 
-  const themeCycle = ["light", "dark", "system"] as const;
-  function cycleTheme() {
-    const next = themeCycle[(themeCycle.indexOf($theme) + 1) % themeCycle.length];
-    applyTheme(next);
-  }
 </script>
 
 <aside style="width: {$sidebarWidth}px">
@@ -541,9 +536,6 @@
       <button class="ghost icon-btn" title="Settings" onclick={() => { settingsProject.set(null); settingsOpen.set(true); }}>
         <Settings size={15} strokeWidth={2} />
       </button>
-      <button class="ghost icon-btn" title="Project folder" onclick={chooseProject}>
-        <Folder size={14} strokeWidth={2} />
-      </button>
       {#if gitInfo?.repo}
         <button
           class="ghost git-chip"
@@ -555,26 +547,8 @@
           {#if gitInfo.dirty}<span class="git-dirty">{gitInfo.dirty}</span>{/if}
         </button>
       {/if}
-      <button class="ghost icon-btn" title="Theme: {$theme} — click to cycle light / dark / system" onclick={cycleTheme}>
-        {#if $theme === "light"}
-          <Sun size={14} strokeWidth={2} />
-        {:else if $theme === "dark"}
-          <Moon size={14} strokeWidth={2} />
-        {:else}
-          <Monitor size={14} strokeWidth={2} />
-        {/if}
-      </button>
     </div>
     <div class="footer-row">
-      <button class="ghost icon-btn" title="Theme: {$theme} — click to cycle light / dark / system" onclick={cycleTheme}>
-        {#if $theme === "light"}
-          <Sun size={14} strokeWidth={2} />
-        {:else if $theme === "dark"}
-          <Moon size={14} strokeWidth={2} />
-        {:else}
-          <Monitor size={14} strokeWidth={2} />
-        {/if}
-      </button>
       <div class="conn" class:on={$connected}>
         {$connected ? "pi connected" : "pi offline"}
       </div>

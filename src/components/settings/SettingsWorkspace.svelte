@@ -43,6 +43,14 @@
   ];
 
   let section = $state<SectionId>("behavior");
+  // Media agent defaults load once when the Models section is first opened.
+  let mediaConfigTried = false;
+  $effect(() => {
+    if (section === "models" && !mediaConfigTried) {
+      mediaConfigTried = true;
+      void loadExt("media-config").catch(() => {});
+    }
+  });
   let search = $state("");
   let scope = $state<Scope>(untrack(() => $settingsProject ? "project" : "global"));
   let close = () => settingsOpen.set(false);
@@ -602,6 +610,51 @@
           </div>
           <p class="hint">Custom providers/models live in <span class="mono">models.json</span> (user-authored); <span class="mono">models-store.json</span> is a generated cache and is never edited here. Full provider editor: pending — see coverage matrix.</p>
         </div>
+        <div class="row" class:filtered={!matchesSearch("media agents", "media")}>
+          <label for="media-model" class="with-chip">Media agents — image_generate defaults <span class="chip src">media-config</span></label>
+          {#if extFiles["media-config"]}
+            <div class="inline wrap">
+              <span class="chip">model</span>
+              <input id="media-model" class="grow mono" value={String(getPath(extDraft("media-config"), "model") ?? "")} onchange={(e) => void saveExt("media-config", { model: e.currentTarget.value.trim() || undefined })} placeholder="google/gemini-3.1-flash-image" />
+              <span class="chip">resolution</span>
+              <select class="sel" value={String(getPath(extDraft("media-config"), "resolution") ?? "")} onchange={(e) => void saveExt("media-config", { resolution: e.currentTarget.value || undefined })}>
+                <option value="">(built-in default)</option>
+                <option value="512">512</option>
+                <option value="1K">1K</option>
+                <option value="2K">2K</option>
+                <option value="4K">4K</option>
+              </select>
+              <span class="chip">quality</span>
+              <select class="sel" value={String(getPath(extDraft("media-config"), "quality") ?? "")} onchange={(e) => void saveExt("media-config", { quality: e.currentTarget.value || undefined })}>
+                <option value="">(built-in default)</option>
+                <option value="auto">auto</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+              <span class="chip">output format</span>
+              <select class="sel" value={String(getPath(extDraft("media-config"), "output_format") ?? "")} onchange={(e) => void saveExt("media-config", { output_format: e.currentTarget.value || undefined })}>
+                <option value="">(built-in default)</option>
+                <option value="png">png</option>
+                <option value="jpeg">jpeg</option>
+                <option value="webp">webp</option>
+                <option value="svg">svg</option>
+              </select>
+              <span class="chip">background</span>
+              <select class="sel" value={String(getPath(extDraft("media-config"), "background") ?? "")} onchange={(e) => void saveExt("media-config", { background: e.currentTarget.value || undefined })}>
+                <option value="">(built-in default)</option>
+                <option value="auto">auto</option>
+                <option value="transparent">transparent</option>
+                <option value="opaque">opaque</option>
+              </select>
+            </div>
+            <p class="hint">Defaults for the image_generate media agent — empty fields use the built-in default; tool arguments always win. Stored in <span class="mono">{agentDir}/extensions/leftleg-media/config.json</span> via the settings companion.</p>
+          {:else}
+            <div class="inline">
+              <button onclick={() => void loadExt("media-config").catch(() => {})}>Load media-config</button>
+            </div>
+          {/if}
+        </div>
       </div>
       {@render applyBar()}
     {:else if section === "tools"}
@@ -1007,6 +1060,15 @@
     border-bottom: 1px solid var(--border);
     font-size: 12px;
   }
+  .sel {
+    padding: 4px 8px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .sel:focus { outline: none; border-color: var(--accent); }
   .model-row:last-child { border-bottom: none; }
   .cmd-list {
     border: 1px solid var(--border);
