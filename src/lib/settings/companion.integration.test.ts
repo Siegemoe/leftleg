@@ -31,13 +31,21 @@ function send(obj: Jsonl): void {
 
 function waitEvent(type: string, predicate: (e: Jsonl) => boolean, timeoutMs: number): Promise<Jsonl> {
   return new Promise((resolvePromise, rejectPromise) => {
-    const timer = setTimeout(() => rejectPromise(new Error(`timeout waiting for ${type}`)), timeoutMs);
     const listener = (e: Jsonl) => {
       if (e.type === type && predicate(e)) {
-        clearTimeout(timer);
+        cleanup();
         resolvePromise(e);
       }
     };
+    const cleanup = () => {
+      clearTimeout(timer);
+      const index = listeners.indexOf(listener);
+      if (index >= 0) listeners.splice(index, 1);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      rejectPromise(new Error(`timeout waiting for ${type}`));
+    }, timeoutMs);
     listeners.push(listener);
   });
 }
@@ -81,6 +89,7 @@ beforeAll(async () => {
     windowsHide: true,
   });
   const stdout = child.stdout!;
+  let stderrTail = "";
   stdout.setEncoding("utf-8");
   stdout.on("data", (chunk: string) => {
     buffer += chunk;
@@ -95,8 +104,19 @@ beforeAll(async () => {
       } catch { /* non-JSON line */ }
     }
   });
+  child.stderr!.setEncoding("utf-8");
+  child.stderr!.on("data", (chunk: string) => {
+    stderrTail = (stderrTail + chunk).slice(-4000);
+  });
+  const startupFailure = new Promise<never>((_, rejectPromise) => {
+    child!.once("error", (error) => rejectPromise(new Error(`failed to start pi: ${error.message}`)));
+    child!.once("exit", (code, signal) => {
+      const detail = stderrTail.trim();
+      rejectPromise(new Error(`pi exited before RPC became ready (code=${code}, signal=${signal})${detail ? `: ${detail}` : ""}`));
+    });
+  });
   // wait for the process to accept requests: a get_state response means RPC is live
-  await request({ type: "get_state" }, 30000);
+  await Promise.race([request({ type: "get_state" }, 30000), startupFailure]);
 }, 60000);
 
 afterAll(() => {

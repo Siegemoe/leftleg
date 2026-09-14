@@ -31,6 +31,15 @@ jobs:
       - name: Install locked frontend dependencies
         run: npm ci
 
+      - name: Install pinned Pi integration runtime
+        shell: pwsh
+        run: |
+          npm install --global @earendil-works/pi-coding-agent@0.85.1
+          $piVersion = pi --version
+          if ($LASTEXITCODE -ne 0 -or $piVersion.Trim() -ne "0.85.1") {
+            throw "Expected Pi 0.85.1 for integration tests; got '$piVersion'"
+          }
+
       - name: Validate tag and version identity
         shell: pwsh
         run: |
