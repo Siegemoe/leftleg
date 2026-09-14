@@ -13,13 +13,16 @@ vi.mock("./api", () => ({
   writeGuiState: vi.fn().mockResolvedValue(undefined),
   readFileBase64: vi.fn().mockResolvedValue(""),
   getAgentDir: vi.fn().mockResolvedValue(""),
+  pendingGuiWriteCount: vi.fn().mockReturnValue(0),
 }));
 
 import * as api from "./api";
 import {
   activeSessionPath, connected, extDialog, handleEvent, items, newSession, projectDir,
   queue, rebuildFromMessages, rpcState, sessionStates, sendPrompt, stats, statusNote, streaming,
+  collectUpdateInstallBlockers, handlePiExit, recordProcess, updateInstallLock,
 } from "./stores";
+import { composerDraftFor } from "./composer-drafts";
 
 function resetStores() {
   items.set([]);
@@ -33,6 +36,7 @@ function resetStores() {
   extDialog.set(null);
   connected.set(false);
   projectDir.set("");
+  updateInstallLock.set(false);
 }
 
 beforeEach(async () => {
@@ -40,6 +44,33 @@ beforeEach(async () => {
   vi.mocked(api.piRequest).mockClear();
   // clear any module-private streaming assistant left over from a previous test
   await handleEvent({ type: "agent_settled" });
+});
+
+describe("update install safety", () => {
+  it("reports background work and unsent drafts, not only the visible stream", async () => {
+    projectDir.set("C:\\work\\front");
+    recordProcess("C:\\work\\front", 1);
+    recordProcess("C:\\work\\background", 2);
+    await handleEvent({ type: "agent_start" }, { project: "C:\\work\\background", proc: 2 });
+    const draft = composerDraftFor("C:\\work\\front:session.jsonl");
+    draft.set({ text: "do not lose this", sending: false, lastExtensionNonce: 0, attachments: [] });
+
+    const blockers = collectUpdateInstallBlockers();
+
+    expect(blockers.some((message) => message.includes("background has an active agent turn"))).toBe(true);
+    expect(blockers.some((message) => message.includes("unsent text"))).toBe(true);
+    draft.set({ text: "", sending: false, lastExtensionNonce: 0, attachments: [] });
+    handlePiExit("C:\\work\\background", 2, true);
+  });
+
+  it("rejects a prompt after the final update lock is taken", async () => {
+    connected.set(true);
+    projectDir.set("C:\\work\\front");
+    updateInstallLock.set(true);
+
+    expect(await sendPrompt("too late", [])).toEqual({ ok: false, error: "Update installation is preparing" });
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
+  });
 });
 
 describe("handleEvent: streaming lifecycle", () => {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { rpcState, stats, streaming, queue, statusNote, extStatuses } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
-  import { updateCheck, checkForUpdates, applyUpdate, updateAvailable } from "../lib/updater";
+  import { updateCheck, checkForUpdates, applyUpdate, updateAvailable, updateStatus } from "../lib/updater";
   import type { ThinkingLevel } from "../lib/types";
 
   function fmtCost(c: number | undefined): string {
@@ -47,7 +47,7 @@
   });
   function onUpdateChipClick() {
     if ($updateCheck.status === "failed") void checkForUpdates();
-    else if ($updateCheck.status === "available" && $updateAvailable) void applyUpdate();
+    else if ($updateCheck.status === "available" && $updateAvailable && !["downloading", "preparing", "installing"].includes($updateStatus)) void applyUpdate();
   }
 
   function cycleThinking(e: MouseEvent) {
@@ -106,7 +106,7 @@
 
   <span class="spacer"></span>
   {#if updateChip}
-    <button class="pill update-chip {updateChip.cls}" title={updateChip.title} onclick={onUpdateChipClick}>{updateChip.label}</button>
+    <button class="pill update-chip {updateChip.cls}" title={updateChip.title} disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={onUpdateChipClick}>{updateChip.label}</button>
   {/if}
   <span class="version" title={versionTitle}>v{__APP_VERSION__}</span>
 </footer>

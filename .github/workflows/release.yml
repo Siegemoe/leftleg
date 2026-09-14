@@ -1,0 +1,95 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: Install locked frontend dependencies
+        run: npm ci
+
+      - name: Validate tag and version identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Stable release tags must be vMAJOR.MINOR.PATCH; got '$tag'"
+          }
+
+          $tauriVersion = (Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json -AsHashtable)['version']
+          $packageVersion = (Get-Content -Raw package.json | ConvertFrom-Json -AsHashtable)['version']
+          $lockData = Get-Content -Raw package-lock.json | ConvertFrom-Json -AsHashtable
+          $lockVersion = $lockData['version']
+          $lockPackageVersion = $lockData['packages']['']['version']
+          $cargoMetadata = cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --locked --format-version 1
+          if ($LASTEXITCODE -ne 0) {
+            throw "cargo metadata failed"
+          }
+          $cargoVersion = ($cargoMetadata | ConvertFrom-Json).packages |
+            Where-Object { $_.name -eq 'leftleg' } |
+            Select-Object -ExpandProperty version -First 1
+
+          $versions = @($tauriVersion, $packageVersion, $lockVersion, $lockPackageVersion, $cargoVersion)
+          if (($versions | Select-Object -Unique).Count -ne 1) {
+            throw "Version mismatch: tauri=$tauriVersion package=$packageVersion lock=$lockVersion lock-package=$lockPackageVersion cargo=$cargoVersion"
+          }
+          if ($tag -ne "v$tauriVersion") {
+            throw "Tag $tag does not match application version v$tauriVersion"
+          }
+
+      - name: Require updater signing secret
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "Repository secret TAURI_SIGNING_PRIVATE_KEY is not configured"
+          }
+
+      - name: Verify frontend
+        run: npm run build
+
+      - name: Verify Rust
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Build signed updater and create draft release
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Leftleg v__VERSION__
+          releaseBody: Signed Windows installer and automatic-update metadata for Leftleg v__VERSION__.
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          uploadUpdaterSignatures: true
+          # Everything after `--` is forwarded to Cargo by `tauri build`.
+          args: -- --locked

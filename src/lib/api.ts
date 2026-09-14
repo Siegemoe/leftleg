@@ -48,11 +48,30 @@ export function readGuiState(): Promise<Record<string, unknown>> {
 }
 
 let guiWriteTail: Promise<void> = Promise.resolve();
+let guiWritesPending = 0;
 export function writeGuiState(state: Record<string, unknown>): Promise<void> {
   const snapshot = JSON.parse(JSON.stringify(state));
-  const write = guiWriteTail.then(() => invoke<void>("write_gui_state", { state: snapshot }));
+  guiWritesPending++;
+  const write = guiWriteTail
+    .then(() => invoke<void>("write_gui_state", { state: snapshot }))
+    .finally(() => { guiWritesPending--; });
   guiWriteTail = write.catch(() => {});
   return write;
+}
+
+/** Synchronous lifecycle signal used by the update install guard. */
+export function pendingGuiWriteCount(): number {
+  return guiWritesPending;
+}
+
+/** Stop every Pi process and reject new native Pi work before Windows exits. */
+export function prepareForUpdate(): Promise<number> {
+  return invoke("prepare_for_update");
+}
+
+/** Re-open native Pi commands if launching the installer fails. */
+export function cancelUpdateShutdown(): Promise<void> {
+  return invoke("cancel_update_shutdown");
 }
 
 export function readFileBase64(path: string): Promise<string> {

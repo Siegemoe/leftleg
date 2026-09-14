@@ -1,56 +1,74 @@
-// In-app update checking via Tauri's updater plugin.
-// Startup check is non-blocking and deferred: updates are NEVER downloaded or
-// installed while the agent is active (turn-safe deferral, same contract as
-// the rest of Leftleg's lifecycle handling).
-import { writable, get } from "svelte/store";
-import { check, type Update } from "@tauri-apps/plugin-updater";
+// In-app update lifecycle. Downloads may happen while Pi works, but the final
+// install boundary is serialized, rechecks all observable work, and shuts down
+// every native Pi process before Windows hands control to NSIS.
+import { get, writable } from "svelte/store";
+import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { streaming } from "./stores";
+import * as api from "./api";
+import { collectUpdateInstallBlockers, updateInstallLock } from "./stores";
+
+export type UpdateStatus = "idle" | "checking" | "downloading" | "ready" | "preparing" | "installing" | "error";
 
 export const updateAvailable = writable<Update | null>(null);
-export const updateStatus = writable<"idle" | "checking" | "downloading" | "ready" | "error">("idle");
+export const updateStatus = writable<UpdateStatus>("idle");
 export const updateError = writable<string>("");
+export const updateProgress = writable<{ downloaded: number; total: number | null }>({ downloaded: 0, total: null });
 
-/**
- * Durable, user-visible record of the last update check. Unlike
- * `updateAvailable` (null both when current and when the check failed), this
- * distinguishes "up to date" from "could not check" so a missing or broken
- * update feed is never silently invisible.
- */
 export interface UpdateCheck {
   status: "idle" | "checking" | "current" | "available" | "failed";
-  /** Wall-clock time of the last completed check, or null. */
   at: number | null;
-  /** Human-readable summary for tooltips and the settings panel. */
   message: string;
 }
 export const updateCheck = writable<UpdateCheck>({ status: "idle", at: null, message: "" });
 
-/** Map a failed check to something a user can act on (e.g. a missing feed). */
-function checkFailureMessage(e: unknown): string {
-  const raw = e instanceof Error ? e.message : String(e);
+const CHECK_TIMEOUT_MS = 20_000;
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
+let checkInFlight: Promise<Update | null> | null = null;
+let applyInFlight: Promise<void> | null = null;
+let downloadedUpdate: Update | null = null;
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function checkFailureMessage(error: unknown): string {
+  const raw = errorText(error);
   if (/\b404\b/.test(raw) || /not found/i.test(raw)) {
     return "No update feed published (404) — has a release been uploaded to GitHub?";
   }
   return `Update check failed: ${raw}`;
 }
 
-/** Check for updates. Resolves null when already current. */
-export async function checkForUpdates(): Promise<Update | null> {
+async function closeUpdate(update: Update | null): Promise<void> {
+  if (!update) return;
+  try { await update.close(); } catch { /* process exit and stale resources are harmless here */ }
+}
+
+async function replaceAvailable(update: Update | null): Promise<void> {
+  const previous = get(updateAvailable);
+  updateAvailable.set(update);
+  if (previous && previous !== update) await closeUpdate(previous);
+  if (downloadedUpdate && downloadedUpdate !== update) downloadedUpdate = null;
+}
+
+async function runCheck(): Promise<Update | null> {
+  if (applyInFlight) return get(updateAvailable);
   updateStatus.set("checking");
+  updateError.set("");
   updateCheck.set({ status: "checking", at: get(updateCheck).at, message: "" });
   try {
-    const update = await check();
-    updateAvailable.set(update ?? null);
+    const update = await check({ timeout: CHECK_TIMEOUT_MS });
+    await replaceAvailable(update ?? null);
     updateStatus.set("idle");
     if (update) {
-      updateCheck.set({ status: "available", at: Date.now(), message: `v${update.version} is ready to install` });
+      updateCheck.set({ status: "available", at: Date.now(), message: `v${update.version} is available` });
     } else {
       updateCheck.set({ status: "current", at: Date.now(), message: "up to date" });
     }
     return update ?? null;
-  } catch (e) {
-    const message = checkFailureMessage(e);
+  } catch (error) {
+    await replaceAvailable(null);
+    const message = checkFailureMessage(error);
     updateError.set(message);
     updateStatus.set("error");
     updateCheck.set({ status: "failed", at: Date.now(), message });
@@ -58,29 +76,93 @@ export async function checkForUpdates(): Promise<Update | null> {
   }
 }
 
-/** Download + install the pending update, then relaunch. Turn-safe: refuses
- * while the agent is streaming; the banner stays up so the user can install
- * once the turn settles. */
-export async function applyUpdate(): Promise<void> {
-  const update = get(updateAvailable);
-  if (!update) return;
-  if (get(streaming)) {
-    updateError.set("Agent is working — install this update after the turn settles.");
-    return;
-  }
-  try {
-    updateStatus.set("downloading");
-    await update.downloadAndInstall();
-    updateStatus.set("ready");
-    await relaunch();
-  } catch (e) {
-    updateStatus.set("error");
-    updateError.set(e instanceof Error ? e.message : String(e));
+/** Coalesce startup, Settings, and status-bar checks into one native request. */
+export function checkForUpdates(): Promise<Update | null> {
+  if (checkInFlight) return checkInFlight;
+  checkInFlight = runCheck().finally(() => { checkInFlight = null; });
+  return checkInFlight;
+}
+
+function recordProgress(event: DownloadEvent): void {
+  if (event.event === "Started") {
+    updateProgress.set({ downloaded: 0, total: event.data.contentLength ?? null });
+  } else if (event.event === "Progress") {
+    updateProgress.update((value) => ({ ...value, downloaded: value.downloaded + event.data.chunkLength }));
   }
 }
 
-/** Startup auto-check — fire-and-forget; the banner renders when available,
- * and failures surface in the status bar / settings, not as crashes. */
+function blockerMessage(blockers: string[]): string {
+  const visible = blockers.slice(0, 3);
+  const remaining = blockers.length - visible.length;
+  return `Update downloaded. Resolve before installing: ${visible.join("; ")}${remaining > 0 ? `; and ${remaining} more` : ""}.`;
+}
+
+async function runApplyUpdate(): Promise<void> {
+  const update = get(updateAvailable);
+  if (!update) return;
+  let nativePrepared = false;
+  try {
+    updateError.set("");
+    if (downloadedUpdate !== update) {
+      updateStatus.set("downloading");
+      updateProgress.set({ downloaded: 0, total: null });
+      await update.download(recordProgress, { timeout: DOWNLOAD_TIMEOUT_MS });
+      downloadedUpdate = update;
+      updateStatus.set("ready");
+    }
+
+    // Take the frontend lock before the synchronous blocker snapshot so new
+    // work cannot enter between the safety check and native shutdown.
+    updateInstallLock.set(true);
+    const blockers = collectUpdateInstallBlockers();
+    if (blockers.length > 0) {
+      updateInstallLock.set(false);
+      updateStatus.set("ready");
+      updateError.set(blockerMessage(blockers));
+      return;
+    }
+
+    updateStatus.set("preparing");
+    await api.prepareForUpdate();
+    nativePrepared = true;
+    updateStatus.set("installing");
+    // On Windows this launches NSIS and exits the process, so all state saving
+    // and Pi shutdown must already be complete. Other platforms return and use
+    // the explicit relaunch below.
+    await update.install({ restartAfterInstall: true });
+    await relaunch();
+    // Relaunch normally terminates the process. If a platform implementation
+    // returns, restore command availability instead of leaving a dead lock.
+    await api.cancelUpdateShutdown();
+    nativePrepared = false;
+    updateInstallLock.set(false);
+  } catch (error) {
+    if (nativePrepared) {
+      try { await api.cancelUpdateShutdown(); } catch { /* preserve the installer error */ }
+    }
+    updateInstallLock.set(false);
+    updateStatus.set("error");
+    updateError.set(`Update installation failed: ${errorText(error)}`);
+  }
+}
+
+/** Serialize every install entry point; repeated clicks share one operation. */
+export function applyUpdate(): Promise<void> {
+  if (applyInFlight) return applyInFlight;
+  applyInFlight = runApplyUpdate().finally(() => { applyInFlight = null; });
+  return applyInFlight;
+}
+
+export async function dismissUpdate(): Promise<void> {
+  if (applyInFlight) return;
+  const update = get(updateAvailable);
+  downloadedUpdate = null;
+  updateAvailable.set(null);
+  updateError.set("");
+  updateStatus.set("idle");
+  await closeUpdate(update);
+}
+
 export function startupUpdateCheck(): void {
-  void checkForUpdates().catch(() => { /* failure already recorded in updateCheck */ });
+  void checkForUpdates();
 }

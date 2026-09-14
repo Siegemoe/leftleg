@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { sendPrompt, abort, streaming, statusNote, queue, extWidgets, composerDraft, commands, clearQueue, navigating } from "../lib/stores";
+  import { sendPrompt, abort, streaming, statusNote, queue, extWidgets, composerDraft, commands, clearQueue, navigating, updateInstallLock } from "../lib/stores";
   import { buildPromptMessage, type ComposerAttachment } from "../lib/prompt-message";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { FileText, Paperclip, Send, Square } from "@lucide/svelte";
@@ -41,6 +41,7 @@
   }
 
   async function addFiles() {
+    if ($updateInstallLock) return;
     const picked = await openFileDialog({
       multiple: true,
       title: "Attach files",
@@ -72,7 +73,7 @@
   }
 
   async function doSend() {
-    if ($navigating) return;
+    if ($navigating || $updateInstallLock) return;
     if ($draftState.sending || $streaming && !$draftState.text.trim() && $draftState.attachments.length === 0) return;
     if (!$draftState.text.trim() && $draftState.attachments.length === 0) return;
     $draftState.sending = true;
@@ -273,7 +274,7 @@
   {/if}
 
   <div class="input-row">
-    <button class="ghost add" onclick={addFiles} title="Attach images or files">
+    <button class="ghost add" disabled={$updateInstallLock} onclick={addFiles} title="Attach images or files">
       <Paperclip size={18} strokeWidth={2} />
     </button>
     <textarea
@@ -283,6 +284,7 @@
       onkeydown={onKeydown}
       onpaste={onPaste}
       spellcheck="true"
+      disabled={$updateInstallLock}
       placeholder={$streaming ? "Streaming… press Enter to steer, or wait" : "Message Leftleg…  (Enter to send, Shift+Enter for newline)"}
       rows="1"
     ></textarea>
@@ -294,7 +296,7 @@
     {:else}
       <button
         class="primary send"
-        disabled={$navigating || (!$draftState.text.trim() && $draftState.attachments.length === 0) || $draftState.sending}
+        disabled={$navigating || $updateInstallLock || (!$draftState.text.trim() && $draftState.attachments.length === 0) || $draftState.sending}
         onclick={doSend}
         title="Send"
       >

@@ -5,7 +5,8 @@ import type {
 } from "./types";
 import * as api from "./api";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
-import { handleMgmtNotify, abortPendingMgmt } from "./settings/mgmt";
+import { handleMgmtNotify, abortPendingMgmt, pendingManagementCount } from "./settings/mgmt";
+import { composerDraftBlockers } from "./composer-drafts";
 
 // ---------- stores ----------
 
@@ -28,6 +29,9 @@ export const activeSessionPath = writable<string | null>(null);
 export const statusNote = writable<string>(""); // transient status line (compaction, retry...)
 /** True after an unexpected pi process death until the user restarts it. */
 export const disconnected = writable<boolean>(false);
+/** Brief global lock held only while the updater performs its final safety
+ * check, stops every Pi process, and hands control to the installer. */
+export const updateInstallLock = writable<boolean>(false);
 
 // Per-session visual state for the sidebar: what each thread is doing.
 export type SessionStatus = "idle" | "active" | "attention" | "error";
@@ -209,6 +213,42 @@ let activityRevision = 0;
 let historyNeedsRefresh = false;
 const backgroundSurfaces = new Map<string, { proc: number; surface: RenderSurface }>();
 const deadProcesses = new Map<string, number>();
+
+/** Describe every observable activity or GUI-owned input that makes an app
+ * restart unsafe. The updater calls this only after taking updateInstallLock. */
+export function collectUpdateInstallBlockers(): string[] {
+  const blockers: string[] = [];
+  const currentProject = get(projectDir);
+  const inspectSurface = (dir: string, surface: RenderSurface) => {
+    const label = projectLabel(dir || "current project");
+    if (get(surface.streaming)) blockers.push(`${label} has an active agent turn`);
+    const queued = get(surface.queue);
+    const queuedCount = queued.steering.length + queued.followUp.length;
+    if (queuedCount > 0) blockers.push(`${label} has ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}`);
+    if (surface.dialogs.length > 0 || get(surface.extDialog)) blockers.push(`${label} has an unanswered extension question`);
+    if (get(surface.items).some((item) => item.kind === "user" && item.status === "sending")) {
+      blockers.push(`${label} has a prompt still being delivered`);
+    }
+  };
+
+  inspectSurface(currentProject, mainSurface);
+  for (const [dir, entry] of backgroundSurfaces) {
+    if (dir !== currentProject) inspectSurface(dir, entry.surface);
+  }
+  for (const draft of composerDraftBlockers()) {
+    if (draft.sending) blockers.push(`${draft.key} has a prompt still being submitted`);
+    else {
+      const parts = [draft.text ? "unsent text" : "", draft.attachments ? `${draft.attachments} attachment${draft.attachments === 1 ? "" : "s"}` : ""].filter(Boolean);
+      blockers.push(`${draft.key} has ${parts.join(" and ")}`);
+    }
+  }
+  if (get(navigating)) blockers.push("a project or session is still opening");
+  const management = pendingManagementCount();
+  if (management > 0) blockers.push(`${management} settings operation${management === 1 ? " is" : "s are"} still pending`);
+  const guiWrites = api.pendingGuiWriteCount();
+  if (guiWrites > 0) blockers.push(`${guiWrites} GUI preference write${guiWrites === 1 ? " is" : "s are"} still pending`);
+  return [...new Set(blockers)];
+}
 
 function blankSurface(): RenderSurface {
   return { items: writable<UiItem[]>([]), streaming: writable(false),
@@ -671,6 +711,10 @@ let navigationTail: Promise<unknown> = Promise.resolve();
 let queuedNavigations = 0;
 
 function navigate<T>(work: () => Promise<T>): Promise<T> {
+  if (get(updateInstallLock)) {
+    transientNote("Update installation is preparing — new work is temporarily locked.");
+    return Promise.resolve(undefined as T);
+  }
   queuedNavigations++;
   navigating.set(true);
   const result = navigationTail.then(async () => {
@@ -751,6 +795,7 @@ export interface PromptResult {
  * Never throws; callers get `{ ok, error }` and only clear their draft on ok.
  */
 export async function sendPrompt(text: string, images: { data: string; mimeType: string; name: string }[]): Promise<PromptResult> {
+  if (get(updateInstallLock)) return { ok: false, error: "Update installation is preparing" };
   if (get(navigating)) return { ok: false, error: "Wait for the session to finish opening" };
   const trimmed = text.trim();
   if (!trimmed && images.length === 0) return { ok: false, error: "Nothing to send" };
@@ -806,7 +851,7 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
 export async function retryFailedUser(id: string): Promise<PromptResult> {
   const item = get(items).find((x) => x.kind === "user" && x.id === id) as import("./types").UserItem | undefined;
   if (!item || item.status !== "failed") return { ok: false, error: "not retryable" };
-  if (!get(connected) || get(navigating)) return { ok: false, error: "pi process not ready" };
+  if (!get(connected) || get(navigating) || get(updateInstallLock)) return { ok: false, error: "pi process not ready" };
   const images = item.images
     .filter((i) => i.dataUrl)
     .map((i) => {
@@ -1075,6 +1120,10 @@ async function cloneSessionImpl(): Promise<{ ok: boolean; error?: string }> {
 let answeringDialogId: string | null = null;
 
 export async function respondToExtDialog(response: Record<string, unknown>) {
+  if (get(updateInstallLock)) {
+    transientNote("Update installation is preparing — extension responses are temporarily locked.");
+    return;
+  }
   const d = get(extDialog);
   if (!d || answeringDialogId === d.id) return; // one answer per dialog
   if (d.proc !== undefined && get(lastProcByProject)[d.project ?? ""] !== d.proc) {

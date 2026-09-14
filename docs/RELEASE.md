@@ -21,7 +21,19 @@ complete per-release checklist.
 
 ## Per-release checklist
 
-1. **Bump the version** in `src-tauri/tauri.conf.json` (and `package.json`).
+The canonical producer is `.github/workflows/release.yml`. Configure the
+repository secrets `TAURI_SIGNING_PRIVATE_KEY` and, when applicable,
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Pushing a stable `vMAJOR.MINOR.PATCH` tag
+runs locked frontend and Rust verification, rejects mismatched versions, builds
+the signed NSIS updater, generates `latest.json`, and creates a **draft** GitHub
+release. Inspect its installer, `.sig`, and `latest.json`, then publish the draft
+so `/releases/latest/download/latest.json` becomes live.
+
+The manual process below is recovery guidance when GitHub Actions is unavailable.
+
+1. **Bump the version** in `src-tauri/tauri.conf.json`, `package.json`, and
+   `src-tauri/Cargo.toml`, then regenerate `package-lock.json` and
+   `src-tauri/Cargo.lock`. The release workflow rejects mismatches.
 2. **Build signed artifacts** (new shell so the env var applies; `setx` only
    affects future shells):
    ```powershell

@@ -5,7 +5,10 @@ use pi::PiProcess;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use tauri::{Manager, State};
 
@@ -16,6 +19,9 @@ pub struct PiState {
     processes: std::sync::Mutex<HashMap<String, Arc<PiProcess>>>,
     /// Which project's process receives project-less commands.
     active: std::sync::Mutex<Option<String>>,
+    /// Set before handing control to the Windows updater. Once set, no new Pi
+    /// process or RPC command may enter while the owned process trees stop.
+    update_shutdown: AtomicBool,
 }
 
 impl PiState {
@@ -23,18 +29,35 @@ impl PiState {
         PiState {
             processes: std::sync::Mutex::new(HashMap::new()),
             active: std::sync::Mutex::new(None),
+            update_shutdown: AtomicBool::new(false),
         }
     }
 
-    /// A live process for the given project, if any.
-    pub fn live_process(&self, project: &str) -> Option<Arc<PiProcess>> {
-        let proc = self.processes.lock().unwrap().get(project).cloned();
-        proc.filter(|p| p.is_alive())
+    fn ensure_available(&self) -> Result<(), String> {
+        if self.update_shutdown.load(Ordering::SeqCst) {
+            Err("Leftleg is preparing to install an update".into())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// A live process for the given project, if any. The availability check and
+    /// focus change share the process-map lock with update shutdown, so either
+    /// this reuse completes first or shutdown rejects it.
+    pub fn focus_live_process(&self, project: &str) -> Result<Option<Arc<PiProcess>>, String> {
+        let processes = self.processes.lock().unwrap();
+        self.ensure_available()?;
+        let proc = processes.get(project).cloned().filter(|p| p.is_alive());
+        if proc.is_some() {
+            self.set_active(project);
+        }
+        Ok(proc)
     }
 
     /// Resolve the process a command targets: the named project when given
     /// (must be running), otherwise the active project's process.
     pub fn resolve(&self, project: Option<&str>) -> Result<Arc<PiProcess>, String> {
+        self.ensure_available()?;
         let key = match project {
             Some(p) => p.to_string(),
             None => self
@@ -56,9 +79,14 @@ impl PiState {
         *self.active.lock().unwrap() = Some(project.to_string());
     }
 
-    pub fn insert(&self, project: &str, proc: Arc<PiProcess>) {
-        self.processes.lock().unwrap().insert(project.to_string(), proc);
+    pub fn insert(&self, project: &str, proc: Arc<PiProcess>) -> Result<(), String> {
+        let mut processes = self.processes.lock().unwrap();
+        // Recheck under the same lock used by begin_update_shutdown. This closes
+        // the race where a slow spawn starts just before update preparation.
+        self.ensure_available()?;
+        processes.insert(project.to_string(), proc);
         self.set_active(project);
+        Ok(())
     }
 
     pub fn remove(&self, project: &str) -> Option<Arc<PiProcess>> {
@@ -68,6 +96,28 @@ impl PiState {
             *active = None;
         }
         removed
+    }
+
+    /// Atomically reject new work and detach every owned Pi process. Callers
+    /// kill the returned processes outside the map lock so shutdown cannot
+    /// deadlock with a reader or writer finishing its work.
+    fn begin_update_shutdown(&self) -> Result<Vec<Arc<PiProcess>>, String> {
+        let mut processes = self.processes.lock().unwrap();
+        if self
+            .update_shutdown
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err("update shutdown is already in progress".into());
+        }
+        let detached = processes.drain().map(|(_, proc)| proc).collect();
+        drop(processes);
+        *self.active.lock().unwrap() = None;
+        Ok(detached)
+    }
+
+    fn cancel_update_shutdown(&self) {
+        self.update_shutdown.store(false, Ordering::SeqCst);
     }
 }
 
@@ -88,12 +138,14 @@ fn pi_start(
     session_path: Option<String>,
     force_restart: Option<bool>,
 ) -> Result<u64, String> {
+    // Check before both the reuse and spawn paths. `insert` rechecks under the
+    // process-map lock to cover a shutdown that starts while spawning.
+    state.ensure_available()?;
     if !std::path::Path::new(&project).is_dir() {
         return Err(format!("not a directory: {project}"));
     }
-    if let Some(existing) = state.live_process(&project) {
+    if let Some(existing) = state.focus_live_process(&project)? {
         if !force_restart.unwrap_or(false) {
-            state.set_active(&project);
             return Ok(existing.id);
         }
         existing.kill();
@@ -108,7 +160,10 @@ fn pi_start(
     }
     let proc = PiProcess::spawn(app, &project, session_path.as_deref())?;
     let id = proc.id;
-    state.insert(&project, proc);
+    if let Err(error) = state.insert(&project, proc.clone()) {
+        proc.kill();
+        return Err(error);
+    }
     Ok(id)
 }
 
@@ -126,6 +181,32 @@ fn pi_stop(state: State<PiState>, project: Option<String>) -> Result<(), String>
 #[tauri::command]
 fn pi_status(state: State<PiState>, project: Option<String>) -> bool {
     state.resolve(project.as_deref()).map(|p| p.is_alive()).unwrap_or(false)
+}
+
+/// Final native update boundary. Once this returns, every owned Pi process tree
+/// is stopped and native commands reject new Pi work until install succeeds or
+/// the frontend explicitly cancels after an installer-launch failure.
+#[tauri::command]
+async fn prepare_for_update(state: State<'_, PiState>) -> Result<usize, String> {
+    let processes = state.begin_update_shutdown()?;
+    let count = processes.len();
+    let stopped = tauri::async_runtime::spawn_blocking(move || {
+        for proc in processes {
+            proc.kill();
+        }
+    })
+    .await;
+    if let Err(error) = stopped {
+        return Err(format!(
+            "Pi shutdown worker failed; restart Leftleg before continuing: {error}"
+        ));
+    }
+    Ok(count)
+}
+
+#[tauri::command]
+fn cancel_update_shutdown(state: State<PiState>) {
+    state.cancel_update_shutdown();
 }
 
 /// Send an RPC command to pi and wait for its correlated response.
@@ -260,6 +341,29 @@ mod tests {
         state.remove("/other");
         assert_eq!(state.active.lock().unwrap().as_deref(), Some("/b"), "removing another project leaves active alone");
     }
+
+    #[test]
+    fn update_shutdown_rejects_new_commands_until_cancelled() {
+        let state = PiState::new();
+        let processes = state.begin_update_shutdown().unwrap();
+        assert!(processes.is_empty());
+        assert!(state
+            .resolve(None)
+            .err()
+            .unwrap()
+            .contains("preparing to install"));
+        assert!(state
+            .begin_update_shutdown()
+            .err()
+            .unwrap()
+            .contains("already in progress"));
+        state.cancel_update_shutdown();
+        assert!(state
+            .resolve(None)
+            .err()
+            .unwrap()
+            .contains("no active pi process"));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -284,6 +388,8 @@ pub fn run() {
             pi_start,
             pi_stop,
             pi_status,
+            prepare_for_update,
+            cancel_update_shutdown,
             pi_request,
             pi_send,
             sessions::list_sessions,

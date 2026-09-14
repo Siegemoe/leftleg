@@ -15,7 +15,7 @@
 // - Timeouts: every request is bounded; nothing waits forever on a dead companion.
 
 import { get } from "svelte/store";
-import { commands, lastProcByProject, projectDir, navigating } from "../stores";
+import { commands, lastProcByProject, projectDir, navigating, updateInstallLock } from "../stores";
 import { piRequest } from "../api";
 
 export const MGMT_COMMAND = "settings-mgmt";
@@ -32,8 +32,13 @@ interface Pending {
 }
 const pending = new Map<string, Pending>();
 
+/** Synchronous lifecycle signal used immediately before installing an update. */
+export function pendingManagementCount(): number {
+  return pending.size;
+}
+
 export function companionAvailable(): boolean {
-  return !get(navigating) && get(commands).some((c) => c.name === MGMT_COMMAND);
+  return !get(navigating) && !get(updateInstallLock) && get(commands).some((c) => c.name === MGMT_COMMAND);
 }
 
 function currentGeneration(): number | undefined {

@@ -12,7 +12,7 @@
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
   import { reportError } from "./lib/errors";
-  import { startupUpdateCheck, updateAvailable, updateStatus, updateError, applyUpdate } from "./lib/updater";
+  import { startupUpdateCheck, updateAvailable, updateStatus, updateError, applyUpdate, dismissUpdate } from "./lib/updater";
 
   let cleanup: (() => void) | null = null;
 
@@ -63,12 +63,16 @@
         <span class="update-text">⟳ Update available: v{$updateAvailable.version}</span>
         {#if $updateStatus === "downloading"}
           <span class="update-progress">Downloading…</span>
+        {:else if $updateStatus === "preparing"}
+          <span class="update-progress">Stopping Pi safely…</span>
+        {:else if $updateStatus === "installing"}
+          <span class="update-progress">Starting installer…</span>
         {:else if $updateStatus === "ready"}
-          <span class="update-progress">Relaunching…</span>
+          <button class="update-btn" onclick={() => void applyUpdate()}>Install downloaded update</button>
         {:else}
           <button class="update-btn" onclick={() => void applyUpdate()}>Install &amp; restart</button>
         {/if}
-        <button class="ghost update-dismiss" title="Dismiss" onclick={() => updateAvailable.set(null)}>×</button>
+        <button class="ghost update-dismiss" title="Dismiss" disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={() => void dismissUpdate()}>×</button>
         {#if $updateError}<span class="update-err">{$updateError}</span>{/if}
       </div>
     {/if}

@@ -12,7 +12,7 @@
     statusNote,
   } from "../../lib/stores";
   import { companionAvailable, bindManagement } from "../../lib/settings/mgmt";
-  import { checkForUpdates, applyUpdate, updateAvailable, updateCheck } from "../../lib/updater";
+  import { checkForUpdates, applyUpdate, updateAvailable, updateCheck, updateStatus } from "../../lib/updater";
   import { onDestroy, untrack } from "svelte";
   const mgmtRequest = bindManagement();
   import {
@@ -806,8 +806,8 @@
             {:else if $updateCheck.status === "failed"}
               <span class="chip bad" title={$updateCheck.message}>check failed</span>
             {/if}
-            <button class="primary" disabled={$updateCheck.status === "checking"} onclick={() => void checkForUpdates()}>Check now</button>
-            {#if $updateAvailable}<button class="primary" onclick={() => void applyUpdate()}>Install &amp; restart</button>{/if}
+            <button class="primary" disabled={$updateCheck.status === "checking" || ["downloading", "preparing", "installing"].includes($updateStatus)} onclick={() => void checkForUpdates()}>Check now</button>
+            {#if $updateAvailable}<button class="primary" disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={() => void applyUpdate()}>{$updateStatus === "ready" ? "Install downloaded update" : "Install & restart"}</button>{/if}
           </div>
           {#if $updateCheck.status === "failed"}<p class="hint">{$updateCheck.message}</p>{/if}
         </div>
