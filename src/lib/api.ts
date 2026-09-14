@@ -78,6 +78,29 @@ export function readFileBase64(path: string): Promise<string> {
   return invoke("read_file_base64", { path });
 }
 
+export interface ArtifactFile {
+  name: string;
+  path: string;
+  size: number;
+  modifiedMs: number;
+  exists: boolean;
+}
+
+export interface ArtifactsReport {
+  images: ArtifactFile[];
+  docs: ArtifactFile[];
+}
+
+/** Project-scoped artifacts: .pi/images outputs + canonical docs. */
+export function listArtifacts(projectDir: string): Promise<ArtifactsReport> {
+  return invoke("list_artifacts", { projectDir });
+}
+
+/** Delete one image artifact (guarded to <project>/.pi/images). */
+export function deleteArtifact(projectDir: string, path: string): Promise<void> {
+  return invoke("delete_artifact", { projectDir, path });
+}
+
 export function getAgentDir(): Promise<string> {
   return invoke("get_agent_dir");
 }

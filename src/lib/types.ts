@@ -57,6 +57,7 @@ export interface AgentMessage {
   provider?: string;
   model?: string;
   timestamp?: number;
+  details?: Record<string, unknown>;
   attachments?: Array<{ type: string; fileName?: string; mimeType?: string; content?: string }>;
 }
 
@@ -106,6 +107,8 @@ export interface ToolItem {
   outputTruncated: boolean;
   isError: boolean;
   diff?: string;
+  /** Structured tool result details (image_generate → { paths, model, usage }). */
+  details?: Record<string, unknown>;
 }
 
 export interface UserItem {

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { rpcState, stats, streaming, queue, statusNote, extStatuses } from "../lib/stores";
+  import { rpcState, stats, streaming, queue, statusNote, extStatuses, artifactsOpen, projectDir } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
+  import { Images } from "@lucide/svelte";
   import { updateCheck, checkForUpdates, applyUpdate, updateAvailable, updateStatus } from "../lib/updater";
   import type { ThinkingLevel } from "../lib/types";
 
@@ -105,6 +106,12 @@
   {/if}
 
   <span class="spacer"></span>
+  {#if $projectDir}
+    <button class="pill as-btn" title="Browse project artifacts — images and docs" onclick={() => artifactsOpen.set(true)}>
+      <Images size={12} strokeWidth={2} />
+      Artifacts
+    </button>
+  {/if}
   {#if updateChip}
     <button class="pill update-chip {updateChip.cls}" title={updateChip.title} disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={onUpdateChipClick}>{updateChip.label}</button>
   {/if}

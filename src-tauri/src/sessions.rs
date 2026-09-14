@@ -238,6 +238,139 @@ pub fn base64_encode(data: &[u8]) -> String {
     out
 }
 
+// ---------- project artifacts (image_generate outputs + canonical docs) ----------
+
+/// Hard cap on returned image artifacts; the UI shows the newest first.
+pub const MAX_ARTIFACT_FILES: usize = 500;
+/// Scan bound before sorting: read_dir order is arbitrary, so collect up to
+/// this many entries, sort by mtime desc, then truncate to MAX_ARTIFACT_FILES
+/// — otherwise the "newest 500" guarantee fails on huge directories.
+const ARTIFACT_SCAN_BOUND: usize = 5000;
+
+#[derive(Serialize, Clone)]
+pub struct ArtifactFile {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    #[serde(rename = "modifiedMs")]
+    pub modified_ms: u64,
+    pub exists: bool,
+}
+
+#[derive(Serialize, Clone)]
+pub struct ArtifactsReport {
+    pub images: Vec<ArtifactFile>,
+    pub docs: Vec<ArtifactFile>,
+}
+
+fn artifact_from_path(path: &std::path::Path, exists: bool) -> ArtifactFile {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+    let (size, modified_ms) = if exists {
+        match fs::metadata(path) {
+            Ok(m) => (
+                m.len(),
+                m.modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0),
+            ),
+            Err(_) => (0, 0),
+        }
+    } else {
+        (0, 0)
+    };
+    ArtifactFile { name, path: path.to_string_lossy().into_owned(), size, modified_ms, exists }
+}
+
+/// Scan a project's artifacts: `.pi/images/` (image_generate outputs, newest
+/// first, bounded) plus the canonical project docs (AGENTS.md, .pi/SYSTEM.md,
+/// .pi/APPEND_SYSTEM.md) with exists flags so the UI can render a stable list.
+pub fn scan_artifacts(project_dir: &str) -> Result<ArtifactsReport, String> {
+    let root = std::path::Path::new(project_dir);
+    if !root.is_dir() {
+        return Err("project directory not found".into());
+    }
+    let mut images: Vec<ArtifactFile> = Vec::new();
+    let images_dir = root.join(".pi").join("images");
+    if images_dir.is_dir() {
+        // Same boundary as delete: resolve the real directory once, then keep
+        // only entries that canonicalize inside it (symlink containment).
+        let canon_dir = fs::canonicalize(&images_dir).map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(&images_dir).map_err(|e| e.to_string())?.flatten() {
+            let path = entry.path();
+            let Ok(canon) = fs::canonicalize(&path) else { continue };
+            if !canon.starts_with(&canon_dir) || !canon.is_file() {
+                continue;
+            }
+            let name = canon.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            // Skip temp files from atomic writes (".<name>.tmp-...").
+            if name.is_empty() || name.starts_with('.') {
+                continue;
+            }
+            // Keep the plain (non-verbatim) entry path for display/open; the
+            // canonicalized twin is only used for containment + file checks.
+            images.push(artifact_from_path(&path, true));
+            if images.len() >= ARTIFACT_SCAN_BOUND {
+                break;
+            }
+        }
+    }
+    images.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms).then_with(|| a.name.cmp(&b.name)));
+    images.truncate(MAX_ARTIFACT_FILES);
+    let docs = [
+        ("AGENTS.md", root.join("AGENTS.md")),
+        ("SYSTEM.md", root.join(".pi").join("SYSTEM.md")),
+        ("APPEND_SYSTEM.md", root.join(".pi").join("APPEND_SYSTEM.md")),
+    ]
+    .into_iter()
+    .map(|(label, path)| {
+        let mut file = artifact_from_path(&path, path.is_file());
+        file.name = label.to_string();
+        file
+    })
+    .collect();
+    Ok(ArtifactsReport { images, docs })
+}
+
+/// Delete one image artifact. Guarded: the path must be absolute and resolve
+/// (through symlinks) inside `<project>/.pi/images`.
+pub fn delete_artifact_checked(project_dir: &str, path: &str) -> Result<(), String> {
+    let root = std::path::Path::new(project_dir);
+    if !root.is_dir() {
+        return Err("project directory not found".into());
+    }
+    let images_dir = root.join(".pi").join("images");
+    if !images_dir.is_dir() {
+        return Err("project has no images directory".into());
+    }
+    let target = std::path::Path::new(path);
+    if !target.is_absolute() {
+        return Err("artifact path must be absolute".into());
+    }
+    let canon_dir = fs::canonicalize(&images_dir).map_err(|e| e.to_string())?;
+    let canon_target = fs::canonicalize(target).map_err(|e| format!("artifact not found: {e}"))?;
+    if !canon_target.starts_with(&canon_dir) {
+        return Err("path traversal rejected".into());
+    }
+    if !canon_target.is_file() {
+        return Err("artifact is not a file".into());
+    }
+    fs::remove_file(&canon_target).map_err(|e| e.to_string())
+}
+
+/// List a project's artifacts (generated images + known docs).
+#[tauri::command]
+pub async fn list_artifacts(project_dir: String) -> Result<ArtifactsReport, String> {
+    tauri::async_runtime::spawn_blocking(move || scan_artifacts(&project_dir)).await.map_err(|e| e.to_string())?
+}
+
+/// Delete one image artifact (guarded to <project>/.pi/images).
+#[tauri::command]
+pub async fn delete_artifact(project_dir: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || delete_artifact_checked(&project_dir, &path)).await.map_err(|e| e.to_string())?
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -252,6 +385,33 @@ mod tests {
         atomic_write(&file, "new").unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "new");
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn artifacts_list_and_delete_are_guarded() {
+        let dir = std::env::temp_dir().join(format!("leftleg-artifacts-{}-{}", std::process::id(), uuid::Uuid::new_v4()));
+        let _ = fs::remove_dir_all(&dir);
+        let images = dir.join(".pi").join("images");
+        fs::create_dir_all(&images).unwrap();
+        fs::write(images.join("a.png"), [0x89u8, 0x50, 0x4e, 0x47]).unwrap();
+        fs::write(images.join(".img.tmp-1"), "t").unwrap();
+        fs::write(dir.join("AGENTS.md"), "# docs").unwrap();
+        let report = scan_artifacts(dir.to_str().unwrap()).unwrap();
+        assert_eq!(report.images.len(), 1, "temp files must be skipped");
+        assert_eq!(report.images[0].name, "a.png");
+        let existing_docs = report.docs.iter().filter(|d| d.exists).count();
+        assert_eq!(existing_docs, 1, "only AGENTS.md exists in the fixture");
+        assert!(report.docs.iter().all(|d| d.name != ""));
+
+        // Guarded delete: inside ok, outside/relative rejected.
+        let inside = images.join("a.png");
+        delete_artifact_checked(dir.to_str().unwrap(), inside.to_str().unwrap()).unwrap();
+        assert!(!inside.exists());
+        let outside = dir.join("AGENTS.md");
+        assert!(delete_artifact_checked(dir.to_str().unwrap(), outside.to_str().unwrap()).is_err());
+        assert!(delete_artifact_checked(dir.to_str().unwrap(), "relative.png").is_err());
+        assert!(delete_artifact_checked("Z:\\nowhere-project", "C:\\somewhere.png").is_err());
         fs::remove_dir_all(dir).unwrap();
     }
 

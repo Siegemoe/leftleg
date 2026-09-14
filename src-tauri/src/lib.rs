@@ -397,6 +397,8 @@ pub fn run() {
             sessions::read_gui_state,
             sessions::write_gui_state,
             sessions::read_file_base64,
+            sessions::list_artifacts,
+            sessions::delete_artifact,
             get_agent_dir,
             append_log,
             write_agent_extension,

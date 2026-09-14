@@ -14,6 +14,8 @@ export const theme = writable<"light" | "dark" | "system">("system");
 export const projectDir = writable<string>("");
 export const sidebarOpen = writable<boolean>(true);
 export const settingsOpen = writable<boolean>(false);
+/** Artifacts browser (project images + docs) visibility. */
+export const artifactsOpen = writable<boolean>(false);
 /** Which project the settings modal is scoped to (null = general view). */
 export const settingsProject = writable<string | null>(null);
 
@@ -393,6 +395,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         existing.diff = diff;
         existing.isError = !!m.isError;
         existing.status = m.isError ? "error" : "done";
+        existing.details = m.details ?? undefined;
       }
     } else if (m.role === "bashExecution") {
       out.push({
@@ -612,6 +615,7 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
           t.diff = diff;
           t.isError = !!evt.isError;
           t.status = evt.isError ? "error" : "done";
+          t.details = evt.result?.details ?? undefined;
         }
         return a;
       });

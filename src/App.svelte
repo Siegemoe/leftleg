@@ -8,7 +8,8 @@
   import SettingsModal from "./components/SettingsModal.svelte";
   import ExtDialog from "./components/ExtDialog.svelte";
   import Notifications from "./components/Notifications.svelte";
-  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
+  import Artifacts from "./components/Artifacts.svelte";
+  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, artifactsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
   import { reportError } from "./lib/errors";
@@ -95,6 +96,10 @@
 
 {#if $extDialog}
   <ExtDialog />
+{/if}
+
+{#if $artifactsOpen}
+  <Artifacts />
 {/if}
 
 <style>
