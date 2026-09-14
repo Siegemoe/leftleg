@@ -19,10 +19,12 @@ export function renderMarkdown(src: string): string {
  * Close any dangling fence/inline-code span so the partial render stays clean.
  */
 export function renderStreamingMarkdown(src: string): string {
-  const fences = (src.match(/^```/gm) ?? []).length;
+  // GFM fences: 0-3 leading spaces, 3 or more backticks.
+  const fenceRe = /^ {0,3}`{3,}/gm;
+  const fences = (src.match(fenceRe) ?? []).length;
   let patched = src;
   if (fences % 2 === 1) patched += "\n```";
-  const ticks = (patched.match(/`/g) ?? []).length - (patched.match(/^```/gm) ?? []).join("").length;
+  const ticks = (patched.match(/`/g) ?? []).length - (patched.match(fenceRe) ?? []).join("").length;
   if (ticks % 2 === 1) patched += "`";
   return renderMarkdown(patched);
 }

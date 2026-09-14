@@ -42,6 +42,10 @@ export const lastProcByProject = writable<Record<string, number>>({});
 
 export function recordProcess(project: string, pid: number | undefined | null) {
   if (typeof pid !== "number") return;
+  deadProcesses.delete(project);
+  const old = get(lastProcByProject)[project];
+  if (old !== pid && project === get(projectDir)) commands.set([]);
+  if (old !== undefined && old !== pid) abortPendingMgmt("pi process replaced", project, old);
   lastProcByProject.update((m) => ({ ...m, [project]: pid }));
 }
 
@@ -181,6 +185,8 @@ function setSessionStatus(path: string | null, status: SessionStatus, note = "")
 export interface ExtDialogData {
   id: string;
   method: string;
+  project?: string;
+  proc?: number;
   title: string;
   options?: string[];
   message?: string;
@@ -188,6 +194,76 @@ export interface ExtDialogData {
   prefill?: string;
 }
 export const extDialog: Writable<ExtDialogData | null> = writable(null);
+
+// Transient rendered surfaces for live processes; Pi files remain authoritative.
+// Keeping their reducers alive avoids losing partial messages and extension
+// questions while a project is in the background. Nothing here is persisted.
+const mainSurface = {
+  items, streaming, queue, extStatuses, extWidgets, extDialog, composerDraft, activeSessionPath, statusNote,
+  assistant: null as AssistantItem | null,
+  dialogs: [] as ExtDialogData[],
+};
+type RenderSurface = typeof mainSurface;
+let transcriptRevision = 0;
+let activityRevision = 0;
+let historyNeedsRefresh = false;
+const backgroundSurfaces = new Map<string, { proc: number; surface: RenderSurface }>();
+const deadProcesses = new Map<string, number>();
+
+function blankSurface(): RenderSurface {
+  return { items: writable<UiItem[]>([]), streaming: writable(false),
+    queue: writable({ steering: [] as string[], followUp: [] as string[] }),
+    extStatuses: writable({}), extWidgets: writable({}), extDialog: writable(null),
+    composerDraft: writable(null), activeSessionPath: writable(null), statusNote: writable(""), assistant: null, dialogs: [] };
+}
+function saveSurface() {
+  const dir = get(projectDir), proc = get(lastProcByProject)[dir];
+  if (!dir || proc === undefined) return;
+  backgroundSurfaces.set(dir, { proc, surface: {
+    items: writable(get(items)),
+    streaming: writable(get(streaming)),
+    queue: writable(get(queue)),
+    extStatuses: writable(get(extStatuses)),
+    extWidgets: writable(get(extWidgets)),
+    extDialog: writable(get(extDialog)),
+    composerDraft: writable(get(composerDraft)),
+    activeSessionPath: writable(get(activeSessionPath)),
+    statusNote: writable(get(statusNote)),
+    assistant: mainSurface.assistant,
+    dialogs: mainSurface.dialogs,
+  } });
+}
+function surfaceFor(dir: string, proc: number): RenderSurface {
+  const cached = backgroundSurfaces.get(dir);
+  if (cached?.proc === proc) return cached.surface;
+  const surface = blankSurface();
+  surface.activeSessionPath.set(get(activeSessionByProject)[dir] ?? null);
+  backgroundSurfaces.set(dir, { proc, surface });
+  return surface;
+}
+function restoreSurface(dir: string, proc: number) {
+  const surface = surfaceFor(dir, proc);
+  items.set(get(surface.items));
+  streaming.set(get(surface.streaming));
+  queue.set(get(surface.queue));
+  extStatuses.set(get(surface.extStatuses));
+  extWidgets.set(get(surface.extWidgets));
+  extDialog.set(get(surface.extDialog));
+  composerDraft.set(get(surface.composerDraft));
+  activeSessionPath.set(get(surface.activeSessionPath));
+  statusNote.set(get(surface.statusNote));
+  mainSurface.assistant = surface.assistant;
+  mainSurface.dialogs = surface.dialogs;
+}
+
+function removeDialog(owner: { project?: string; proc?: number }, id: string) {
+  const dir = owner.project ?? get(projectDir);
+  if (owner.proc !== undefined && get(lastProcByProject)[dir] !== owner.proc) return;
+  const surface = dir === get(projectDir) ? mainSurface : backgroundSurfaces.get(dir)?.surface;
+  if (!surface) return;
+  surface.dialogs = surface.dialogs.filter((d) => d.id !== id);
+  if (get(surface.extDialog)?.id === id) surface.extDialog.set(surface.dialogs[0] ?? null);
+}
 
 // ---------- helpers ----------
 
@@ -215,11 +291,17 @@ const MAX_INLINE_IMAGE_BASE64 = 1_500_000;
 
 /** Rebuild the UI item list from a full message array (initial load / session switch). */
 export function rebuildFromMessages(messages: AgentMessage[]) {
+  finalizeStreaming();
   const out: UiItem[] = [];
   const toolIndex = new Map<string, ToolItem>();
   for (const m of messages) {
     if (m.role === "user") {
-      const images = (m.attachments ?? [])
+      const contentImages = Array.isArray(m.content)
+        ? m.content.filter((c) => c.type === "image").map((c) => ({
+          type: "image", content: c.data, mimeType: c.mimeType, fileName: "image",
+        }))
+        : [];
+      const images = [...contentImages, ...(m.attachments ?? [])]
         .filter((a) => a.type === "image" && a.content)
         .map((a) => {
           const data = a.content ?? "";
@@ -281,12 +363,20 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
       });
     }
   }
+  // Tool calls persisted without a result (crash mid-run) would come back as
+  // eternal spinners on every reload — close them out here instead.
+  for (const tool of toolIndex.values()) {
+    if (tool.status !== "running") continue;
+    tool.status = "error";
+    tool.isError = true;
+    if (!tool.output) tool.output = "no result recorded";
+  }
   items.set(out);
 }
 
 // ---------- event handling ----------
 
-let streamingAssistant: AssistantItem | null = null;
+
 
 function currentTextBlock(item: AssistantItem, contentIndex: number | undefined): Block | null {
   if (contentIndex === undefined) return null;
@@ -294,11 +384,12 @@ function currentTextBlock(item: AssistantItem, contentIndex: number | undefined)
 }
 
 /** Close out a dangling streaming assistant item (agent done, or the process died). */
-function finalizeStreaming() {
-  if (streamingAssistant) {
-    streamingAssistant.streaming = false;
-    for (const b of streamingAssistant.blocks) if (b.type !== "toolcall") b.done = true;
-    streamingAssistant = null;
+function finalizeStreaming(surface = mainSurface) {
+  if (surface.assistant) {
+    surface.assistant.streaming = false;
+    for (const b of surface.assistant.blocks) if (b.type !== "toolcall") b.done = true;
+    surface.assistant = null;
+    surface.items.update((a) => a);
   }
 }
 
@@ -312,6 +403,7 @@ function newId(): string {
 
 /** Set a visible note that clears itself — unless something else replaced it first. */
 function transientNote(note: string, ms = 8000) {
+  if (note.includes("View changed while the request was pending")) return;
   statusNote.set(note);
   setTimeout(() => {
     if (get(statusNote) === note) statusNote.set("");
@@ -319,17 +411,23 @@ function transientNote(note: string, ms = 8000) {
 }
 
 export async function handleEvent(evt: PiEvent, origin?: { project: string; proc: number }) {
+  const owner = origin ?? { project: get(projectDir), proc: get(lastProcByProject)[get(projectDir)] };
   if (origin) {
-    // Drop stale envelopes from a replaced process, and route background
-    // projects to sidebar-status handling only (their events must not touch
-    // the active chat surface).
     const known = get(lastProcByProject)[origin.project];
-    if (known !== undefined && known !== origin.proc) return;
+    if (known !== undefined && known !== origin.proc || deadProcesses.get(origin.project) === origin.proc) return;
+    if (evt.type === "extension_ui_request" && evt.method === "notify" && handleMgmtNotify(String(evt.message ?? ""), origin)) return;
     if (origin.project !== get(projectDir)) {
-      handleBackgroundEvent(evt, origin.project);
+      renderEvent(evt, surfaceFor(origin.project, origin.proc), false, owner);
       return;
     }
   }
+  renderEvent(evt, mainSurface, true, owner);
+}
+
+function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, owner: { project: string; proc?: number }) {
+  const { items, streaming, queue, extStatuses, extWidgets, extDialog, composerDraft, activeSessionPath, statusNote } = surface;
+  if (foreground && (evt.type.startsWith("message_") || evt.type.startsWith("tool_execution_"))) transcriptRevision++;
+  if (foreground && evt.type.startsWith("agent_")) activityRevision++;
   switch (evt.type) {
     case "agent_start":
       streaming.set(true);
@@ -337,27 +435,30 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
       break;
     case "agent_end":
     case "agent_settled": {
-      streaming.set(false);
+      const continuing = evt.type === "agent_end" && (evt.willRetry === true || get(queue).steering.length + get(queue).followUp.length > 0);
+      streaming.set(continuing);
       // Don't clobber an "attention" mark (e.g. an errored response that just
       // ended) — the user still needs to see it until the next action.
       const cur = get(sessionStates)[get(activeSessionPath) ?? ""];
-      if (cur?.status !== "attention") setSessionStatus(get(activeSessionPath), "idle");
-      finalizeStreaming();
+      if (cur?.status !== "attention") setSessionStatus(get(activeSessionPath), continuing ? "active" : "idle", continuing ? "continuing" : "");
+      finalizeStreaming(surface);
+      if (evt.type === "agent_settled") void refreshSessions();
+      if (foreground && evt.type === "agent_settled" && historyNeedsRefresh) void reloadMessages();
       break;
     }
     case "message_start": {
-      const m = evt.message;
+      const m = typeof evt.message === "object" ? evt.message : undefined;
       if (m?.role === "assistant") {
         const item: AssistantItem = { kind: "assistant", blocks: [], streaming: true };
-        streamingAssistant = item;
+        surface.assistant = item;
         items.update((a) => [...a, item]);
       }
       break;
     }
     case "message_update": {
       const d = evt.assistantMessageEvent;
-      if (!d || !streamingAssistant) break;
-      const item = streamingAssistant;
+      if (!d || !surface.assistant) break;
+      const item = surface.assistant;
       if (d.type === "text_start") {
         item.blocks[d.contentIndex ?? item.blocks.length] = { type: "text", text: "", done: false };
       } else if (d.type === "text_delta") {
@@ -375,6 +476,11 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
         const b = currentTextBlock(item, d.contentIndex);
         if (b && b.type === "thinking") { b.done = true; }
       } else if (d.type === "toolcall_start") {
+        // Pi's contentIndex counts tool calls as well as text/thinking. Keep
+        // that slot occupied so later deltas cannot create sparse blocks.
+        item.blocks[d.contentIndex ?? item.blocks.length] = {
+          type: "toolcall", toolCallId: d.id ?? "", name: d.toolName ?? "tool", args: "",
+        };
         const tool: ToolItem = {
           kind: "tool", toolCallId: d.id ?? "", name: d.toolName ?? "tool",
           args: "", status: "running", output: "", outputTruncated: false, isError: false,
@@ -385,6 +491,14 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
       } else if (d.type === "toolcall_end") {
         const tc = d.toolCall;
         if (tc) {
+          const b = d.contentIndex === undefined
+            ? item.blocks.find((b) => b.type === "toolcall" && b.toolCallId === tc.id)
+            : currentTextBlock(item, d.contentIndex);
+          if (b?.type === "toolcall") {
+            b.toolCallId = tc.id;
+            b.name = tc.name;
+            b.args = JSON.stringify(tc.arguments ?? {}, null, 2);
+          }
           items.update((a) => {
             const t = a.find((x) => x.kind === "tool" && x.toolCallId === tc.id) as ToolItem | undefined;
             if (t) { t.name = tc.name; t.args = JSON.stringify(tc.arguments ?? {}, null, 2); }
@@ -396,8 +510,8 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
       break;
     }
     case "message_end": {
-      const m = evt.message;
-      if (m?.role === "assistant" && streamingAssistant) {
+      const m = typeof evt.message === "object" ? evt.message : undefined;
+      if (m?.role === "assistant" && surface.assistant) {
         if (m.stopReason === "error") {
           setSessionStatus(get(activeSessionPath), "attention", "error in response");
         }
@@ -413,14 +527,14 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
             blocks.push({ type: "toolcall", toolCallId: tc.id, name: tc.name, args: JSON.stringify(tc.arguments ?? {}, null, 2) });
           }
         }
-        streamingAssistant.blocks = blocks;
-        streamingAssistant.usage = m.usage;
-        streamingAssistant.stopReason = m.stopReason;
-        streamingAssistant.errorMessage = m.stopReason === "error" ? m.errorMessage : undefined;
-        streamingAssistant.streaming = false;
-        streamingAssistant = null;
+        surface.assistant.blocks = blocks;
+        surface.assistant.usage = m.usage;
+        surface.assistant.stopReason = m.stopReason;
+        surface.assistant.errorMessage = m.stopReason === "error" ? m.errorMessage : undefined;
+        surface.assistant.streaming = false;
+        surface.assistant = null;
         items.update((a) => a);
-        if (m.usage) refreshStats();
+        if (foreground && m.usage) void refreshStats();
       }
       break;
     }
@@ -472,7 +586,7 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
     case "compaction_end":
       statusNote.set(evt.result ? `Compacted: ${(evt.result as { tokensBefore?: number })?.tokensBefore ?? "?"} → ${(evt.result as { estimatedTokensAfter?: number })?.estimatedTokensAfter ?? "?"} tokens` : "Compaction failed/aborted");
       setTimeout(() => statusNote.set(""), 6000);
-      refreshStats();
+      if (foreground) void refreshStats();
       break;
     case "auto_retry_start":
       statusNote.set(`Retrying (attempt ${evt.attempt}/${evt.maxAttempts})…`);
@@ -487,14 +601,19 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
       const id = evt.id as string;
       const method = evt.method as string;
       if (["select", "confirm", "input", "editor"].includes(method)) {
-        extDialog.set({
-          id, method,
+        const dialog: ExtDialogData = {
+          id, method, project: owner.project, proc: owner.proc,
           title: (evt.title as string) ?? "",
           options: evt.options as string[],
           message: (evt as { message?: string }).message as string,
           placeholder: evt.placeholder as string,
           prefill: (evt as { prefill?: string }).prefill as string,
-        });
+        };
+        if (!get(extDialog)) surface.dialogs = [];
+        if (!surface.dialogs.some((d) => d.id === id)) surface.dialogs.push(dialog);
+        extDialog.set(surface.dialogs[0]);
+        setSessionStatus(get(activeSessionPath), "attention", "extension question");
+        if (typeof evt.timeout === "number" && evt.timeout > 0) setTimeout(() => removeDialog(owner, id), evt.timeout);
         break;
       }
       // Fire-and-forget methods: surface what extensions already publish.
@@ -530,10 +649,10 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
           break;
         }
         case "setTitle":
-          document.title = (evt.title as string) || "Leftleg";
+          if (foreground) document.title = (evt.title as string) || "Leftleg";
           break;
         case "set_editor_text":
-          requestComposerText((evt as { text?: string }).text ?? "");
+          composerDraft.set({ text: (evt as { text?: string }).text ?? "", nonce: ++draftNonce });
           break;
         default:
           break; // unknown fire-and-forget method — nothing to render (yet)
@@ -543,6 +662,37 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
     default:
       break;
   }
+}
+
+// ---------- request / navigation ownership ----------
+export const navigating = writable(false);
+let viewRevision = 0;
+let navigationTail: Promise<unknown> = Promise.resolve();
+let queuedNavigations = 0;
+
+function navigate<T>(work: () => Promise<T>): Promise<T> {
+  queuedNavigations++;
+  navigating.set(true);
+  const result = navigationTail.then(async () => {
+    viewRevision++;
+    return work();
+  });
+  navigationTail = result.catch(() => {});
+  return result.finally(() => {
+    if (--queuedNavigations === 0) navigating.set(false);
+  });
+}
+
+/** An RPC response may only update the view that issued it. */
+async function requestForView<T = unknown>(command: Record<string, unknown>, timeout = 120): Promise<T> {
+  const project = get(projectDir);
+  const proc = get(lastProcByProject)[project];
+  const revision = viewRevision;
+  const res = await api.piRequest<T>(command, timeout, project || null, proc);
+  if (project !== get(projectDir) || proc !== get(lastProcByProject)[project] || revision !== viewRevision) {
+    throw new Error("View changed while the request was pending");
+  }
+  return res;
 }
 
 // ---------- actions ----------
@@ -558,15 +708,18 @@ export function applyTheme(t: "light" | "dark" | "system") {
 
 export async function refreshStats() {
   try {
-    const res = await api.piRequest<{ success: boolean; data?: SessionStats }>({ type: "get_session_stats" }, 30);
+    const res = await requestForView<{ success: boolean; data?: SessionStats }>({ type: "get_session_stats" }, 30);
     if (res.success && res.data) stats.set(res.data);
   } catch { /* ignore */ }
 }
 
 export async function refreshRpcState() {
-  const res = await api.piRequest<{ success: boolean; data?: RpcState }>({ type: "get_state" }, 30);
+  const activity = activityRevision;
+  const res = await requestForView<{ success: boolean; data?: RpcState }>({ type: "get_state" }, 30);
+  if (!res.success || !res.data) throw new Error("Could not read Pi runtime state");
   if (res.success && res.data) {
     rpcState.set(res.data);
+    if (activity === activityRevision) streaming.set(res.data.isStreaming === true);
     // pi owns session identity: the UI highlights whatever pi says is active.
     const file = res.data.sessionFile ?? null;
     activeSessionPath.set(file);
@@ -581,7 +734,7 @@ export async function refreshSessions() {
 
 export async function refreshModels() {
   try {
-    const res = await api.piRequest<{ success: boolean; data?: { models: ModelInfo[] } }>({ type: "get_available_models" }, 30);
+    const res = await requestForView<{ success: boolean; data?: { models: ModelInfo[] } }>({ type: "get_available_models" }, 30);
     if (res.success && res.data) models.set(res.data.models);
   } catch { /* ignore */ }
 }
@@ -591,15 +744,6 @@ export interface PromptResult {
   error?: string;
 }
 
-function updateUserItem(id: string, patch: Partial<import("./types").UserItem>) {
-  items.update((a) => a.map((x) => (x.kind === "user" && x.id === id) ? { ...x, ...patch } : x));
-}
-
-function failUserItem(id: string, error: string) {
-  updateUserItem(id, { status: "failed", error });
-  transientNote(`Prompt not delivered: ${error}`);
-}
-
 /**
  * Send a user prompt. The optimistic bubble is marked per delivery state:
  * in-flight → "sending", accepted → "accepted", rejected/errored → "failed"
@@ -607,12 +751,16 @@ function failUserItem(id: string, error: string) {
  * Never throws; callers get `{ ok, error }` and only clear their draft on ok.
  */
 export async function sendPrompt(text: string, images: { data: string; mimeType: string; name: string }[]): Promise<PromptResult> {
+  if (get(navigating)) return { ok: false, error: "Wait for the session to finish opening" };
   const trimmed = text.trim();
   if (!trimmed && images.length === 0) return { ok: false, error: "Nothing to send" };
   if (!get(connected) || !get(projectDir)) {
     transientNote("Pick a project folder first — the pi process isn't running.");
     return { ok: false, error: "pi process not running" };
   }
+  const originProject = get(projectDir);
+  const originProc = get(lastProcByProject)[originProject];
+  const originRevision = viewRevision;
   const isStreaming = get(streaming);
   const cmd: Record<string, unknown> = { type: "prompt", message: trimmed };
   if (images.length > 0) {
@@ -625,27 +773,32 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
     kind: "user", text: trimmed, id: bubbleId, status: "sending",
     images: images.map((i) => ({ name: i.name, dataUrl: `data:${i.mimeType};base64,${i.data}` })),
   }]);
+  function delivery(patch: Partial<UserItem>) {
+    const surface = originProject === get(projectDir) ? mainSurface : backgroundSurfaces.get(originProject)?.surface;
+    surface?.items.update((a) => a.map((x) => x.kind === "user" && x.id === bubbleId ? { ...x, ...patch } : x));
+    if (patch.error && originProject === get(projectDir)) transientNote(`Prompt not delivered: ${patch.error}`);
+  }
   let result: PromptResult;
   try {
-    const res = await api.piRequest<{ success: boolean; error?: string }>(cmd, 600);
+    const res = await api.piRequest<{ success: boolean; error?: string }>(cmd, 600, originProject, originProc);
     if (res.success) {
-      updateUserItem(bubbleId, { status: "accepted" });
+      delivery({ status: "accepted" });
       // Unrelated failed attempts are NOT removed here: they were never
       // delivered, so their Retry affordance stays until retried or dismissed.
       result = { ok: true };
     } else {
       const error = res.error ?? "prompt rejected by pi";
-      failUserItem(bubbleId, error);
+      delivery({ status: "failed", error });
       result = { ok: false, error };
     }
   } catch (e) {
     const error = typeof e === "string" ? e : String(e);
-    failUserItem(bubbleId, error);
+    delivery({ status: "failed", error });
     result = { ok: false, error };
   }
   // pi may die between the response and this refresh; never let it escalate
   // into an unhandled rejection.
-  void refreshRpcState().catch(() => {});
+  if (originProject === get(projectDir) && originProc === get(lastProcByProject)[originProject] && originRevision === viewRevision) void refreshRpcState().catch(() => {});
   return result;
 }
 
@@ -653,6 +806,7 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
 export async function retryFailedUser(id: string): Promise<PromptResult> {
   const item = get(items).find((x) => x.kind === "user" && x.id === id) as import("./types").UserItem | undefined;
   if (!item || item.status !== "failed") return { ok: false, error: "not retryable" };
+  if (!get(connected) || get(navigating)) return { ok: false, error: "pi process not ready" };
   const images = item.images
     .filter((i) => i.dataUrl)
     .map((i) => {
@@ -669,17 +823,31 @@ export function dismissFailedUser(id: string) {
 }
 
 export async function abort() {
-  try { await api.piRequest({ type: "abort" }, 120); } catch { /* ignore */ }
+  await rpcAction({ type: "abort" }, 120);
 }
 
 /** Model pinned for every new session — the stack's default (AGENTS.md rule 7). */
 export const DEFAULT_MODEL = { provider: "openrouter", id: "z-ai/glm-5.3-flash" };
 
-export async function newSession() {
+export function newSession() { return navigate(() => newSessionImpl()); }
+
+async function newSessionImpl() {
   try {
-    await api.piRequest({ type: "new_session" }, 120);
+    const res = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "new_session" }, 120);
+    if (!res.success) {
+      transientNote(`Couldn't create session: ${res.error ?? "rejected by pi"}`);
+      return;
+    }
+    if (res.data?.cancelled) {
+      transientNote("New session was cancelled by an extension");
+      return;
+    }
+    finalizeStreaming();
+    streaming.set(false);
+    queue.set({ steering: [], followUp: [] });
     items.set([]);
     activeSessionPath.set(null);
+    composerDraft.set(null);
     await refreshRpcState();
     // Fresh sessions otherwise inherit pi's fallback model (often Opus) — pin
     // the project's default (GUI preference), or the stack default (rule 7).
@@ -703,33 +871,47 @@ export async function newSession() {
  * no app reload, and background projects keep running with their events
  * feeding only the sidebar.
  */
-export async function switchToProject(dir: string, sessionPath?: string) {
+export function switchToProject(dir: string, sessionPath?: string) { return navigate(() => switchToProjectImpl(dir, sessionPath)); }
+
+async function switchToProjectImpl(dir: string, sessionPath?: string) {
   try {
     const pid = await api.piStart(dir, sessionPath ?? null);
     recordProcess(dir, pid);
-    // Reset the chat surface for the incoming project.
-    items.set([]);
-    finalizeStreaming();
-    streaming.set(false);
-    queue.set({ steering: [], followUp: [] });
+    saveSurface();
     projectDir.set(dir);
+    restoreSurface(dir, pid);
+    commands.set([]);
+    models.set([]);
+    stats.set(null);
+    rpcState.set(null);
     connected.set(true);
     disconnected.set(false);
     await refreshRpcState();
+    let switched = false;
     // Trust pi: on a reused process it may not be in the requested session.
     if (sessionPath && get(activeSessionPath) !== sessionPath) {
       try {
-        const r = await api.piRequest<{ success: boolean; error?: string; data?: { cancelled: boolean } }>(
+        const r = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>(
           { type: "switch_session", sessionPath },
           120,
         );
-        if (r.success && !r.data?.cancelled) await refreshRpcState();
-        else transientNote(`Couldn't open session: ${r.error ?? "cancelled by extension"}`);
+        if (r.success && !r.data?.cancelled) {
+          // The restored surface belonged to the session pi had active before
+          // (possibly mid-stream). After a successful switch, drop those
+          // remnants and rebuild from pi so the view matches the session.
+          finalizeStreaming();
+          items.set([]);
+          queue.set({ steering: [], followUp: [] });
+          composerDraft.set(null);
+          await refreshRpcState();
+          await reloadMessages();
+          switched = true;
+        } else transientNote(`Couldn't open session: ${r.error ?? "cancelled by extension"}`);
       } catch { /* pi's own state wins */ }
     }
     await refreshModels();
     await refreshCommands();
-    await reloadMessages();
+    if (!switched && (!get(streaming) || get(items).length === 0)) await reloadMessages();
     await refreshStats();
     await refreshSessions();
     if (get(activeSessionPath)) markVisited(get(activeSessionPath)!);
@@ -739,15 +921,18 @@ export async function switchToProject(dir: string, sessionPath?: string) {
   }
 }
 
-export async function openSession(path: string) {
+export function openSession(path: string) { return navigate(() => openSessionImpl(path)); }
+
+async function openSessionImpl(path: string) {
+  if (get(activeSessionPath) === path) return;
   const info = get(sessions).find((s) => s.path === path);
   if (info?.cwd && info.cwd !== get(projectDir)) {
     // Cross-project open: focus (or spawn) that project's process on this session.
-    await switchToProject(info.cwd, path);
+    await switchToProjectImpl(info.cwd, path);
     return;
   }
   try {
-    const res = await api.piRequest<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "switch_session", sessionPath: path }, 120);
+    const res = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "switch_session", sessionPath: path }, 120);
     if (!res.success) {
       transientNote(`Couldn't open session: ${res.error ?? "rejected by pi"}`);
       return;
@@ -756,6 +941,10 @@ export async function openSession(path: string) {
       transientNote("Session switch was cancelled by an extension");
       return;
     }
+    finalizeStreaming();
+    items.set([]);
+    queue.set({ steering: [], followUp: [] });
+    composerDraft.set(null);
     // Re-read pi's state so the UI highlights what pi actually loaded.
     await refreshRpcState();
     await reloadMessages();
@@ -768,58 +957,67 @@ export async function openSession(path: string) {
 }
 
 export async function reloadMessages() {
+  const revision = transcriptRevision;
   try {
-    const res = await api.piRequest<{ success: boolean; data?: { messages: AgentMessage[] } }>({ type: "get_messages" }, 60);
-    if (res.success && res.data) rebuildFromMessages(res.data.messages);
-  } catch { /* ignore */ }
+    const res = await requestForView<{ success: boolean; data?: { messages: AgentMessage[] } }>({ type: "get_messages" }, 60);
+    if (res.success && Array.isArray(res.data?.messages)) {
+      if (revision === transcriptRevision) {
+        rebuildFromMessages(res.data.messages);
+        historyNeedsRefresh = false;
+      } else {
+        historyNeedsRefresh = true;
+        if (!get(streaming)) queueMicrotask(() => void reloadMessages());
+      }
+    }
+  } catch (e) { transientNote(`Couldn't load session history: ${e}`); }
 }
 
-export async function renameSession(name: string) {
+export async function renameSession(name: string, path = get(activeSessionPath) ?? undefined) {
+  if (!path || path !== get(activeSessionPath) || get(navigating)) {
+    transientNote("Open the session you want to rename first.");
+    return;
+  }
   if (!name.trim()) return;
-  await api.piRequest({ type: "set_session_name", name: name.trim() }, 30);
+  if (!await rpcAction({ type: "set_session_name", name: name.trim() })) return;
   await refreshRpcState();
   await refreshSessions();
 }
 
+async function rpcAction(command: Record<string, unknown>, timeout = 30): Promise<boolean> {
+  try {
+    const res = await requestForView<{ success: boolean; error?: string }>(command, timeout);
+    if (!res.success) throw new Error(res.error ?? `${command.type} rejected by pi`);
+    return true;
+  } catch (e) { transientNote(`Error: ${e}`); return false; }
+}
 export async function setModel(provider: string, modelId: string) {
-  const res = await api.piRequest<{ success: boolean; data?: ModelInfo }>({ type: "set_model", provider, modelId }, 60);
-  if (res.success) { await refreshRpcState(); }
+  if (await rpcAction({ type: "set_model", provider, modelId }, 60)) await refreshRpcState();
 }
-
 export async function setThinkingLevel(level: ThinkingLevel) {
-  await api.piRequest({ type: "set_thinking_level", level }, 30);
-  await refreshRpcState();
+  if (await rpcAction({ type: "set_thinking_level", level })) await refreshRpcState();
 }
-
 export async function setSteeringMode(mode: "all" | "one-at-a-time") {
-  await api.piRequest({ type: "set_steering_mode", mode }, 30);
-  await refreshRpcState();
+  if (await rpcAction({ type: "set_steering_mode", mode })) await refreshRpcState();
 }
-
 export async function setFollowUpMode(mode: "all" | "one-at-a-time") {
-  await api.piRequest({ type: "set_follow_up_mode", mode }, 30);
-  await refreshRpcState();
+  if (await rpcAction({ type: "set_follow_up_mode", mode })) await refreshRpcState();
 }
-
 export async function setAutoCompaction(enabled: boolean) {
-  await api.piRequest({ type: "set_auto_compaction", enabled }, 30);
-  await refreshRpcState();
+  if (await rpcAction({ type: "set_auto_compaction", enabled })) await refreshRpcState();
 }
-
 export async function setAutoRetry(enabled: boolean) {
-  await api.piRequest({ type: "set_auto_retry", enabled }, 30);
-  await refreshRpcState();
+  if (await rpcAction({ type: "set_auto_retry", enabled })) autoRetry.set(enabled);
 }
-
 export async function compact() {
   statusNote.set("Compacting…");
-  try { await api.piRequest({ type: "compact" }, 600); } catch { /* ignore */ }
+  if (await rpcAction({ type: "compact" }, 600)) {
+    transientNote("Compaction completed");
+    await reloadMessages();
+    await refreshStats();
+  }
 }
-
-/** Abort an in-flight auto-retry (pi keeps retrying transient errors otherwise). */
-export async function abortRetry() {
-  try { await api.piRequest({ type: "abort_retry" }, 30); } catch { /* ignore */ }
-}
+export async function abortRetry() { await rpcAction({ type: "abort_retry" }); }
+export async function clearQueue() { await rpcAction({ type: "clear_queue" }); }
 
 /** Export the active session to a user-chosen HTML file (pi renders it). */
 export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string; error?: string }> {
@@ -830,7 +1028,7 @@ export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string;
       filters: [{ name: "HTML", extensions: ["html"] }],
     });
     if (!target) return { ok: false };
-    const res = await api.piRequest<{ success: boolean; error?: string; data?: { path: string } }>(
+    const res = await requestForView<{ success: boolean; error?: string; data?: { path: string } }>(
       { type: "export_html", outputPath: target },
       120,
     );
@@ -847,9 +1045,11 @@ export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string;
 }
 
 /** Duplicate the active branch into a new session and switch to it. */
-export async function cloneSession(): Promise<{ ok: boolean; error?: string }> {
+export function cloneSession() { return navigate(cloneSessionImpl); }
+
+async function cloneSessionImpl(): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await api.piRequest<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "clone" }, 120);
+    const res = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "clone" }, 120);
     if (!res.success) {
       transientNote(`Couldn't clone session: ${res.error ?? "rejected by pi"}`);
       return { ok: false, error: res.error ?? "clone failed" };
@@ -872,11 +1072,24 @@ export async function cloneSession(): Promise<{ ok: boolean; error?: string }> {
   }
 }
 
+let answeringDialogId: string | null = null;
+
 export async function respondToExtDialog(response: Record<string, unknown>) {
   const d = get(extDialog);
-  if (!d) return;
-  await api.piSend({ type: "extension_ui_response", id: d.id, ...response });
-  extDialog.set(null);
+  if (!d || answeringDialogId === d.id) return; // one answer per dialog
+  if (d.proc !== undefined && get(lastProcByProject)[d.project ?? ""] !== d.proc) {
+    extDialog.set(null);
+    transientNote("Extension request expired with its process");
+    return;
+  }
+  answeringDialogId = d.id;
+  try {
+    await api.piSend({ type: "extension_ui_response", id: d.id, ...response }, d.project ?? get(projectDir), d.proc);
+  } catch (e) {
+    transientNote(`Couldn't answer extension request: ${e}`);
+  }
+  answeringDialogId = null;
+  removeDialog(d, d.id);
 }
 
 // ---------- bootstrap ----------
@@ -886,9 +1099,12 @@ let guiStateCache: Record<string, unknown> | null = null;
 
 async function persistLastSession(path: string | null) {
   const dir = get(projectDir);
-  if (!dir || !path || !guiStateCache) return;
+  if (!dir || !guiStateCache) return;
+  const changedProject = guiStateCache.projectDir !== dir;
+  guiStateCache.projectDir = dir;
+  if (!path) { await api.writeGuiState(guiStateCache); return; }
   const map = (guiStateCache.lastSessionByProject as Record<string, string> | undefined) ?? {};
-  if (map[dir] === path) return;
+  if (map[dir] === path && !changedProject) return;
   map[dir] = path;
   guiStateCache.lastSessionByProject = map;
   try { await api.writeGuiState(guiStateCache); } catch { /* ignore */ }
@@ -897,52 +1113,10 @@ async function persistLastSession(path: string | null) {
 /** Fetch pi's executable command list (extension commands, templates, skills). */
 export async function refreshCommands() {
   try {
-    const res = await api.piRequest<{ success: boolean; data?: { commands: ExtCommand[] } }>({ type: "get_commands" }, 30);
+    const res = await requestForView<{ success: boolean; data?: { commands: ExtCommand[] } }>({ type: "get_commands" }, 30);
     commands.set(res.success && res.data ? (res.data.commands ?? []) : []);
   } catch {
     commands.set([]);
-  }
-}
-
-/**
- * Events from a project whose process is not the active one. They never touch
- * items/streaming — only the sidebar status of that project's active session
- * (and its notifications). Mirrors T3's per-thread liveness pills.
- */
-function handleBackgroundEvent(evt: PiEvent, project: string) {
-  const session = get(activeSessionByProject)[project];
-  switch (evt.type) {
-    case "agent_start":
-      setSessionStatus(session, "active", "working");
-      break;
-    case "agent_end":
-    case "agent_settled": {
-      const cur = get(sessionStates)[session ?? ""];
-      if (cur?.status !== "attention") setSessionStatus(session, "idle");
-      break;
-    }
-    case "message_end": {
-      const m = evt.message;
-      if (m?.role === "assistant" && m.stopReason === "error") {
-        setSessionStatus(session, "attention", "error in response");
-      }
-      break;
-    }
-    case "extension_error":
-      setSessionStatus(session, "attention", "extension error");
-      break;
-    case "extension_ui_request":
-      // Only notify is worth surfacing for background projects; widget/status
-      // surfaces belong to the active project.
-      if (evt.method === "notify") {
-        pushNotification(
-          evt.notifyType as "info" | "warning" | "error" | undefined,
-          `${projectLabel(project)}: ${(evt as { message?: string }).message ?? ""}`,
-        );
-      }
-      break;
-    default:
-      break;
   }
 }
 
@@ -951,9 +1125,11 @@ function handleBackgroundEvent(evt: PiEvent, project: string) {
  * background projects just lose their liveness pill. `pid` filters stale
  * exits from processes that were replaced while this event was in flight.
  */
-export function handlePiExit(project: string, pid: number, expected: boolean) {
+export function handlePiExit(project: string, pid: number, expected: boolean, error?: string) {
   const known = get(lastProcByProject)[project];
   if (known !== undefined && known !== pid) return; // replaced process — ignore
+  deadProcesses.set(project, pid);
+  backgroundSurfaces.delete(project);
   lastProcByProject.update((m) => {
     const next = { ...m };
     delete next[project];
@@ -962,11 +1138,11 @@ export function handlePiExit(project: string, pid: number, expected: boolean) {
   if (project !== get(projectDir)) {
     const session = get(activeSessionByProject)[project];
     if (!expected) setSessionStatus(session, "attention", "process exited");
-    abortPendingMgmt("pi process exited before the management reply");
+    abortPendingMgmt("pi process exited before the management reply", project, pid);
     return;
   }
   connected.set(false);
-  abortPendingMgmt("pi process exited before the management reply");
+  abortPendingMgmt("pi process exited before the management reply", project, pid);
   // Surfaces owned by the dead process: clear extension state with it —
   // including any outstanding dialog, which would otherwise cover the
   // recovery controls and fail on answer (the process is gone).
@@ -974,17 +1150,36 @@ export function handlePiExit(project: string, pid: number, expected: boolean) {
   extWidgets.set({});
   extDialog.set(null);
   finalizeStreaming();
+  // The process is gone, so tool_execution_end will never arrive: close out
+  // any tool cards still showing a spinner, otherwise they run forever.
+  items.update((a) => {
+    let touched = false;
+    for (const it of a) {
+      if (it.kind === "tool" && (it as ToolItem).status === "running") {
+        (it as ToolItem).status = "error";
+        (it as ToolItem).isError = true;
+        if (!(it as ToolItem).output) (it as ToolItem).output = "pi exited while this tool was running";
+        touched = true;
+      }
+    }
+    return touched ? [...a] : a;
+  });
   streaming.set(false);
+  queue.set({ steering: [], followUp: [] });
+  mainSurface.dialogs = [];
+  commands.set([]);
   if (expected) {
     transientNote("pi stopped", 4000);
   } else {
     disconnected.set(true);
-    transientNote("pi exited unexpectedly", 10000);
+    transientNote(error || "pi exited unexpectedly", 15000);
   }
 }
 
 /** Restart the active project's pi process, resuming the active session. */
-export async function restartPi() {
+export function restartPi() { return navigate(() => restartPiImpl()); }
+
+async function restartPiImpl() {
   const dir = get(projectDir);
   if (!dir) {
     transientNote("No project folder to restart pi in.");
@@ -1017,6 +1212,7 @@ export async function restartPi() {
     await refreshSessions();
     await refreshCommands();
   } catch (e) {
+    connected.set(false);
     disconnected.set(true);
     transientNote(`Couldn't restart pi: ${e}`);
   }
@@ -1037,7 +1233,12 @@ export async function chooseProject() {
   await switchToProject(picked);
 }
 
-export async function boot() {
+export function boot() { return navigate(() => bootImpl()); }
+
+async function bootImpl() {
+  backgroundSurfaces.clear();
+  deadProcesses.clear();
+  mainSurface.dialogs = [];
   // 1. Load GUI state
   let gui: Record<string, unknown> = {};
   try { gui = await api.readGuiState(); } catch { /* first run */ }
@@ -1054,7 +1255,7 @@ export async function boot() {
   visitedAt.set((gui.visitedAt as Record<string, number>) ?? {});
   sidebarWidth.set((gui.sidebarWidth as number) ?? 256);
   settledView.set((gui.settledView as "per-project" | "unified") ?? "per-project");
-  autoRetry.set((gui.autoRetry as boolean) ?? true);
+  autoRetry.set(true);
 
   // Persist theme + sidebar changes
   theme.subscribe(async (v) => {
@@ -1089,10 +1290,7 @@ export async function boot() {
     gui.settledView = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
-  autoRetry.subscribe(async (v) => {
-    gui.autoRetry = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
+  delete gui.autoRetry; // agent settings are persisted only by Pi
 
   // React to OS theme changes when in system mode
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
@@ -1128,7 +1326,7 @@ export async function boot() {
     // switch it there; whatever pi reports afterwards is shown as active.
     if (resumed && resumePath && get(activeSessionPath) !== resumePath) {
       try {
-        const r = await api.piRequest<{ success: boolean }>({ type: "switch_session", sessionPath: resumePath }, 120);
+        const r = await requestForView<{ success: boolean }>({ type: "switch_session", sessionPath: resumePath }, 120);
         if (r.success) await refreshRpcState();
       } catch { /* pi's own state wins */ }
     }
@@ -1138,6 +1336,8 @@ export async function boot() {
     await refreshStats();
     void persistLastSession(get(activeSessionPath));
   } catch (e) {
+    connected.set(false);
+    disconnected.set(true);
     transientNote(`Failed to start pi: ${e}`);
   }
 }

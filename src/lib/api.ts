@@ -8,12 +8,13 @@ export function piRequest<T = unknown>(
   command: Record<string, unknown>,
   timeoutSecs = 120,
   project?: string | null,
+  expectedProc?: number,
 ): Promise<T> {
-  return invoke("pi_request", { command, timeoutSecs, project: project ?? null });
+  return invoke("pi_request", { command, timeoutSecs, project: project ?? null, expectedProc: expectedProc ?? null });
 }
 
-export function piSend(line: Record<string, unknown>, project?: string | null): Promise<void> {
-  return invoke("pi_send", { line, project: project ?? null });
+export function piSend(line: Record<string, unknown>, project?: string | null, expectedProc?: number): Promise<void> {
+  return invoke("pi_send", { line, project: project ?? null, expectedProc: expectedProc ?? null });
 }
 
 /** Start (or refocus) a project's process. Returns the process id, which the
@@ -46,8 +47,12 @@ export function readGuiState(): Promise<Record<string, unknown>> {
   return invoke("read_gui_state");
 }
 
+let guiWriteTail: Promise<void> = Promise.resolve();
 export function writeGuiState(state: Record<string, unknown>): Promise<void> {
-  return invoke("write_gui_state", { state });
+  const snapshot = JSON.parse(JSON.stringify(state));
+  const write = guiWriteTail.then(() => invoke<void>("write_gui_state", { state: snapshot }));
+  guiWriteTail = write.catch(() => {});
+  return write;
 }
 
 export function readFileBase64(path: string): Promise<string> {

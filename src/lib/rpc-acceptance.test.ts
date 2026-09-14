@@ -22,9 +22,9 @@ vi.mock("./api", () => {
     return impl;
   };
   return {
-    piRequest: (command: Record<string, unknown>, timeoutSecs?: number) => t().piRequest(command, timeoutSecs),
-    piSend: (line: Record<string, unknown>) => t().piSend(line),
-    piStart: (cwd: string, sessionPath?: string | null) => t().piStart(cwd, sessionPath),
+    piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null, expectedProc?: number) => t().piRequest(command, timeoutSecs, project, expectedProc),
+    piSend: (line: Record<string, unknown>, project?: string | null) => t().piSend(line, project),
+    piStart: (cwd: string, sessionPath?: string | null, forceRestart?: boolean) => t().piStart(cwd, sessionPath, forceRestart),
     piStop: () => t().piStop(),
     piStatus: () => t().piStatus(),
     listSessions: () => t().listSessions(),
@@ -58,7 +58,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 type ApiShape = {
-  piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null) => Promise<unknown>;
+  piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null, expectedProc?: number) => Promise<unknown>;
   piSend: (line: Record<string, unknown>, project?: string | null) => Promise<void>;
   piStart: (project: string, sessionPath?: string | null, forceRestart?: boolean) => Promise<number>;
   piStop: (project?: string | null) => Promise<void>;
@@ -93,8 +93,8 @@ function activeFake(h: FakePiHub): FakePi {
 /** Wire the hub into the api module + App.svelte's event plumbing. */
 function wire(h: FakePiHub) {
   (globalThis as unknown as Record<string, unknown>).__leftlegApiTransport = {
-    piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null) =>
-      h.piRequest(command, timeoutSecs, project),
+    piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null, expectedProc?: number) =>
+      h.piRequest(command, timeoutSecs, project, expectedProc),
     piSend: (line: Record<string, unknown>, project?: string | null) => h.piSend(line, project),
     piStart: (project: string, sessionPath?: string | null, forceRestart?: boolean) =>
       h.piStart(project, sessionPath, forceRestart),
@@ -638,6 +638,43 @@ describe("journey: multi-project orchestration", () => {
   beforeEach(async () => {
     await boot();
     await drain();
+  });
+
+  it("restores a partial assistant and continues its deltas after refocusing", async () => {
+    const demo = hub.forProject(PROJECT_DIR)!;
+    demo.busy = true;
+    demo.emit({ type: "agent_start" });
+    demo.emit({ type: "message_start", message: { role: "assistant" } });
+    demo.emit({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
+    demo.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Before " } });
+    await openSession(SESSION_OTHER);
+    demo.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "during " } });
+    await openSession(SESSION_A);
+    expect(get(streaming)).toBe(true);
+    demo.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "after" } });
+    const last = get(items).at(-1) as AssistantItem;
+    expect(last.blocks).toEqual([{ type: "text", text: "Before during after", done: false }]);
+  });
+
+  it("restores background extension questions, without leaking widgets to another project", async () => {
+    const demo = hub.forProject(PROJECT_DIR)!;
+    demo.emit({ type: "extension_ui_request", method: "setWidget", widgetKey: "plan", widgetLines: ["Demo only"] });
+    await openSession(SESSION_OTHER);
+    expect(get(extWidgets)).toEqual({});
+    demo.emit({ type: "extension_ui_request", id: "question", method: "confirm", title: "Proceed?" });
+    expect(get(extDialog)).toBeNull();
+    expect(get(sessionStates)[SESSION_A].status).toBe("attention");
+    await openSession(SESSION_A);
+    expect(get(extDialog)).toMatchObject({ id: "question", project: PROJECT_DIR });
+    expect(get(extWidgets).plan.lines).toEqual(["Demo only"]);
+  });
+
+  it("serializes rapid project opens and persists the final focus", async () => {
+    await Promise.all([openSession(SESSION_OTHER), openSession(SESSION_B)]);
+    expect(get(projectDir)).toBe(PROJECT_DIR);
+    expect(get(activeSessionPath)).toBe(SESSION_B);
+    expect(hub.active.sessionFile).toBe(SESSION_B);
+    expect(hub.gui.projectDir).toBe(PROJECT_DIR);
   });
 
   it("opening another project's session spawns its process, switches focus, and leaves the first running", async () => {

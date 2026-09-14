@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { items, streaming, rpcState, projectDir, chooseProject } from "../lib/stores";
+  import { items, streaming, rpcState, projectDir, activeSessionPath, chooseProject, disconnected } from "../lib/stores";
   import MessageView from "./MessageView.svelte";
   import Composer from "./Composer.svelte";
 
-  let scroller: HTMLDivElement | null = null;
-  let stick = true;
+  let scroller: HTMLDivElement | null = $state(null);
+  let stick = $state(true);
 
   function onScroll() {
     if (!scroller) return;
@@ -12,15 +12,16 @@
     stick = nearBottom;
   }
 
-  $: {
+  $effect(() => {
     // scroll on new items or streaming growth
-    items; streaming;
+    $items; $streaming;
     if (stick && scroller) {
-      requestAnimationFrame(() => {
+      const frame = requestAnimationFrame(() => {
         scroller?.scrollTo({ top: scroller.scrollHeight });
       });
+      return () => cancelAnimationFrame(frame);
     }
-  }
+  });
 </script>
 
 <div class="chat" onscroll={onScroll} bind:this={scroller}>
@@ -36,6 +37,8 @@
       {#if !$projectDir}
         <p class="lead">Leftleg drives a <span class="mono">pi --mode rpc</span> process rooted in a project folder.<br />Pick one to start.</p>
         <button class="primary cta" onclick={chooseProject}>Choose project folder…</button>
+      {:else if $disconnected}
+        <p class="lead">Pi is offline. Use Restart &amp; resume to reconnect.</p>
       {:else if $rpcState}
         <p class="mono model-line">{$rpcState.model ? `${$rpcState.model.provider} / ${$rpcState.model.id}` : "no model selected"}</p>
         <p class="lead">Ask something, or attach a file with <span class="mono">+</span>.</p>
@@ -50,7 +53,9 @@
   {/if}
 </div>
 
-<Composer />
+{#key `${$projectDir}:${$activeSessionPath ?? ""}`}
+  <Composer draftKey={`${$projectDir}:${$activeSessionPath ?? ""}`} />
+{/key}
 
 <style>
   .chat {

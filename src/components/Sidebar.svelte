@@ -4,7 +4,7 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, applyTheme, chooseProject, connected, newSession, openSession, pins,
+    activeSessionPath, switchToProject, applyTheme, chooseProject, connected, newSession, openSession, pins,
     projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
     settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
@@ -118,10 +118,15 @@
         { label: s.settled ? "Unsettle" : "Settle", action: () => (s.settled ? unsettleSession(s.path) : settleSession(s.path)) },
         { label: "Rename…", action: () => beginRename(s) },
         { label: "Copy path", action: () => void navigator.clipboard.writeText(s.path) },
-        { label: "Copy session ID", action: () => void navigator.clipboard.writeText(s.path.split(/[\\/]/).pop() ?? s.path) },
-        { label: "Project settings…", action: () => { settingsProject.set(s.projectDir); settingsOpen.set(true); } },
+        { label: "Copy session ID", action: () => void navigator.clipboard.writeText(($sessions.find((info) => info.path === s.path)?.sessionId ?? "")) },
+        { label: "Project settings…", action: () => void openProjectSettings(s.projectDir) },
       ],
     };
+  }
+
+  async function openProjectSettings(dir: string) {
+    if ($projectDir !== dir) await switchToProject(dir);
+    if ($projectDir === dir) { settingsProject.set(dir); settingsOpen.set(true); }
   }
 
   function beginRename(s: SidebarSession) {
@@ -136,7 +141,7 @@
     const name = renameValue.trim();
     renameValue = "";
     if (!name) return;
-    void renameSession(name);
+    void renameSession(name, path);
   }
 
   function cancelRename() {
@@ -280,8 +285,7 @@
                   e.preventDefault();
                   projectScope.set(dir);
                   scopeOpen = false;
-                  settingsProject.set(dir);
-                  settingsOpen.set(true);
+                  void openProjectSettings(dir);
                 }}
                 title="Right-click for project settings"
               >

@@ -10,23 +10,35 @@
   import Notifications from "./components/Notifications.svelte";
   import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
+  import { boot } from "./lib/stores";
+  import { reportError } from "./lib/errors";
+  import { startupUpdateCheck, updateAvailable, updateStatus, updateError, applyUpdate } from "./lib/updater";
 
   let cleanup: (() => void) | null = null;
 
   onMount(() => {
+    let disposed = false;
+    const subscriptions: (() => void)[] = [];
+    cleanup = () => { for (const off of subscriptions.splice(0)) off(); };
     void (async () => {
       // Every pi line arrives wrapped in {project, proc, event} so events from
       // background projects can be routed and stale ones dropped.
       const unlisten = await listen<PiEventEnvelope>("pi-event", (e) => {
         const p = e.payload;
-        handleEvent(p.event, { project: p.project, proc: p.proc }).catch(console.error);
+        handleEvent(p.event, { project: p.project, proc: p.proc }).catch((e) => reportError("event", String(e)));
       });
+      if (disposed) { unlisten(); return; }
+      subscriptions.push(unlisten);
       const unlistenExit = await listen<PiExitEnvelope>("pi-exit", (e) => {
-        handlePiExit(e.payload.project, e.payload.proc, e.payload.expected);
+        handlePiExit(e.payload.project, e.payload.proc, e.payload.expected, e.payload.error);
       });
-      cleanup = () => { unlisten(); unlistenExit(); };
-    })();
-    return () => cleanup?.();
+      if (disposed) { unlistenExit(); return; }
+      subscriptions.push(unlistenExit);
+      await boot();
+    })().catch((e) => { cleanup?.(); reportError("boot", String(e)); });
+    // Non-blocking startup update check — banner renders only when available.
+    startupUpdateCheck();
+    return () => { disposed = true; cleanup?.(); };
   });
 </script>
 
@@ -46,6 +58,20 @@
       <span class="project mono" title={$projectDir}>{$projectDir || "no project"}</span>
       <span class="spacer"></span>
     </header>
+    {#if $updateAvailable}
+      <div class="update-banner">
+        <span class="update-text">⟳ Update available: v{$updateAvailable.version}</span>
+        {#if $updateStatus === "downloading"}
+          <span class="update-progress">Downloading…</span>
+        {:else if $updateStatus === "ready"}
+          <span class="update-progress">Relaunching…</span>
+        {:else}
+          <button class="update-btn" onclick={() => void applyUpdate()}>Install &amp; restart</button>
+        {/if}
+        <button class="ghost update-dismiss" title="Dismiss" onclick={() => updateAvailable.set(null)}>×</button>
+        {#if $updateError}<span class="update-err">{$updateError}</span>{/if}
+      </div>
+    {/if}
     {#if $disconnected}
       <div class="exit-banner">
         <span>⚠ pi exited unexpectedly — your session can be restored.</span>
@@ -116,6 +142,23 @@
     cursor: pointer;
   }
   .exit-banner .resume:hover { background: var(--danger); color: #fff; }
+  .update-banner {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+    border-bottom: 1px solid var(--accent);
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .update-text { font-weight: 600; color: var(--accent); }
+  .update-progress { color: var(--text-3); font-style: italic; }
+  .update-btn { font-size: 11.5px; padding: 3px 14px; border-radius: 99px; border: 1px solid var(--accent); color: var(--accent); background: transparent; cursor: pointer; }
+  .update-btn:hover { background: var(--accent); color: #fff; }
+  .update-dismiss { font-size: 14px; padding: 0 5px; color: var(--text-3); }
+  .update-err { color: var(--danger); font-size: 11px; }
   .project {
     color: var(--text-3);
     font-size: 12px;

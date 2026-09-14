@@ -1,75 +1,35 @@
-# Leftleg Architecture
+# Leftleg architecture
 
-## Process topology
+Leftleg is a Tauri 2 / Svelte 5 desktop view of Pi. Pi owns agent sessions, model configuration, credentials, tools, extensions, and conversation persistence. Leftleg persists only GUI preferences. See `AUDIT-2026-09-13.md` for verification and remaining limits.
 
-```
-┌─────────────────────────────┐
-│ Leftleg.exe (Tauri 2)       │
-│                             │
-│  ┌───────────┐   ┌──────────────────────┐
-│  │ Svelte 5  │   │ Rust supervisor       │
-│  │ webview   │──▶│ - spawn cmd /C pi     │
-│  │           │   │ - JSONL stdin/stdout  │
-│  └───────────┘   │ - id correlation      │
-│      ▲           │ - event forwarding    │
-│      └───────────┘                       │
-└─────────────────────────────┘
-        │ spawns (per project dir)
-        ▼
-  pi --mode rpc  ──▶ ~/.pi/agent (extensions, skills, settings, sessions)
-```
+## Processes and RPC
 
-## Rust side (`src-tauri/`)
+`PiState` owns one process per project and a focus pointer. `pi_start(project, session_path, force_restart)` reuses a live process unless restart is requested. On Windows, the bridge locates the npm `pi.cmd` installation, resolves the package's `bin.pi` entry, and launches it directly with Node. Session paths are argv values; they never pass through shell expansion.
 
-### `pi.rs` — the bridge
-- `PiProcess::spawn(app, cwd)`: `cmd /C pi --mode rpc` with `CREATE_NO_WINDOW`, piped stdin/stdout.
-- Reader thread: reads stdout as raw bytes, **splits on `\n` only** (pi's RPC uses strict JSONL; do not use generic line readers that split on Unicode separators), strips trailing `\r`, parses JSON.
-- Dispatch: `type:"response"` with a known `id` resolves the pending request (one-shot mpsc channel). Everything else is forwarded to the webview with `app.emit("pi-event", value)`.
-- On stream end → `pi-exit` event, pending map cleared.
-- `request(proc, cmd, timeout)`: assigns an id (`ll-N`) if absent, registers a pending sender, writes the line, blocks with timeout, cleans up on timeout.
+The reader in `pi.rs` splits stdout on LF only, removes a trailing CR, and classifies JSON lines. Known response IDs resolve pending requests; other lines become `pi-event` envelopes containing project, process generation, and event. Process exit produces `pi-exit` with the same ownership metadata.
 
-### `lib.rs` — Tauri commands
-| Command | Purpose |
-|---|---|
-| `pi_start(cwd)` | kill existing, spawn new pi for project dir |
-| `pi_stop` / `pi_status` | lifecycle |
-| `pi_request(command, timeout_secs)` | correlated RPC round-trip |
-| `pi_send(line)` | fire-and-forget (extension_ui_response) |
-| `list_sessions()` | scan `~/.pi/agent/sessions/*/*.jsonl` headers |
-| `read/write_gui_state` | Leftleg's own prefs (app_data/leftleg.json) |
-| `read_file_base64(path)` | attachments |
-| `append_log(line)` | JS error trap → app_data/logs/leftleg.log |
+`pi_request` resolves the named project and optionally checks the expected process generation, then waits on a blocking worker rather than the UI thread. Duplicate pending IDs are rejected. Failed sends, timeout, EOF, and deliberate stop clean up pending requests. Deliberate stop terminates the process tree before acquiring stdin, so a blocked pipe writer cannot deadlock shutdown. App exit stops the owned processes.
 
-### `sessions.rs` — session listing
-Parses the `type:"session"` header line (v3 tree format) for `id`, `timestamp`, `cwd`. Derives a display title from the latest `type:"session_info"` entry (written by `set_session_name`) or the first user message. Sorted by file mtime, newest first.
+Session scanning and attachment reads also use blocking workers. Attachment reads are bounded to 20 MiB. GUI preference writes are serialized by the API wrapper and use temporary-file replacement in the destination directory.
 
-## Frontend (`src/`)
+## Frontend ownership
 
-### State flow
-`boot()` → read GUI prefs → apply theme → start pi for projectDir → `get_state` + `get_available_models` → resume most recent session (`switch_session` + `get_messages`) → `get_session_stats`.
+`stores.ts` serializes project/session navigation. RPC calls capture project, process generation, and a view revision; stale responses cannot update the newly selected view. Process generations are also checked at the Rust dispatch boundary.
 
-### Event assembly (`stores.ts handleEvent`)
-- `message_start` (assistant) → new streaming `AssistantItem`
-- `message_update` deltas → text/thinking blocks by `contentIndex`; `toolcall_*` → `ToolItem`s
-- `message_end` → authoritative rebuild of the assistant item (blocks, usage, stopReason)
-- `tool_execution_start/update/end` → tool card status/output/diff (edit tool exposes `details.diff`/`details.patch`)
-- `queue_update`, `compaction_*`, `auto_retry_*` → status bar
-- `extension_ui_request` → `ExtDialog` → `extension_ui_response`
+Each live process has a transient rendered surface: message cards, partial assistant blocks, queue, extension statuses/widgets/dialogs, and status note. The same reducer handles foreground and background events. Switching focus restores the appropriate surface, preserving partial messages and pending extension questions. These caches are never written to disk. Completed history is reconstructed from Pi's `get_messages`; snapshots that race newer stream events are deferred until the run settles.
 
-### UI item model
-`UserItem | AssistantItem | ToolItem | BashItem` — `rebuildFromMessages()` reconstructs the full list from `get_messages` (pairing toolResults to toolCalls by `toolCallId`); live events mutate the same shapes.
+Unsent composer drafts and in-flight send flags are held in memory per project/session. Successful sends clear only the submitted draft revision. Replies update the originating project's delivery state even if focus changed.
 
-### Theming
-CSS custom properties on `html[data-theme="light"|"dark"]`; "system" follows `prefers-color-scheme` with a live `matchMedia` listener.
+Extension dialogs are queued and replies are addressed to their owning project/generation. Management replies are consumed before notification rendering, including for background projects. Event listeners are installed before boot starts Pi.
 
-## RPC protocol notes (from pi docs/rpc.md)
-- Prompt during streaming requires `streamingBehavior: "steer" | "followUp"`.
-- `get_entries` supports a durable `since` cursor (not yet used by Leftleg).
-- Extension dialog methods (`select/confirm/input/editor`) block until answered; timeout auto-resolves agent-side.
-- Sessions are JSONL trees (v3): entries have `id`/`parentId`; `switch_session`, `fork`, `clone` operate on paths/entry ids.
+## Settings
 
-## Known sharp edges (all shipped bugs, see git log)
-1. Bare store refs inside `$derived.by` crash minified builds — always `$store`.
-2. `pub fn` + `#[tauri::command]` at crate root = E0255 macro collision.
-3. Missing capability entries = silent plugin failures.
-4. Vite must ignore `src-tauri/target` in its watcher (EBUSY on Windows).
+`settings/mgmt.ts` sends the reserved `/settings-mgmt` extension command. It requires the command to be available, binds requests to a project/generation, observes both the RPC acknowledgement and notify reply, and bounds waiting with a timeout. Settings forms retain a binding to the process that supplied their data; switching projects or restarting remounts the workspace.
+
+The companion in `companion/leftleg-settings/index.ts` exposes an allowlist of configuration resources. Content hashes detect stale revisions. Merge operations preserve unknown siblings; namespace replacement is used when deletion/replacement is intentional. A write can include `unsetKeys` so resets and edits commit together under one revision. Temporary files are created beside the destination, making rename work across installations on different drives. Generated model caches remain read-only through both JSON and raw write operations.
+
+Only the companion installation path is accepted by the native installer command. No changes in the audit are installed into the user's live Pi directory automatically.
+
+## Verification
+
+`npm run build` runs Svelte checks, Vitest, and Vite. Tests include mounted components, deterministic multi-project RPC journeys, and the real settings companion inside an isolated offline Pi process. `npm run check:rust` and `npm run test:rust` cover native compilation and protocol/file/process helpers. Native packaging must use the Tauri custom-protocol build; a plain Cargo release executable is not a distributable app.

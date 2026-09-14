@@ -13,9 +13,10 @@
  * fields; namespace mode replaces only the given top-level keys.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync, rmSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export const COMPANION_VERSION = 1;
@@ -55,14 +56,36 @@ export function resolveTarget(target: string, agentDir: string, projectDir: stri
 
 const READ_ONLY_TARGETS = new Set(["models-store"]);
 
-/** Stable-enough revision: size + mtimeMs, detects external edits between read and write. */
+/** Content revision also catches same-size edits and preserved timestamps. */
 export function computeRevision(file: string): string | null {
   try {
-    const st = statSync(file);
-    return `${st.size}:${st.mtimeMs}`;
-  } catch {
-    return null;
+    return createHash("sha256").update(readFileSync(file)).digest("hex");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
   }
+}
+
+function assertSafeKey(key: string) {
+  if (["__proto__", "constructor", "prototype"].includes(key)) throw new Error("unsafe configuration key");
+}
+
+/** Own-property traversal only; never mutate Object.prototype through a path. */
+function unsetPaths(doc: unknown, keys: unknown): number {
+  if (!Array.isArray(keys) || keys.some((k) => typeof k !== "string")) throw new Error("unset keys must be strings");
+  let removed = 0;
+  for (const key of keys) {
+    const parts = key.split(".");
+    parts.forEach(assertSafeKey);
+    let cur = doc as Record<string, unknown> | undefined;
+    for (const part of parts.slice(0, -1)) {
+      const next: unknown = cur && Object.hasOwn(cur, part) ? cur[part] : undefined;
+      cur = next && typeof next === "object" && !Array.isArray(next) ? next as Record<string, unknown> : undefined;
+    }
+    const leaf = parts[parts.length - 1];
+    if (cur && typeof cur === "object" && Object.hasOwn(cur, leaf)) { delete cur[leaf]; removed++; }
+  }
+  return removed;
 }
 
 /** Deep-merge `patch` into `base`. Plain objects merge recursively; everything
@@ -72,6 +95,7 @@ export function applyMerge(base: unknown, patch: unknown): unknown {
   if (base === null || typeof base !== "object" || Array.isArray(base)) return { ...patch };
   const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
   for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+    assertSafeKey(k);
     out[k] = applyMerge(out[k], v);
   }
   return out;
@@ -82,7 +106,7 @@ export function applyNamespaces(base: unknown, patch: Record<string, unknown>): 
   const out: Record<string, unknown> = (base && typeof base === "object" && !Array.isArray(base))
     ? { ...(base as Record<string, unknown>) }
     : {};
-  for (const [k, v] of Object.entries(patch)) out[k] = v;
+  for (const [k, v] of Object.entries(patch)) { assertSafeKey(k); out[k] = v; }
   return out;
 }
 
@@ -94,6 +118,7 @@ export function applyNamespaceMerge(base: unknown, patch: Record<string, unknown
     ? { ...(base as Record<string, unknown>) }
     : {};
   for (const [k, v] of Object.entries(patch)) {
+    assertSafeKey(k);
     out[k] = applyMerge(out[k], v);
   }
   return out;
@@ -101,9 +126,14 @@ export function applyNamespaceMerge(base: unknown, patch: Record<string, unknown
 
 function atomicWrite(file: string, text: string): void {
   mkdirSync(dirname(file), { recursive: true });
-  const tmp = join(tmpdir(), `.leftleg-mgmt-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`);
-  writeFileSync(tmp, text, "utf-8");
-  renameSync(tmp, file);
+  // Rename is atomic only on the same filesystem as the destination.
+  const tmp = join(dirname(file), `.leftleg-mgmt-${randomUUID()}.tmp`);
+  try {
+    writeFileSync(tmp, text, { encoding: "utf-8", flag: "wx" });
+    renameSync(tmp, file);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 }
 
 interface Request { v?: number; id?: string; op?: string; [k: string]: unknown }
@@ -130,6 +160,10 @@ export default function (pi: ExtensionAPI): void {
         req = JSON.parse((args ?? "").trim()) as Request;
       } catch {
         reply(ctx, null, false, { error: "unparseable request" });
+        return;
+      }
+      if (!req || typeof req !== "object" || Array.isArray(req)) {
+        reply(ctx, null, false, { error: "request must be an object" });
         return;
       }
       const id = typeof req.id === "string" ? req.id : null;
@@ -186,7 +220,7 @@ export default function (pi: ExtensionAPI): void {
             const mode = String(req.mode ?? "merge");
             if (mode === "merge" || mode === "namespace" || mode === "namespace-merge") {
               const patch = req.patch;
-              if (patch === undefined || patch === null || typeof patch !== "object") {
+              if (patch === undefined || patch === null || typeof patch !== "object" || Array.isArray(patch)) {
                 reply(ctx, id, false, { error: "patch must be an object" });
                 return;
               }
@@ -205,6 +239,7 @@ export default function (pi: ExtensionAPI): void {
               reply(ctx, id, false, { error: `unknown write mode: ${mode}` });
               return;
             }
+            if (req.unsetKeys !== undefined) unsetPaths(next, req.unsetKeys);
             atomicWrite(file, JSON.stringify(next, null, 2) + "\n");
             reply(ctx, id, true, { target: req.target, file, revision: computeRevision(file) });
             return;
@@ -228,19 +263,7 @@ export default function (pi: ExtensionAPI): void {
             }
             // Reset-to-inherit: REMOVE dotted paths so the value inherits from
             // the parent scope; never write the inherited value down into this scope.
-            let removed = 0;
-            for (const key of keys) {
-              const parts = key.split(".");
-              let obj: Record<string, unknown> | undefined = doc;
-              for (let i = 0; i < parts.length - 1 && obj; i++) {
-                const nxt: unknown = obj[parts[i]];
-                obj = nxt && typeof nxt === "object" && !Array.isArray(nxt) ? (nxt as Record<string, unknown>) : undefined;
-              }
-              if (obj && typeof obj === "object") {
-                const leaf = parts[parts.length - 1];
-                if (leaf in obj) { delete obj[leaf]; removed++; }
-              }
-            }
+            const removed = unsetPaths(doc, keys);
             if (req.revision !== undefined && computeRevision(file) !== req.revision) {
               reply(ctx, id, false, { error: "conflict: file changed since read" });
               return;
@@ -259,12 +282,17 @@ export default function (pi: ExtensionAPI): void {
           }
 
           case "write-raw": {
+            if (READ_ONLY_TARGETS.has(String(req.target))) {
+              reply(ctx, id, false, { error: `${req.target} is read-only (generated cache)` });
+              return;
+            }
             const file = resolveTarget(String(req.target ?? ""), agentDir, projectDir);
             if (!file || !/\.(ya?ml|md|txt|json)$/i.test(file)) {
               reply(ctx, id, false, { error: "raw writes are limited to registered YAML/MD/TXT/JSON resources" });
               return;
             }
             if (typeof req.content !== "string") { reply(ctx, id, false, { error: "write-raw requires content string" }); return; }
+            if (/\.json$/i.test(file)) JSON.parse(req.content);
             if (req.revision !== undefined) {
               const current = computeRevision(file);
               if (current !== req.revision) {
@@ -303,7 +331,8 @@ export default function (pi: ExtensionAPI): void {
             for (const name of wanted) {
               if (process.env[name] !== undefined) sources[name] = "process env";
             }
-            for (const f of [join(projectDir ?? "\\0", ".env.local"), join(projectDir ?? "\\0", ".env"), join(agentDir, ".env.local"), join(agentDir, ".env")]) {
+            const projectEnvFiles = projectDir ? [join(projectDir, ".env.local"), join(projectDir, ".env")] : [];
+            for (const f of [...projectEnvFiles, join(agentDir, ".env.local"), join(agentDir, ".env")]) {
               const present = scan(f);
               for (const name of Object.keys(present)) {
                 if (!sources[name]) sources[name] = f;
@@ -353,14 +382,14 @@ export default function (pi: ExtensionAPI): void {
           case "get-runtime": {
             const anyCtx = ctx as unknown as Record<string, unknown>;
             const caps: Record<string, boolean> = {
-              getActiveTools: typeof anyCtx.getActiveTools === "function",
-              setActiveTools: typeof anyCtx.setActiveTools === "function",
+              getActiveTools: typeof pi.getActiveTools === "function",
+              setActiveTools: typeof pi.setActiveTools === "function",
               modelRegistry: typeof anyCtx.modelRegistry === "object" && anyCtx.modelRegistry !== null,
               sessionManager: typeof anyCtx.sessionManager === "object" && anyCtx.sessionManager !== null,
             };
             let activeTools: unknown = null;
             if (caps.getActiveTools) {
-              try { activeTools = await (anyCtx.getActiveTools as () => Promise<unknown>)(); } catch { activeTools = null; }
+              try { activeTools = pi.getActiveTools(); } catch { activeTools = null; }
             }
             let sessionFile: unknown = null;
             if (caps.sessionManager) {
@@ -371,9 +400,8 @@ export default function (pi: ExtensionAPI): void {
           }
 
           case "set-active-tools": {
-            const fn = (ctx as unknown as { setActiveTools?: (t: unknown) => Promise<unknown> }).setActiveTools;
-            if (typeof fn !== "function") { reply(ctx, id, false, { error: "setActiveTools unavailable in this context" }); return; }
-            await fn(req.tools);
+            if (!Array.isArray(req.tools) || req.tools.some((t) => typeof t !== "string")) throw new Error("tools must be an array of names");
+            pi.setActiveTools(req.tools as string[]);
             reply(ctx, id, true, { applied: true });
             return;
           }
@@ -387,6 +415,3 @@ export default function (pi: ExtensionAPI): void {
     },
   });
 }
-
-// Imports kept last-marked for tree-shaking clarity; `isAbsolute` retained for target validation.
-void isAbsolute;

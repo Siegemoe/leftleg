@@ -15,7 +15,7 @@
 // - Timeouts: every request is bounded; nothing waits forever on a dead companion.
 
 import { get } from "svelte/store";
-import { commands, lastProcByProject, projectDir } from "../stores";
+import { commands, lastProcByProject, projectDir, navigating } from "../stores";
 import { piRequest } from "../api";
 
 export const MGMT_COMMAND = "settings-mgmt";
@@ -24,6 +24,8 @@ const MGMT_TIMEOUT_MS = 15_000;
 
 let seq = 0;
 interface Pending {
+  project: string;
+  proc: number;
   resolve: (data: Record<string, unknown>) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -31,7 +33,7 @@ interface Pending {
 const pending = new Map<string, Pending>();
 
 export function companionAvailable(): boolean {
-  return get(commands).some((c) => c.name === MGMT_COMMAND);
+  return !get(navigating) && get(commands).some((c) => c.name === MGMT_COMMAND);
 }
 
 function currentGeneration(): number | undefined {
@@ -39,11 +41,19 @@ function currentGeneration(): number | undefined {
 }
 
 /** Consume a notify message if it is a management reply. Returns true when consumed. */
-export function handleMgmtNotify(message: string): boolean {
+export function handleMgmtNotify(message: string, origin?: { project: string; proc: number }): boolean {
   if (!message.startsWith(MGMT_MARKER)) return false;
   try {
     const reply = JSON.parse(message.slice(MGMT_MARKER.length)) as { id?: string; ok?: boolean; error?: unknown };
     const p = reply.id ? pending.get(reply.id) : undefined;
+    if (p && origin && reply.id && (p.project !== origin.project || p.proc !== origin.proc)) {
+      // A reply from the wrong process/project must not silently strand the
+      // caller until timeout — reject it immediately with the real reason.
+      clearTimeout(p.timer);
+      pending.delete(reply.id);
+      p.reject(new Error("management reply came from a different project or process"));
+      return true;
+    }
     if (p && reply.id) {
       clearTimeout(p.timer);
       pending.delete(reply.id);
@@ -66,12 +76,23 @@ function stringifyError(err: unknown): string {
 }
 
 /** Reject everything pending (used when the pi process exits). */
-export function abortPendingMgmt(reason: string): void {
-  for (const [, p] of pending) {
+export function abortPendingMgmt(reason: string, project?: string, proc?: number): void {
+  for (const [id, p] of pending) {
+    if (project !== undefined && p.project !== project || proc !== undefined && p.proc !== proc) continue;
     clearTimeout(p.timer);
     p.reject(new Error(reason));
+    pending.delete(id);
   }
-  pending.clear();
+}
+
+/** Bind every step of a settings form to the process that supplied its data. */
+export function bindManagement() {
+  const project = get(projectDir);
+  const proc = currentGeneration();
+  return <T = Record<string, unknown>>(op: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> => {
+    if (project !== get(projectDir) || proc !== currentGeneration()) return Promise.reject(new Error("Project or process changed — reopen settings before saving"));
+    return mgmtRequest<T>(op, params, timeoutMs);
+  };
 }
 
 /**
@@ -88,6 +109,7 @@ export async function mgmtRequest<T = Record<string, unknown>>(
     throw new Error("Settings companion unavailable — install it in Settings → Advanced. Management requests are never sent as chat prompts.");
   }
   const gen = currentGeneration();
+  const project = get(projectDir);
   if (gen === undefined) throw new Error("no active pi process");
 
   const id = `mgmt-${Date.now()}-${++seq}`;
@@ -98,7 +120,7 @@ export async function mgmtRequest<T = Record<string, unknown>>(
       pending.delete(id);
       reject(new Error(`management request '${op}' timed out`));
     }, timeoutMs);
-    pending.set(id, { resolve, reject, timer });
+    pending.set(id, { project, proc: gen, resolve, reject, timer });
   });
 
   // Re-check availability + generation immediately before sending.
@@ -111,29 +133,24 @@ export async function mgmtRequest<T = Record<string, unknown>>(
     throw new Error("settings companion became unavailable (process changed)");
   }
 
+  // Observe both promises immediately: notify can reject before the prompt
+  // acknowledgement, and a hanging acknowledgement must not defeat timeout.
   try {
-    const res = await piRequest<{ success: boolean; error?: string }>(
+    const accepted = piRequest<{ success: boolean; error?: string }>(
       { type: "prompt", message: `/${MGMT_COMMAND} ${payload}` },
       Math.ceil(timeoutMs / 1000) + 5,
-    );
-    if (!res.success) {
-      const p = pending.get(id);
-      if (p) {
-        clearTimeout(p.timer);
-        pending.delete(id);
-      }
-      throw new Error(`management request rejected: ${res.error ?? "pi refused the command"}`);
-    }
-  } catch (e) {
+      project,
+      gen,
+    ).then((res) => {
+      if (!res.success) throw new Error(`management request rejected: ${res.error ?? "pi refused the command"}`);
+    });
+    const [, reply] = await Promise.all([accepted, promise]);
+    return ((reply as { data?: T }).data ?? reply) as T;
+  } finally {
     const p = pending.get(id);
     if (p) {
       clearTimeout(p.timer);
       pending.delete(id);
     }
-    if (e instanceof Error && e.message.startsWith("management request")) throw e;
-    throw new Error(`management request failed: ${String(e)}`);
   }
-
-  const reply = (await promise) as { data?: T };
-  return (reply.data ?? reply) as T;
 }

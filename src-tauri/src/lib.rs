@@ -130,21 +130,25 @@ fn pi_status(state: State<PiState>, project: Option<String>) -> bool {
 
 /// Send an RPC command to pi and wait for its correlated response.
 #[tauri::command]
-fn pi_request(
-    state: State<PiState>,
+async fn pi_request(
+    state: State<'_, PiState>,
     command: Value,
     project: Option<String>,
     timeout_secs: Option<u64>,
+    expected_proc: Option<u64>,
 ) -> Result<Value, String> {
     let proc = state.resolve(project.as_deref())?;
+    if expected_proc.is_some_and(|id| id != proc.id) { return Err("pi process replaced before request dispatch".into()); }
     let timeout = Duration::from_secs(timeout_secs.unwrap_or(120));
-    pi::request(&proc, command, timeout)
+    tauri::async_runtime::spawn_blocking(move || pi::request(&proc, command, timeout))
+        .await.map_err(|e| format!("RPC worker failed: {e}"))?
 }
 
 /// Fire-and-forget line (used for extension_ui_response and notifications).
 #[tauri::command]
-fn pi_send(state: State<PiState>, line: Value, project: Option<String>) -> Result<(), String> {
+fn pi_send(state: State<PiState>, line: Value, project: Option<String>, expected_proc: Option<u64>) -> Result<(), String> {
     let proc = state.resolve(project.as_deref())?;
+    if expected_proc.is_some_and(|id| id != proc.id) { return Err("pi process replaced before response dispatch".into()); }
     let text = serde_json::to_string(&line).map_err(|e| e.to_string())?;
     proc.send_line(&text)
 }
@@ -177,7 +181,9 @@ fn append_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
 #[tauri::command]
 fn write_agent_extension(app: tauri::AppHandle, rel_path: String, content: String) -> Result<(), String> {
     let agent_dir = sessions::agent_dir();
-    let target = agent_dir.join("extensions").join(&rel_path);
+    // Validate before creating any directories outside the allowed root.
+    let rel = companion_relative_path(&rel_path)?;
+    let target = agent_dir.join("extensions").join(rel);
     // Guard: the resolved target must stay inside <agent_dir>/extensions.
     let canon_base = agent_dir.join("extensions");
     let _ = fs::create_dir_all(&canon_base).map_err(|e| e.to_string())?;
@@ -192,9 +198,23 @@ fn write_agent_extension(app: tauri::AppHandle, rel_path: String, content: Strin
     if !canon_parent.starts_with(&canon_base) {
         return Err("path traversal rejected".into());
     }
+    if target.exists() && !fs::canonicalize(&target).map_err(|e| e.to_string())?.starts_with(&canon_base) {
+        return Err("path traversal rejected".into());
+    }
     fs::write(&target, content).map_err(|e| e.to_string())?;
     let _ = app; // reserved for future telemetry-free install notes
     Ok(())
+}
+
+fn companion_relative_path(rel: &str) -> Result<std::path::PathBuf, String> {
+    let path = std::path::Path::new(rel);
+    if path.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+        return Err("path traversal rejected".into());
+    }
+    if rel.replace('\\', "/") != "leftleg-settings/index.ts" {
+        return Err("only the Leftleg settings companion can be installed".into());
+    }
+    Ok(path.to_path_buf())
 }
 
 #[cfg(test)]
@@ -203,13 +223,10 @@ mod companion_install_tests {
 
     #[test]
     fn write_agent_extension_rejects_traversal() {
-        // The command itself needs an AppHandle; test the traversal predicate directly.
-        use std::path::{Path, PathBuf};
-        let rel = "..\\..\\evil.ts";
-        let target = PathBuf::from("C:\\tmp").join("extensions").join(rel);
-        assert!(target.components().any(|c| c.as_os_str() == ".."));
-        let ok = Path::new("extensions/leftleg-settings/index.ts");
-        assert!(!ok.components().any(|c| c.as_os_str() == ".."));
+        for invalid in ["..\\..\\evil.ts", "C:\\outside\\index.ts", "/outside/index.ts", "other-extension/index.ts"] {
+            assert!(companion_relative_path(invalid).is_err());
+        }
+        assert!(companion_relative_path("leftleg-settings/index.ts").is_ok());
     }
 }
 
@@ -260,6 +277,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PiState::new())
         .invoke_handler(tauri::generate_handler![
             pi_start,
@@ -275,6 +294,12 @@ pub fn run() {
             append_log,
             write_agent_extension,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                let state = app.state::<PiState>();
+                for proc in state.processes.lock().unwrap().values() { proc.kill(); }
+            }
+        });
 }

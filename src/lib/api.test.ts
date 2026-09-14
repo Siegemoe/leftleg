@@ -1,0 +1,21 @@
+import { expect, it, vi } from "vitest";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+import { invoke } from "@tauri-apps/api/core";
+import { writeGuiState } from "./api";
+it("serializes immutable preference snapshots and recovers after a failed write", async () => {
+  let release!: () => void;
+  vi.mocked(invoke).mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("disk full"));
+  vi.mocked(invoke).mockResolvedValueOnce(undefined);
+  const prefs = { theme: "dark" };
+  const first = writeGuiState(prefs);
+  prefs.theme = "light";
+  const second = expect(writeGuiState(prefs)).rejects.toThrow("disk full");
+  const third = writeGuiState({ theme: "system" });
+  await Promise.resolve();
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(invoke).toHaveBeenNthCalledWith(1, "write_gui_state", { state: { theme: "dark" } });
+  release();
+  await Promise.all([first, second, third]);
+  expect(invoke).toHaveBeenNthCalledWith(3, "write_gui_state", { state: { theme: "system" } });
+});

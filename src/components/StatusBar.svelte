@@ -1,6 +1,7 @@
 <script lang="ts">
   import { rpcState, stats, streaming, queue, statusNote, extStatuses } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
+  import { updateCheck, checkForUpdates, applyUpdate, updateAvailable } from "../lib/updater";
   import type { ThinkingLevel } from "../lib/types";
 
   function fmtCost(c: number | undefined): string {
@@ -25,6 +26,29 @@
 
   const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
   let levelIdx = $derived($rpcState ? levels.indexOf($rpcState.thinkingLevel) : 0);
+
+  // Update-check visibility: version text tooltip always reports the last
+  // check; a failed check or a ready update gets a clickable chip so the
+  // updater can never be silently invisible again.
+  let checkTime = $derived($updateCheck.at === null ? "" : new Date($updateCheck.at).toLocaleTimeString());
+  let versionTitle = $derived.by(() => {
+    const c = $updateCheck;
+    if (c.status === "checking") return "Checking for updates…";
+    if (c.status === "failed") return c.message;
+    if (c.status === "current") return `Up to date — checked ${checkTime}`;
+    if (c.status === "available") return c.message;
+    return "Leftleg build";
+  });
+  let updateChip = $derived.by(() => {
+    const c = $updateCheck;
+    if (c.status === "failed") return { cls: "warn", label: "⟳ updates off?", title: `${c.message} — click to retry` };
+    if (c.status === "available") return { cls: "ready", label: "⟳ install update", title: c.message };
+    return null;
+  });
+  function onUpdateChipClick() {
+    if ($updateCheck.status === "failed") void checkForUpdates();
+    else if ($updateCheck.status === "available" && $updateAvailable) void applyUpdate();
+  }
 
   function cycleThinking(e: MouseEvent) {
     const cur = $rpcState?.thinkingLevel;
@@ -81,7 +105,10 @@
   {/if}
 
   <span class="spacer"></span>
-  <span class="version" title="Leftleg build">v{__APP_VERSION__}</span>
+  {#if updateChip}
+    <button class="pill update-chip {updateChip.cls}" title={updateChip.title} onclick={onUpdateChipClick}>{updateChip.label}</button>
+  {/if}
+  <span class="version" title={versionTitle}>v{__APP_VERSION__}</span>
 </footer>
 
 <style>
@@ -128,6 +155,10 @@
   .queued { color: var(--accent); border-color: var(--accent); }
   .ext-status { color: var(--text-2); border-color: var(--border-strong); }
   .warn { color: orange; border-color: orange; }
+  .update-chip { cursor: pointer; font: inherit; }
+  .update-chip:hover { border-color: var(--border-strong); }
+  .update-chip.ready { color: var(--accent); border-color: var(--accent); }
+  .update-chip.ready:hover { background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface-2)); }
   .note { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .version { color: var(--text-3); letter-spacing: 0.3px; user-select: none; }
 </style>

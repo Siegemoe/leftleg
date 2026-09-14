@@ -32,6 +32,7 @@ export interface RpcState {
 
 export type ContentBlock =
   | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
   | { type: "thinking"; thinking: string }
   | { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> };
 
@@ -158,6 +159,7 @@ export interface PiExitEnvelope {
   project: string;
   proc: number;
   expected: boolean;
+  error?: string;
 }
 
 /** Payload of the Tauri `pi-exit` event (emitted when the pi subprocess dies). */
@@ -188,7 +190,7 @@ export interface PiEvent {
   type: string;
   [key: string]: unknown;
   assistantMessageEvent?: AssistantDeltaEvent;
-  message?: AgentMessage;
+  message?: AgentMessage | string;
   toolCallId?: string;
   toolName?: string;
   args?: Record<string, unknown>;

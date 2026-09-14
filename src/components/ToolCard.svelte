@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { ToolItem } from "../lib/types";
   import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
+  import { resolve as resolvePath } from "@tauri-apps/api/path";
+  import { projectDir, statusNote } from "../lib/stores";
 
   let { item }: { item: ToolItem } = $props();
 
@@ -21,7 +23,8 @@
   let target = $derived.by(() => {
     try {
       const a = JSON.parse(item.args);
-      return (a.path ?? a.file_path ?? a.command ?? a.pattern ?? "") as string;
+      const value = a.path ?? a.file_path ?? a.command ?? a.pattern;
+      return typeof value === "string" ? value : "";
     } catch { return ""; }
   });
   let shortTarget = $derived.by(() => {
@@ -50,9 +53,14 @@
   let filePath = $derived.by(() => {
     try {
       const a = JSON.parse(item.args);
-      return (a.path ?? a.file_path ?? "") as string;
+      const value = a.path ?? a.file_path;
+      return typeof value === "string" ? value : "";
     } catch { return ""; }
   });
+  async function openFile() {
+    try { await openInDefaultApp(await resolvePath($projectDir, filePath)); }
+    catch (e) { statusNote.set(`Couldn't open file: ${e}`); }
+  }
 </script>
 
 <div class="card" class:running={item.status === "running"} class:error={item.status === "error"}>
@@ -81,7 +89,7 @@
         <pre class="mono diff">{item.diff}</pre>
         {#if isFile && filePath}
           <div class="actions">
-            <button onclick={() => openInDefaultApp(filePath)}>Open file</button>
+            <button onclick={openFile}>Open file</button>
           </div>
         {/if}
       {/if}

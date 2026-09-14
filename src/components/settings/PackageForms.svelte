@@ -4,8 +4,11 @@
   // companion: namespace-merge for settings.json namespaces, targeted file ops
   // for extension config files, raw ops for Serena YAML (comment-preserving
   // responsibility sits with the user; format guards refuse tab-indentation).
-  import { mgmtRequest } from "../../lib/settings/mgmt";
+  import { bindManagement } from "../../lib/settings/mgmt";
   import { statusNote } from "../../lib/stores";
+  import { preparePatch } from "../../lib/settings/state";
+
+  const mgmtRequest = bindManagement();
 
   interface FileState { data: Record<string, unknown> | null; raw: string | null; revision: string | null; exists: boolean }
   let files = $state<Record<string, FileState>>({});
@@ -22,7 +25,13 @@
     } catch (e) {
       statusNote.set(`⚠ ${e instanceof Error ? e.message : String(e)}`);
       setTimeout(() => statusNote.set(""), 6000);
+      throw e;
     }
+  }
+
+  function revisionFor(target: string): string | null {
+    if (!files[target]) throw new Error("Load the configuration before saving");
+    return files[target].revision;
   }
 
   function flashSaved() {
@@ -30,12 +39,17 @@
     setTimeout(() => statusNote.set(""), 4000);
   }
 
+  function noteSaveError(e: unknown) {
+    statusNote.set(`⚠ ${e instanceof Error ? e.message : String(e)}`);
+    setTimeout(() => statusNote.set(""), 6000);
+  }
+
   // ---- generic namespace editor (settings.json namespaces) ----
   type FieldType = "string" | "number" | "boolean" | "lines";
   interface FieldDef { path: string; label: string; type: FieldType; hint?: string }
 
   function nsLoad(target: string, namespace: string): void {
-    void load(target);
+    void load(target).catch(() => {}); // load() already surfaced the error
   }
   function nsValue(target: string, namespace: string, path: string): unknown {
     const ns = files[target]?.data?.[namespace] as Record<string, unknown> | undefined;
@@ -48,10 +62,15 @@
     return cur;
   }
   async function nsSave(target: string, namespace: string, patch: Record<string, unknown>): Promise<void> {
-    const rev = files[target]?.revision ?? undefined;
-    await mgmtRequest("write", { target, mode: "namespace-merge", patch: { [namespace]: patch }, revision: rev });
-    await load(target);
-    flashSaved();
+    try {
+      const rev = revisionFor(target);
+      const changes = preparePatch({ [namespace]: patch });
+      await mgmtRequest("write", { target, mode: "namespace-merge", ...changes, revision: rev });
+      await load(target);
+      flashSaved();
+    } catch (e) {
+      noteSaveError(e);
+    }
   }
 
   // ---- plan ----
@@ -76,11 +95,11 @@
   // ---- subagent ----
   let newRoleName = $state("");
   function roleNames(target: string): string[] {
-    const roles = files[target]?.data?.roles as Record<string, unknown> | undefined;
+    const roles = (files[target]?.data?.subagent as { roles?: Record<string, unknown> } | undefined)?.roles;
     return roles ? Object.keys(roles) : [];
   }
   function roleModels(target: string, role: string): string[] {
-    const roles = files[target]?.data?.roles as Record<string, unknown> | undefined;
+    const roles = (files[target]?.data?.subagent as { roles?: Record<string, unknown> } | undefined)?.roles;
     const r = roles?.[role] as { models?: unknown } | undefined;
     return Array.isArray(r?.models) ? (r.models as string[]) : [];
   }
@@ -90,25 +109,33 @@
   async function addRole(target: string) {
     const name = newRoleName.trim();
     if (!name) return;
+    if (roleNames(target).includes(name)) { statusNote.set("That role already exists"); return; }
     await nsSave(target, "subagent", { roles: { [name]: { models: [] } } });
     newRoleName = "";
   }
   async function deleteRole(target: string, role: string) {
-    const roles = files[target]?.data?.roles as Record<string, unknown> | undefined;
-    if (!roles) return;
-    const next = { ...roles };
-    delete next[role];
-    await nsSave(target, "subagent", { roles: next });
+    try {
+      const roles = (files[target]?.data?.subagent as { roles?: Record<string, unknown> } | undefined)?.roles;
+      if (!roles) return;
+      const next = { ...roles };
+      delete next[role];
+      const subagent = files[target]?.data?.subagent as Record<string, unknown>;
+      await mgmtRequest("write", { target, mode: "namespace", patch: { subagent: { ...subagent, roles: next } }, revision: revisionFor(target) });
+      await load(target);
+      flashSaved();
+    } catch (e) {
+      noteSaveError(e);
+    }
   }
 
   // ---- permissions ----
   type Decision = "allow" | "ask" | "deny";
   function permToolKeys(target: string): string[] {
-    const perm = files[target]?.data as Record<string, unknown> | undefined;
+    const perm = files[target]?.data?.permission as Record<string, unknown> | undefined;
     return perm ? Object.keys(perm) : [];
   }
   function permPatterns(target: string, tool: string): Array<{ pattern: string; decision: Decision }> {
-    const perm = files[target]?.data as Record<string, unknown> | undefined;
+    const perm = files[target]?.data?.permission as Record<string, unknown> | undefined;
     const t = perm?.[tool];
     if (t === "allow" || t === "ask" || t === "deny") return [{ pattern: "*", decision: t }];
     if (t && typeof t === "object") {
@@ -125,18 +152,29 @@
       for (const p of patterns) map[p.pattern.trim()] = p.decision;
       value = map;
     }
-    await nsSave(target, "permission", { [tool]: value });
+    const permission = files[target]?.data?.permission as Record<string, unknown> | undefined;
+    try {
+      await mgmtRequest("write", { target, mode: "namespace", patch: { permission: { ...permission, [tool]: value } }, revision: revisionFor(target) });
+      await load(target);
+      flashSaved();
+    } catch (e) {
+      noteSaveError(e);
+    }
   }
   async function removePermissionTool(target: string, tool: string) {
-    const perm = files[target]?.data as Record<string, unknown> | undefined;
-    if (!perm) return;
-    const next = { ...perm };
-    delete next[tool];
-    const rev = files[target]?.revision ?? undefined;
-    // Removing a whole tool key requires unset (merge cannot delete).
-    await mgmtRequest("write", { target, mode: "namespace", patch: { permission: next }, revision: rev });
-    await load(target);
-    flashSaved();
+    try {
+      const perm = files[target]?.data?.permission as Record<string, unknown> | undefined;
+      if (!perm) return;
+      const next = { ...perm };
+      delete next[tool];
+      const rev = revisionFor(target);
+      // Removing a whole tool key requires unset (merge cannot delete).
+      await mgmtRequest("write", { target, mode: "namespace", patch: { permission: next }, revision: rev });
+      await load(target);
+      flashSaved();
+    } catch (e) {
+      noteSaveError(e);
+    }
   }
 
   // ---- lens ----
@@ -144,12 +182,16 @@
   const lensNumbers = ["lspDelayMs", "maxConcurrency", "prettierTimeoutMs", "linterTimeoutMs", "tscTimeoutMs"] as const;
   const lensPatterns = ["includePatterns", "excludePatterns"] as const;
   async function saveLensField(path: string, value: unknown) {
-    const rev = files["lens-project"]?.revision ?? undefined;
-    const parts = path.split(".");
-    const patch: Record<string, unknown> = { [parts[0]]: value };
-    await mgmtRequest("write", { target: "lens-project", mode: "merge", patch, revision: rev });
-    await load("lens-project");
-    flashSaved();
+    try {
+      const rev = revisionFor("lens-project");
+      const parts = path.split(".");
+      const patch: Record<string, unknown> = { [parts[0]]: value };
+      await mgmtRequest("write", { target: "lens-project", mode: "merge", ...preparePatch(patch), revision: rev });
+      await load("lens-project");
+      flashSaved();
+    } catch (e) {
+      noteSaveError(e);
+    }
   }
   function lensLines(name: string): string {
     const v = files["lens-project"]?.data?.[name];
@@ -158,19 +200,27 @@
 
   // ---- tool-display ----
   async function saveToolDisplayField(path: string, value: unknown) {
-    const rev = files["tool-display-config"]?.revision ?? undefined;
-    await mgmtRequest("write", { target: "tool-display-config", mode: "merge", patch: { [path]: value }, revision: rev });
-    await load("tool-display-config");
-    flashSaved();
+    try {
+      const rev = revisionFor("tool-display-config");
+      await mgmtRequest("write", { target: "tool-display-config", mode: "merge", patch: { [path]: value }, revision: rev });
+      await load("tool-display-config");
+      flashSaved();
+    } catch (e) {
+      noteSaveError(e);
+    }
   }
 
   // ---- distill full field set ----
   const distillNumbers = ["minChars", "maxChars", "maxOutputChars", "timeoutSeconds", "timeoutRetryCount", "errorRetryCount", "missedCompressionRatio"] as const;
   async function saveDistillField(path: string, value: unknown) {
-    const rev = files["distill-config"]?.revision ?? undefined;
-    await mgmtRequest("write", { target: "distill-config", mode: "merge", patch: { [path]: value }, revision: rev });
-    await load("distill-config");
-    flashSaved();
+    try {
+      const rev = revisionFor("distill-config");
+      await mgmtRequest("write", { target: "distill-config", mode: "merge", ...preparePatch({ [path]: value }), revision: rev });
+      await load("distill-config");
+      flashSaved();
+    } catch (e) {
+      noteSaveError(e);
+    }
   }
   function distillToolNames(): string[] {
     const tools = files["distill-config"]?.data?.tools as Record<string, unknown> | undefined;
@@ -190,9 +240,13 @@
     { target: "agents-md-project", label: "AGENTS.md (project context)" },
   ] as const;
   async function saveRaw(target: string, content: string) {
-    await mgmtRequest("write-raw", { target, content, revision: files[target]?.revision ?? undefined });
-    await load(target, true);
-    flashSaved();
+    try {
+      await mgmtRequest("write-raw", { target, content, revision: revisionFor(target) });
+      await load(target, true);
+      flashSaved();
+    } catch (e) {
+      noteSaveError(e);
+    }
   }
 
   // ---- ref-tools ----
@@ -254,7 +308,7 @@
     </div>
     <div class="frow">
       <span class="flabel">agentModels (per-agent overrides — advanced JSON)</span>
-      <textarea class="mono" rows={3} value={JSON.stringify(files["settings-global"]?.data?.agentModels ?? {}, null, 2)} onchange={(e) => { try { const v = JSON.parse(e.currentTarget.value); void nsSave("settings-global", "subagent", { agentModels: v }); } catch { statusNote.set("⚠ agentModels must be valid JSON"); setTimeout(() => statusNote.set(""), 6000); } }}></textarea>
+      <textarea class="mono" rows={3} value={JSON.stringify((files["settings-global"]?.data?.subagent as Record<string, unknown> | undefined)?.agentModels ?? {}, null, 2)} onchange={(e) => { try { const v = JSON.parse(e.currentTarget.value); void nsSave("settings-global", "subagent", { agentModels: v }); } catch { statusNote.set("⚠ agentModels must be valid JSON"); setTimeout(() => statusNote.set(""), 6000); } }}></textarea>
     </div>
     <p class="hint">Security options are pending: the installed security resolver reads an undocumented ctx property — file-backed toggles would be ineffective; disclosed, not faked.</p>
   </details>
@@ -285,7 +339,7 @@
   </details>
 
   <!-- Lens -->
-  <details class="pkg-block" ontoggle={() => void load("lens-project")}>
+  <details class="pkg-block" ontoggle={() => void load("lens-project").catch(() => {})}>
     <summary>Lens (project .pi-lens.json)</summary>
     <div class="frow wrap">
       {#each lensBooleans as b (b)}
@@ -302,7 +356,7 @@
   </details>
 
   <!-- tool-display -->
-  <details class="pkg-block" ontoggle={() => void load("tool-display-config")}>
+  <details class="pkg-block" ontoggle={() => void load("tool-display-config").catch(() => {})}>
     <summary>Tool display (extensions/pi-tool-display/config.json)</summary>
     <div class="frow">
       <label class="check"><input type="checkbox" checked={(files["tool-display-config"]?.data?.enabled as boolean) ?? false} onchange={(e) => void saveToolDisplayField("enabled", e.currentTarget.checked)} /> enabled</label>
@@ -312,7 +366,7 @@
   </details>
 
   <!-- Distill full set -->
-  <details class="pkg-block" ontoggle={() => void load("distill-config")}>
+  <details class="pkg-block" ontoggle={() => void load("distill-config").catch(() => {})}>
     <summary>Distill — full configuration (extensions/pi-distill/config.json)</summary>
     <div class="frow">
       <label class="check"><input type="checkbox" checked={(files["distill-config"]?.data?.enabled as boolean) ?? false} onchange={(e) => void saveDistillField("enabled", e.currentTarget.checked)} /> enabled</label>
@@ -346,7 +400,7 @@
     {#each INSTRUCTION_TARGETS as t (t.target)}
       <div class="frow">
         <span class="flabel">{t.label}</span>
-        <button class="ghost" onclick={() => void load(t.target, true)}>{files[t.target] ? "Reload" : "Load"}</button>
+        <button class="ghost" onclick={() => void load(t.target, true).catch(() => {})}>{files[t.target] ? "Reload" : "Load"}</button>
       </div>
       {#if files[t.target]}
         <textarea class="mono yaml" rows={8} value={files[t.target]?.raw ?? ""} oninput={(e) => { files = { ...files, [t.target]: { data: null, raw: e.currentTarget.value, revision: files[t.target]?.revision ?? null, exists: true } }; }}></textarea>
@@ -358,18 +412,18 @@
   </details>
 
   <!-- Serena -->
-  <details class="pkg-block" ontoggle={() => { void load("serena-global-yml", true); void load("serena-project-yml", true); }}>
+  <details class="pkg-block" ontoggle={() => { void load("serena-global-yml", true).catch(() => {}); void load("serena-project-yml", true).catch(() => {}); }}>
     <summary>Serena (YAML — raw editors; comments and formatting are yours to preserve)</summary>
     <p class="hint">Language servers, ignored paths, read-only mode, tool inclusion/exclusion, modes, timeouts, symbol budgets live in these YAML files. Tab-indentation is refused. Serena worker restart applies changes.</p>
     <span class="flabel">~/.serena/serena_config.yml</span>
     <textarea class="mono yaml" rows={8} value={files["serena-global-yml"]?.raw ?? ""} onchange={(e) => { files = { ...files, ["serena-global-yml"]: { data: null, raw: e.currentTarget.value, revision: files["serena-global-yml"]?.revision ?? null, exists: true } }; }}></textarea>
     <div class="frow">
-      <button onclick={() => void mgmtRequest("write-raw", { target: "serena-global-yml", content: files["serena-global-yml"]?.raw ?? "", revision: files["serena-global-yml"]?.revision ?? undefined }).then(() => load("serena-global-yml", true)).then(flashSaved)}>Save global YAML</button>
+      <button onclick={() => void mgmtRequest("write-raw", { target: "serena-global-yml", content: files["serena-global-yml"]?.raw ?? "", revision: revisionFor("serena-global-yml") }).then(() => load("serena-global-yml", true)).then(flashSaved).catch(noteSaveError)}>Save global YAML</button>
     </div>
     <span class="flabel">.serena/project.yml (this project)</span>
     <textarea class="mono yaml" rows={8} value={files["serena-project-yml"]?.raw ?? ""} onchange={(e) => { files = { ...files, ["serena-project-yml"]: { data: null, raw: e.currentTarget.value, revision: files["serena-project-yml"]?.revision ?? null, exists: true } }; }}></textarea>
     <div class="frow">
-      <button onclick={() => void mgmtRequest("write-raw", { target: "serena-project-yml", content: files["serena-project-yml"]?.raw ?? "", revision: files["serena-project-yml"]?.revision ?? undefined }).then(() => load("serena-project-yml", true)).then(flashSaved)}>Save project YAML</button>
+      <button onclick={() => void mgmtRequest("write-raw", { target: "serena-project-yml", content: files["serena-project-yml"]?.raw ?? "", revision: revisionFor("serena-project-yml") }).then(() => load("serena-project-yml", true)).then(flashSaved).catch(noteSaveError)}>Save project YAML</button>
     </div>
   </details>
 

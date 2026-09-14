@@ -72,8 +72,11 @@ export class FakePiHub {
     return this.spawnCounts.get(project) ?? 0;
   }
 
-  piRequest = (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null): Promise<unknown> =>
-    this.resolve(project).piRequest(command, timeoutSecs);
+  piRequest = (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null, expectedProc?: number): Promise<unknown> => {
+    const key = project ?? this.activeProject;
+    if (expectedProc !== undefined && this.fakes.get(key ?? "")?.pid !== expectedProc) return Promise.reject(new Error("pi process replaced before request dispatch"));
+    return this.resolve(project).piRequest(command, timeoutSecs);
+  };
 
   piSend = (line: Record<string, unknown>, project?: string | null): Promise<void> =>
     this.resolve(project).piSend(line);

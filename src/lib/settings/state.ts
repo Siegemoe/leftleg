@@ -19,6 +19,11 @@ export function getPath(obj: unknown, path: string): unknown {
 
 export function setPath(obj: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(".");
+  // Config paths must never traverse reserved object keys — a crafted key
+  // like `__proto__` would otherwise pollute Object.prototype.
+  for (const part of parts) {
+    if (isUnsafeConfigKey(part)) throw new Error(`unsafe configuration key: ${part}`);
+  }
   let cur: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const nxt = cur[parts[i]];
@@ -28,9 +33,30 @@ export function setPath(obj: Record<string, unknown>, path: string, value: unkno
   cur[parts[parts.length - 1]] = value;
 }
 
+/** Reserved keys that must never be traversed or assigned by config paths. */
+export function isUnsafeConfigKey(part: string): boolean {
+  return part === "__proto__" || part === "constructor" || part === "prototype";
+}
+
 /** Deep-clone via JSON (settings data is JSON-safe by definition). */
 export function cloneJson<T>(v: T): T {
   return v === undefined ? (undefined as unknown as T) : (JSON.parse(JSON.stringify(v)) as T);
+}
+
+/** Undefined form fields mean remove the override, not an empty merge. */
+export function preparePatch(patch: Record<string, unknown>, prefix = ""): { patch: Record<string, unknown>; unsetKeys: string[] } {
+  const clean: Record<string, unknown> = {};
+  const unsetKeys: string[] = [];
+  for (const [key, value] of Object.entries(patch)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (value === undefined) unsetKeys.push(path);
+    else if (value && typeof value === "object" && !Array.isArray(value)) {
+      const nested = preparePatch(value as Record<string, unknown>, path);
+      clean[key] = nested.patch;
+      unsetKeys.push(...nested.unsetKeys);
+    } else clean[key] = value;
+  }
+  return { patch: clean, unsetKeys };
 }
 
 export type Source = "project" | "global" | "inherited";

@@ -26,18 +26,27 @@ function decodeBase64Utf8(b64: string): string {
 
 /** Build the prompt message + image payloads from composer text and attachments. */
 export function buildPromptMessage(text: string, attachments: ComposerAttachment[]): BuiltPrompt {
-  const images = attachments
+  // Attachments with no payload (failed read, empty file edge) are skipped
+  // with a visible note instead of emitting empty images or empty fences.
+  const usable = attachments.filter((a) => a.data);
+  const skipped = attachments.filter((a) => !a.data);
+  const images = usable
     .filter((a) => a.isImage)
     .map((a) => ({ data: a.data, mimeType: a.mimeType, name: a.name }));
   let msg = text.trim();
-  const textFiles = attachments.filter((a) => !a.isImage);
-  if (textFiles.length > 0) {
+  const textFiles = usable.filter((a) => !a.isImage);
+  if (textFiles.length > 0 || skipped.length > 0) {
     const parts: string[] = msg ? [msg] : [];
+    for (const f of skipped) parts.push(`(attachment skipped — no content: ${f.name})`);
     for (const f of textFiles) {
       let content = decodeBase64Utf8(f.data);
       if (content.length > MAX_TEXT_FILE_CHARS) content = content.slice(0, MAX_TEXT_FILE_CHARS) + "\n… (truncated)";
       const lang = (f.name.split(".").pop() ?? "").toLowerCase() || "";
-      parts.push(`Attached file: ${f.name}\n\`\`\`${lang}\n${content}\n\`\`\``);
+      // The wrapper fence must out-run any backtick run inside the file, or
+      // an embedded ``` pair would terminate the block early.
+      const longestRun = (content.match(/`+/g) ?? []).reduce((m, s) => Math.max(m, s.length), 0);
+      const fence = "`".repeat(Math.max(3, longestRun + 1));
+      parts.push(`Attached file: ${f.name}\n${fence}${lang}\n${content}\n${fence}`);
     }
     msg = parts.join("\n\n");
   }

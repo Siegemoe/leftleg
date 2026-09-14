@@ -113,7 +113,11 @@ fn parse_session_header(first_line: &str) -> Option<(String, String, String)> {
 
 /// List all persisted sessions (all projects), newest-modified first.
 #[tauri::command]
-pub fn list_sessions() -> Result<Vec<SessionInfo>, String> {
+pub async fn list_sessions() -> Result<Vec<SessionInfo>, String> {
+    tauri::async_runtime::spawn_blocking(scan_sessions).await.map_err(|e| e.to_string())?
+}
+
+fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
     let root = agent_dir().join("sessions");
     if !root.exists() {
         return Ok(vec![]);
@@ -192,17 +196,30 @@ pub fn write_gui_state(
         .map_err(|e| format!("no app data dir: {e}"))?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let file = dir.join("leftleg.json");
-    fs::write(&file, serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    atomic_write(&file, &serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?)
+}
+
+fn atomic_write(file: &std::path::Path, text: &str) -> Result<(), String> {
+    let tmp = file.with_file_name(format!(".leftleg-{}.tmp", uuid::Uuid::new_v4()));
+    let result = fs::write(&tmp, text).and_then(|_| fs::rename(&tmp, file));
+    if result.is_err() { let _ = fs::remove_file(&tmp); }
+    result.map_err(|e| e.to_string())
 }
 
 /// Read a local file as base64 (for attaching images to prompts).
 #[tauri::command]
-pub fn read_file_base64(path: String) -> Result<String, String> {
+pub async fn read_file_base64(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || read_attachment(&path)).await.map_err(|e| e.to_string())?
+}
+
+fn read_attachment(path: &str) -> Result<String, String> {
     use std::io::Read;
-    let mut f = fs::File::open(&path).map_err(|e| e.to_string())?;
+    const LIMIT: u64 = 20 * 1024 * 1024;
+    let f = fs::File::open(path).map_err(|e| e.to_string())?;
+    if f.metadata().map_err(|e| e.to_string())?.len() > LIMIT { return Err("Attachment exceeds 20 MiB limit".into()); }
     let mut buf = Vec::new();
-    f.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    f.take(LIMIT + 1).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    if buf.len() as u64 > LIMIT { return Err("Attachment exceeds 20 MiB limit".into()); }
     Ok(base64_encode(&buf))
 }
 
@@ -226,6 +243,26 @@ pub fn base64_encode(data: &[u8]) -> String {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn gui_preferences_replace_existing_file_atomically() {
+        let dir = temp_dir("gui-atomic");
+        let file = dir.join("leftleg.json");
+        fs::write(&file, "old").unwrap();
+        atomic_write(&file, "new").unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "new");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn oversized_attachment_is_rejected_before_allocation() {
+        let dir = temp_dir("attachment-limit");
+        let file = dir.join("large.bin");
+        fs::File::create(&file).unwrap().set_len(20 * 1024 * 1024 + 1).unwrap();
+        assert!(read_attachment(file.to_str().unwrap()).unwrap_err().contains("20 MiB"));
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     /// Unique temp dir per test; best-effort cleanup via leak-tolerance.
     fn temp_dir(tag: &str) -> PathBuf {

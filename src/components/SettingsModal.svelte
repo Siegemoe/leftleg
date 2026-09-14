@@ -2,7 +2,7 @@
   // Thin shell hosting the full settings workspace. All prior settings
   // functionality (runtime controls, theme, project presentation, extension
   // commands, session actions) moved into SettingsWorkspace categories.
-  import { settingsOpen } from "../lib/stores";
+  import { settingsOpen, projectDir, lastProcByProject, navigating } from "../lib/stores";
   import SettingsWorkspace from "./settings/SettingsWorkspace.svelte";
 
   let close = () => settingsOpen.set(false);
@@ -15,7 +15,13 @@
       <span class="sub">Pi 0.85.1 configuration via the settings-mgmt companion + native RPC</span>
       <button class="ghost x" onclick={close}>✕</button>
     </header>
-    <SettingsWorkspace />
+    {#if $navigating}
+      <p>Opening session…</p>
+    {:else}
+      {#key `${$projectDir}:${$lastProcByProject[$projectDir]}`}
+        <SettingsWorkspace />
+      {/key}
+    {/if}
   </div>
 </div>
 

@@ -12,6 +12,8 @@ declare module "@earendil-works/pi-coding-agent" {
     [key: string]: unknown;
   }
   export interface ExtensionAPI {
+    getActiveTools(): string[];
+    setActiveTools(names: string[]): void;
     registerCommand(
       name: string,
       opts: {

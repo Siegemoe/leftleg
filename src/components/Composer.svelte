@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { sendPrompt, abort, streaming, statusNote, queue, extWidgets, composerDraft, commands } from "../lib/stores";
+  import { sendPrompt, abort, streaming, statusNote, queue, extWidgets, composerDraft, commands, clearQueue, navigating } from "../lib/stores";
   import { buildPromptMessage, type ComposerAttachment } from "../lib/prompt-message";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { FileText, Paperclip, Send, Square } from "@lucide/svelte";
-  import { readFileBase64, piRequest } from "../lib/api";
+  import { readFileBase64 } from "../lib/api";
 
   interface Attachment {
     name: string;
@@ -12,9 +12,10 @@
     isImage: boolean;
   }
 
-  let text = $state("");
-  let attachments: Attachment[] = $state([]);
-  let sending = $state(false);
+  import { untrack } from "svelte";
+  import { composerDraftFor } from "../lib/composer-drafts";
+  let { draftKey = "" }: { draftKey?: string } = $props();
+  const draftState = untrack(() => composerDraftFor(draftKey));
   let textareaEl: HTMLTextAreaElement | null = $state(null);
 
   const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
@@ -55,15 +56,15 @@
         const b64 = await readFileBase64(p);
         const name = p.split(/[\\/]/).pop() ?? p;
         const isImage = IMAGE_TYPES.has(ext(name));
-        attachments = [...attachments, { name, mimeType: isImage ? mimeFor(name) : "text/plain", data: b64, isImage }];
+        $draftState.attachments = [...$draftState.attachments, { name, mimeType: isImage ? mimeFor(name) : "text/plain", data: b64, isImage }];
       } catch (e) {
-        console.error("read failed", p, e);
+        statusNote.set(`Couldn't attach ${p}: ${e}`);
       }
     }
   }
 
   function removeAttachment(i: number) {
-    attachments = attachments.filter((_, idx) => idx !== i);
+    $draftState.attachments = $draftState.attachments.filter((_, idx) => idx !== i);
   }
 
   function dataUrlOf(a: Attachment): string {
@@ -71,39 +72,40 @@
   }
 
   async function doSend() {
-    if (sending || $streaming && !text.trim() && attachments.length === 0) return;
-    if (!text.trim() && attachments.length === 0) return;
-    sending = true;
+    if ($navigating) return;
+    if ($draftState.sending || $streaming && !$draftState.text.trim() && $draftState.attachments.length === 0) return;
+    if (!$draftState.text.trim() && $draftState.attachments.length === 0) return;
+    $draftState.sending = true;
     try {
       // Capture exactly what is being submitted. The composer stays editable
       // while pi decides, so acceptance must clear only this revision — later
       // typing or an extension-provided draft must survive.
-      const submittedText = text;
-      const submittedAttachments = attachments;
+      const submittedText = $draftState.text;
+      const submittedAttachments = $draftState.attachments;
       // Build the message: images go through the images param;
       // text files get inlined as fenced blocks so pi can see their content.
       const { msg, images } = buildPromptMessage(submittedText, submittedAttachments);
       const res = await sendPrompt(msg, images);
       // A rejected submission keeps text + attachments so the user can fix or retry.
       if (res.ok) {
-        if (text === submittedText && attachments === submittedAttachments) {
+        if ($draftState.text === submittedText && $draftState.attachments === submittedAttachments) {
           // Untouched while in flight — clear everything.
-          text = "";
-          attachments = [];
+          $draftState.text = "";
+          $draftState.attachments = [];
         } else {
           // Edited meanwhile: strip only the submitted part, keep the rest
           // (new typing, or a draft an extension pushed via set_editor_text).
-          if (submittedText && text.startsWith(submittedText)) {
-            text = text.slice(submittedText.length);
+          if (submittedText && $draftState.text.startsWith(submittedText)) {
+            $draftState.text = $draftState.text.slice(submittedText.length);
           }
           if (submittedAttachments.length > 0) {
-            attachments = attachments.filter((a) => !submittedAttachments.includes(a));
+            $draftState.attachments = $draftState.attachments.filter((a) => !submittedAttachments.includes(a));
           }
         }
         autoGrow();
       }
     } finally {
-      sending = false;
+      $draftState.sending = false;
     }
   }
 
@@ -126,18 +128,17 @@
 
   function onInput() {
     autoGrow();
-    if (!text.startsWith("/")) slashSuppressed = false;
+    if (!$draftState.text.startsWith("/")) slashSuppressed = false;
   }
 
   // ---- extension surfaces ----
 
   // Adopt set_editor_text requests (only the latest nonce wins).
-  let lastDraftNonce = 0;
   $effect(() => {
     const draft = $composerDraft;
-    if (!draft || draft.nonce === lastDraftNonce) return;
-    lastDraftNonce = draft.nonce;
-    text = draft.text;
+    if (!draft || draft.nonce === $draftState.lastExtensionNonce) return;
+    $draftState.lastExtensionNonce = draft.nonce;
+    $draftState.text = draft.text;
     autoGrow();
     textareaEl?.focus();
   });
@@ -149,8 +150,8 @@
   let slashSuppressed = $state(false);
   let slashIdx = $state(0);
   let paletteEl: HTMLDivElement | null = $state(null);
-  const slashOpen = $derived(text.startsWith("/") && !text.includes(" ") && !text.includes("\n") && !slashSuppressed);
-  const slashToken = $derived(slashOpen ? text.slice(1).toLowerCase() : "");
+  const slashOpen = $derived($draftState.text.startsWith("/") && !$draftState.text.includes(" ") && !$draftState.text.includes("\n") && !slashSuppressed);
+  const slashToken = $derived(slashOpen ? $draftState.text.slice(1).toLowerCase() : "");
   const slashMatches = $derived(
     slashOpen
       ? slashToken === ""
@@ -170,7 +171,7 @@
   });
 
   function applySlash(c: { name: string }) {
-    text = `/${c.name} `;
+    $draftState.text = `/${c.name} `;
     slashSuppressed = false;
     slashIdx = 0;
     autoGrow();
@@ -191,13 +192,16 @@
     if (files.length === 0) return;
     e.preventDefault();
     for (const f of files) {
-      const dataUrl = await new Promise<string>((resolve) => {
+      if (f.size > 20 * 1024 * 1024) { statusNote.set("Pasted image exceeds 20 MiB limit"); continue; }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result as string);
+        r.onerror = () => reject(r.error ?? new Error("Could not read pasted image"));
+        r.onabort = () => reject(new Error("Image paste cancelled"));
         r.readAsDataURL(f);
       });
       const b64 = dataUrl.split(",")[1] ?? "";
-      attachments = [...attachments, {
+      $draftState.attachments = [...$draftState.attachments, {
         name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
         mimeType: f.type || "image/png",
         data: b64,
@@ -206,11 +210,6 @@
     }
   }
 
-  async function clearQueue() {
-    try {
-      await piRequest({ type: "clear_queue" }, 30);
-    } catch { /* ignore */ }
-  }
 </script>
 
 {#if $statusNote}
@@ -257,9 +256,9 @@
     </div>
   {/if}
 
-  {#if attachments.length > 0}
+  {#if $draftState.attachments.length > 0}
     <div class="attachments">
-      {#each attachments as a, i}
+      {#each $draftState.attachments as a, i}
         <div class="chip">
           {#if a.isImage}
             <img src={dataUrlOf(a)} alt={a.name} />
@@ -279,7 +278,7 @@
     </button>
     <textarea
       bind:this={textareaEl}
-      bind:value={text}
+      bind:value={$draftState.text}
       oninput={onInput}
       onkeydown={onKeydown}
       onpaste={onPaste}
@@ -295,7 +294,7 @@
     {:else}
       <button
         class="primary send"
-        disabled={(!text.trim() && attachments.length === 0) || sending}
+        disabled={$navigating || (!$draftState.text.trim() && $draftState.attachments.length === 0) || $draftState.sending}
         onclick={doSend}
         title="Send"
       >

@@ -120,8 +120,27 @@ describe("handleEvent: streaming lifecycle", () => {
       message: { role: "assistant", content: [], usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 3 } },
     });
     await vi.waitFor(() => {
-      expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith({ type: "get_session_stats" }, 30);
+      expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith({ type: "get_session_stats" }, 30, null, undefined);
     });
+  });
+
+  it("keeps content indexes dense when text follows a tool call", async () => {
+    await handleEvent({ type: "message_start", message: { role: "assistant" } });
+    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, id: "tc1", toolName: "read" } });
+    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 0, toolCall: { id: "tc1", name: "read", arguments: { path: "a.txt" } } } });
+    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 1 } });
+    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "Checking the file." } });
+    const assistant = get(items)[0] as AssistantItem;
+    const blocks = assistant.blocks;
+    // Capture the interrupted-stream path too: it used to dereference a hole.
+    const settled = handleEvent({ type: "agent_settled" });
+    // Clean up even when the assertion fails, so this reproduction is isolated.
+    await handleEvent({ type: "message_end", message: { role: "assistant", content: [] } });
+    await expect(settled).resolves.toBeUndefined();
+    expect(Array.from(blocks)).toEqual([
+      { type: "toolcall", toolCallId: "tc1", name: "read", args: JSON.stringify({ path: "a.txt" }, null, 2) },
+      { type: "text", text: "Checking the file.", done: true },
+    ]);
   });
 });
 
@@ -291,6 +310,24 @@ describe("rebuildFromMessages", () => {
     expect(u.images[0].name).toBe("x.png");
   });
 
+  it("restores images from Pi user content blocks", () => {
+    rebuildFromMessages([{ role: "user", content: [
+      { type: "text", text: "Inspect this" },
+      { type: "image", data: "QUJD", mimeType: "image/jpeg" },
+    ] }]);
+    expect(get(items)[0]).toMatchObject({
+      kind: "user", text: "Inspect this",
+      images: [{ name: "image", dataUrl: "data:image/jpeg;base64,QUJD" }],
+    });
+  });
+
+  it("limits previews for images in Pi content blocks", () => {
+    rebuildFromMessages([{ role: "user", content: [
+      { type: "image", data: "A".repeat(1_500_001), mimeType: "image/png" },
+    ] }]);
+    expect(get(items)[0]).toMatchObject({ images: [{ dataUrl: "", name: expect.stringContaining("too large to preview") }] });
+  });
+
   it("strips oversized images into a chip", () => {
     rebuildFromMessages([
       { role: "user", content: "pic", attachments: [{ type: "image", content: "A".repeat(1_500_001), fileName: "big.png", mimeType: "image/png" }] },
@@ -309,6 +346,23 @@ describe("rebuildFromMessages", () => {
 
 describe("newSession", () => {
   // keep this describe last: it overrides the shared piRequest mock resolution
+  it.each([
+    [{ success: false, error: "session creation failed" }, "session creation failed"],
+    [{ success: true, data: { cancelled: true } }, "cancelled"],
+  ])("preserves the session and model when new_session does not proceed: %j", async (response, note) => {
+    const history = [{ kind: "user" as const, text: "Keep this conversation", images: [] }];
+    items.set(history);
+    activeSessionPath.set("/existing.jsonl");
+    vi.mocked(api.piRequest).mockResolvedValueOnce(response);
+
+    await newSession();
+
+    expect(get(items)).toEqual(history);
+    expect(get(activeSessionPath)).toBe("/existing.jsonl");
+    expect(get(statusNote)).toContain(note);
+    expect(vi.mocked(api.piRequest).mock.calls.map(([c]) => c.type)).toEqual(["new_session"]);
+  });
+
   it("pins the default GLM model on fresh sessions", async () => {
     vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: {} } as never);
 

@@ -11,9 +11,13 @@
     forgetProject, restoreProject, chooseProject, autoRetry, refreshCommands,
     statusNote,
   } from "../../lib/stores";
-  import { companionAvailable, mgmtRequest } from "../../lib/settings/mgmt";
+  import { companionAvailable, bindManagement } from "../../lib/settings/mgmt";
+  import { checkForUpdates, applyUpdate, updateAvailable, updateCheck } from "../../lib/updater";
+  import { onDestroy, untrack } from "svelte";
+  const mgmtRequest = bindManagement();
   import {
     getPath, setPath, cloneJson, sourceOf, effectiveValue, defaultValue,
+    isUnsafeConfigKey,
     BUILTIN_TOOLS, THINKING_LEVELS, type Scope,
   } from "../../lib/settings/state";
   import { writeAgentExtension, getAgentDir } from "../../lib/api";
@@ -39,7 +43,7 @@
 
   let section = $state<SectionId>("behavior");
   let search = $state("");
-  let scope = $state<Scope>("global");
+  let scope = $state<Scope>(untrack(() => $settingsProject ? "project" : "global"));
   let close = () => settingsOpen.set(false);
 
   // ---- file-backed settings state ----
@@ -93,7 +97,7 @@
   }
 
   function switchScope(s: Scope) {
-    if (s === scope) return;
+    if (s === scope || saveState === "saving" || loading) return;
     if (dirty && !confirm("Discard unsaved edits for the current scope?")) return;
     scope = s;
     resetDraft();
@@ -104,19 +108,25 @@
     saveError = "";
     try {
       const target = scope === "global" ? "settings-global" : "settings-project";
-      const revision = scopeData.revision ?? undefined;
-      if (inheritKeys.length > 0) {
-        await mgmtRequest("unset", { target, keys: [...inheritKeys], revision });
-      }
+      const revision = scopeData.revision;
       // Remove inherit-marked paths from the draft before merging.
       const patch = stripUndefined(cloneJson(draft));
-      const res = await mgmtRequest<{ file: string; revision: string }>("write", { target, mode: "merge", patch, revision });
-      // Read back through the authoritative file (resolver proof).
-      const back = await mgmtRequest<{ exists: boolean; data: Record<string, unknown> | null; revision: string | null }>("read", { target });
+      const wrote = await mgmtRequest<{ revision?: string | null }>("write", { target, mode: "merge", patch, revision, unsetKeys: [...inheritKeys] });
       const st = scope === "global" ? globalState : projectState;
-      st.data = back.data ?? null;
-      st.revision = back.revision ?? null;
-      st.exists = back.exists;
+      try {
+        // Read back through the authoritative file (resolver proof).
+        const back = await mgmtRequest<{ exists: boolean; data: Record<string, unknown> | null; revision: string | null }>("read", { target });
+        st.data = back.data ?? null;
+        st.revision = back.revision ?? wrote.revision ?? null;
+        st.exists = back.exists;
+      } catch (readErr) {
+        // The write landed; adopting its post-write revision keeps the next
+        // Apply conflict-free even when read-back verification fails.
+        st.revision = wrote.revision ?? st.revision;
+        saveState = "error";
+        saveError = `Saved, but read-back verification failed: ${readErr instanceof Error ? readErr.message : String(readErr)}`;
+        return;
+      }
       resetDraft();
       saveState = "saved";
     } catch (e) {
@@ -126,6 +136,8 @@
   }
 
   function markInherit(path: string) {
+    // Never traverse reserved object keys while clearing a draft path.
+    if (path.split(".").some(isUnsafeConfigKey)) return;
     if (!inheritKeys.includes(path)) inheritKeys = [...inheritKeys, path];
     // remove from draft so the form shows the inherited/effective value
     const parts = path.split(".");
@@ -151,6 +163,7 @@
     return v === undefined ? "" : String(v);
   }
   function setFieldStr(path: string, v: string) {
+    if (v === "") { markInherit(path); return; }
     inheritKeys = inheritKeys.filter((k) => k !== path);
     setPath(draft, path, v === "" ? undefined : v);
     draft = { ...draft };
@@ -160,14 +173,22 @@
     return v === undefined || v === null ? "" : String(v);
   }
   function setFieldNum(path: string, v: string) {
+    if (v.trim() === "") { markInherit(path); return; }
     inheritKeys = inheritKeys.filter((k) => k !== path);
-    const n = v.trim() === "" ? undefined : Number(v);
-    setPath(draft, path, n !== undefined && Number.isNaN(n) ? undefined : n);
+    const n = Number(v);
+    if (Number.isNaN(n)) {
+      // Garbage input must not silently become "inherit" — keep the stored
+      // value and tell the user.
+      statusNote.set(`⚠ "${v.trim()}" is not a number for ${path} — value kept as ${fieldNum(path) || "(inherit)"}`);
+      setTimeout(() => statusNote.set(""), 6000);
+      return;
+    }
+    setPath(draft, path, n);
     draft = { ...draft };
   }
   function fieldBool(path: string): boolean {
     const v = inheritKeys.includes(path) ? undefined : getPath(draft, path);
-    const eff = v === undefined ? effectiveValue(projectState.data, globalState.data, path) : v;
+    const eff = v === undefined && scope === "project" ? getPath(globalState.data, path) : v;
     return eff === undefined ? (defaultValue(path) === true) : eff === true;
   }
   function setFieldBool(path: string, v: boolean) {
@@ -217,10 +238,10 @@
   }
   async function togglePackage(name: string, disabled: boolean) {
     try {
-      const current = packageEntries();
+      const current = (scopeData.data?.packages ?? globalState.data?.packages ?? []) as unknown[];
       const next = disabled ? current.filter((n) => n !== name) : [...current, name];
       const target = scope === "global" ? "settings-global" : "settings-project";
-      await mgmtRequest("write", { target, mode: "merge", patch: { packages: next }, revision: scopeData.revision ?? undefined });
+      await mgmtRequest("write", { target, mode: "merge", patch: { packages: next }, revision: scopeData.revision });
       const back = await mgmtRequest<{ data: Record<string, unknown> | null; revision: string | null }>("read", { target });
       const st = scope === "global" ? globalState : projectState;
       st.data = back.data ?? null;
@@ -233,26 +254,42 @@
   }
 
   // ---- extension config editors (file-backed) ----
-  interface ExtFile { data: Record<string, unknown> | null; revision: string | null; exists: boolean }
+  interface ExtFile { data: Record<string, unknown> | null; raw: string | null; revision: string | null; exists: boolean }
   let extFiles = $state<Record<string, ExtFile>>({});
   async function loadExt(target: string) {
     try {
-      const r = await mgmtRequest<{ exists: boolean; data: Record<string, unknown> | null; revision: string | null }>("read", { target });
-      extFiles = { ...extFiles, [target]: { data: r.data ?? null, revision: r.revision ?? null, exists: r.exists } };
-    } catch { /* companion unavailable */ }
+      const r = await mgmtRequest<{ exists: boolean; data: Record<string, unknown> | null; raw: string | null; revision: string | null }>("read", { target });
+      extFiles = { ...extFiles, [target]: { data: r.data ?? null, raw: r.raw, revision: r.revision ?? null, exists: r.exists } };
+    } catch (e) { statusNote.set(`Couldn't load configuration: ${e}`); throw e; }
   }
   function extDraft(target: string): Record<string, unknown> {
     return (extFiles[target]?.data ?? {}) as Record<string, unknown>;
   }
+  function flashSaved() {
+    statusNote.set("Saved — read back from the file.");
+    setTimeout(() => statusNote.set(""), 4000);
+  }
   async function saveExt(target: string, patch: Record<string, unknown>) {
-    const cur = extFiles[target];
-    await mgmtRequest("write", { target, mode: "merge", patch, revision: cur?.revision ?? undefined });
-    await loadExt(target);
+    try {
+      const cur = extFiles[target];
+      await mgmtRequest("write", { target, mode: "merge", patch, revision: cur?.revision ?? null });
+      await loadExt(target);
+      flashSaved();
+    } catch (e) {
+      statusNote.set(`⚠ ${e instanceof Error ? e.message : String(e)}`);
+      setTimeout(() => statusNote.set(""), 6000);
+    }
   }
   async function saveExtNamespace(target: string, namespace: string, value: Record<string, unknown>) {
-    const cur = extFiles[target];
-    await mgmtRequest("write", { target, mode: "namespace", patch: { [namespace]: value }, revision: cur?.revision ?? undefined });
-    await loadExt(target);
+    try {
+      const cur = extFiles[target];
+      await mgmtRequest("write", { target, mode: "namespace", patch: { [namespace]: value }, revision: cur?.revision ?? null });
+      await loadExt(target);
+      flashSaved();
+    } catch (e) {
+      statusNote.set(`⚠ ${e instanceof Error ? e.message : String(e)}`);
+      setTimeout(() => statusNote.set(""), 6000);
+    }
   }
 
   // ---- model catalog ----
@@ -284,17 +321,14 @@
   $effect(() => {
     const t = advTarget;
     const f = extFiles[t];
-    if (t && f) advJson = f.exists ? JSON.stringify(f.data ?? {}, null, 2) : "{}";
+    if (t && f) advJson = f.exists ? f.raw ?? JSON.stringify(f.data ?? {}, null, 2) : "{}";
   });
   async function applyAdvJson() {
     try {
-      const parsed = JSON.parse(advJson) as Record<string, unknown>;
+      JSON.parse(advJson);
       const cur = extFiles[advTarget];
-      if (cur && !cur.exists) {
-        await mgmtRequest("write", { target: advTarget, mode: "merge", patch: parsed });
-      } else {
-        await mgmtRequest("write", { target: advTarget, mode: "merge", patch: parsed, revision: cur?.revision ?? undefined });
-      }
+      if (!cur) throw new Error("Load the file before saving");
+      await mgmtRequest("write", { target: advTarget, mode: "replace", content: advJson, revision: cur.revision });
       await loadExt(advTarget);
       void loadAll(true);
       statusNote.set("Saved — read back from the file.");
@@ -313,21 +347,25 @@
   // ---- lifecycle ----
   let sessionName = $state($rpcState?.sessionName ?? "");
   let renameTimer: ReturnType<typeof setTimeout> | null = null;
-  function onSessionNameInput() {
+  function onSessionNameInput(e: Event) {
+    sessionName = (e.currentTarget as HTMLInputElement).value;
     if (renameTimer) clearTimeout(renameTimer);
-    renameTimer = setTimeout(() => void renameSession(sessionName), 700);
+    const name = sessionName;
+    const path = $rpcState?.sessionFile;
+    renameTimer = setTimeout(() => void renameSession(name, path), 700);
   }
+  onDestroy(() => { if (renameTimer) clearTimeout(renameTimer); });
   $effect(() => {
     sessionName = $rpcState?.sessionName ?? "";
   });
 
   $effect(() => {
     // load once when the workspace becomes visible
-    if (settingsOpen) {
+    if ($settingsOpen) untrack(() => {
       void getAgentDir().then((d) => (agentDir = d)).catch(() => {});
       void loadAll();
       if (companionAvailable()) void loadResources();
-    }
+    });
   });
 </script>
 
@@ -339,8 +377,8 @@
       {#if saveState === "error"} · <span class="hint err">{saveError}</span>{/if}
     </span>
     <span class="spacer"></span>
-    <button class="ghost" onclick={discardSettings} disabled={!dirty || saveState === "saving"}>Discard</button>
-    <button class="primary" onclick={() => void applySettings()} disabled={!dirty || saveState === "saving"}>{saveState === "saving" ? "Saving…" : "Apply &amp; verify".replace("&amp;", "&")}</button>
+    <button class="ghost" onclick={discardSettings} disabled={!loaded || loading || !dirty || saveState === "saving"}>Discard</button>
+    <button class="primary" onclick={() => void applySettings()} disabled={!loaded || loading || !dirty || saveState === "saving"}>{saveState === "saving" ? "Saving…" : "Apply &amp; verify".replace("&amp;", "&")}</button>
   </div>
 {/snippet}
 
@@ -409,7 +447,7 @@
           <button onclick={() => compact()}>Compact now</button>
         </div>
         <div class="row">
-          <label class="check"><input type="checkbox" checked={$autoRetry} onchange={(e) => { const v = e.currentTarget.checked; autoRetry.set(v); void setAutoRetry(v); }} /> Auto-retry (persists; Leftleg mirrors the last value set)</label>
+          <label class="check"><input type="checkbox" checked={$autoRetry} onchange={(e) => { const v = e.currentTarget.checked; void setAutoRetry(v); }} /> Auto-retry (persists; Leftleg mirrors the last value set)</label>
           <button onclick={() => void abortRetry()}>Abort running retry</button>
         </div>
         <div class="row">
@@ -756,6 +794,24 @@
           <p class="hint">Reserved command <span class="mono">/settings-mgmt</span>; versioned JSON requests; structured replies; availability-gated so a request can never fall through to an LLM prompt. Agent dir: <span class="mono">{agentDir || "~/.pi/agent"}</span></p>
         </div>
         <div class="row">
+          <span class="row-label">Updates</span>
+          <div class="inline">
+            <span class="chip">v{__APP_VERSION__}</span>
+            {#if $updateCheck.status === "checking"}
+              <span class="chip">checking…</span>
+            {:else if $updateCheck.status === "current"}
+              <span class="chip ok">up to date</span>
+            {:else if $updateCheck.status === "available"}
+              <span class="chip ok">⟳ {$updateCheck.message}</span>
+            {:else if $updateCheck.status === "failed"}
+              <span class="chip bad" title={$updateCheck.message}>check failed</span>
+            {/if}
+            <button class="primary" disabled={$updateCheck.status === "checking"} onclick={() => void checkForUpdates()}>Check now</button>
+            {#if $updateAvailable}<button class="primary" onclick={() => void applyUpdate()}>Install &amp; restart</button>{/if}
+          </div>
+          {#if $updateCheck.status === "failed"}<p class="hint">{$updateCheck.message}</p>{/if}
+        </div>
+        <div class="row">
           <span class="row-label">Build identity</span>
           <div class="inline wrap">
             <span class="chip">Leftleg v{__APP_VERSION__}</span>
@@ -766,7 +822,7 @@
         </div>
         <div class="row">
           <span class="row-label">Raw config editors (validated; unknown fields preserved)</span>
-          <select id="adv-target" onchange={(e) => { const t = e.currentTarget.value; if (t) void loadExt(t); }}>
+          <select id="adv-target" onchange={(e) => { const t = e.currentTarget.value; if (t) void loadExt(t).catch(() => {}); }}>
             <option value="">choose a registered resource…</option>
             <option value="settings-global">settings-global</option>
             <option value="settings-project">settings-project</option>
@@ -781,7 +837,7 @@
             <textarea class="mono adv-json" rows={10} bind:value={advJson}></textarea>
             <div class="inline">
               <button onclick={() => void applyAdvJson()}>Apply JSON (merge)</button>
-              <button onclick={() => void loadExt(advTarget)}>Discard</button>
+              <button onclick={() => void loadExt(advTarget).catch(() => {})}>Discard</button>
             </div>
           {/if}
         </div>

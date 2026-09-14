@@ -20,8 +20,9 @@ vi.mock("../lib/api", () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 import * as api from "../lib/api";
+import * as dialog from "@tauri-apps/plugin-dialog";
 import Composer from "./Composer.svelte";
-import { connected, projectDir, requestComposerText, streaming } from "../lib/stores";
+import { composerDraft, connected, projectDir, requestComposerText, streaming } from "../lib/stores";
 
 let host: HTMLElement;
 let instance: ReturnType<typeof mount> | null = null;
@@ -57,6 +58,7 @@ beforeEach(() => {
   connected.set(true);
   projectDir.set("/proj");
   streaming.set(false);
+  composerDraft.set(null);
   vi.mocked(api.piRequest).mockReset();
 });
 
@@ -82,6 +84,8 @@ describe("Composer draft revisions", () => {
     expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith(
       expect.objectContaining({ type: "prompt", message: "hello" }),
       600,
+      "/proj",
+      undefined,
     );
   });
 
@@ -140,17 +144,47 @@ describe("Composer draft revisions", () => {
     flushSync();
 
     type("with image");
-    // attach an image chip directly through the paste path's data shape:
-    // simulate by dispatching a paste event with an image file is heavy in
-    // jsdom, so drive the component state via a second submission instead.
-    clickSend();
-
+    vi.mocked(api.readFileBase64).mockResolvedValue("QUJD");
+    vi.mocked(dialog.open).mockResolvedValueOnce(["/images/first.png"]);
+    host.querySelector<HTMLButtonElement>('[title="Attach images or files"]')!.click();
     await settle();
-    type("with image and follow-up");
+    clickSend();
+    await settle();
+    vi.mocked(dialog.open).mockResolvedValueOnce(["/images/second.png"]);
+    host.querySelector<HTMLButtonElement>('[title="Attach images or files"]')!.click();
+    await settle();
     release({ success: true });
     await settle();
+    expect([...host.querySelectorAll(".attachments .name")].map((n) => n.textContent)).toEqual(["second.png"]);
+  });
 
-    expect(textArea().value).toBe(" and follow-up");
-    void streaming; // imported store used by the component; keep the reference honest
+  it("scopes drafts and remembers that an extension draft has already been edited", async () => {
+    instance = mount(Composer, { target: host, props: { draftKey: "draft-a" } });
+    requestComposerText("seed"); await settle();
+    type("user revision");
+    const old = { text: "seed", nonce: 1 };
+    const { get } = await import("svelte/store");
+    Object.assign(old, get(composerDraft));
+    await unmount(instance);
+    composerDraft.set(null);
+    instance = mount(Composer, { target: host, props: { draftKey: "draft-b" } });
+    flushSync(); expect(textArea().value).toBe("");
+    type("other project"); await unmount(instance);
+    composerDraft.set(old);
+    instance = mount(Composer, { target: host, props: { draftKey: "draft-a" } });
+    flushSync(); expect(textArea().value).toBe("user revision");
+  });
+
+  it("keeps an in-flight submission disabled after returning to its draft", async () => {
+    let release!: (v: unknown) => void;
+    vi.mocked(api.piRequest).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    instance = mount(Composer, { target: host, props: { draftKey: "pending-draft" } });
+    flushSync(); type("pending"); clickSend();
+    await unmount(instance);
+    instance = mount(Composer, { target: host, props: { draftKey: "pending-draft" } });
+    flushSync();
+    expect(host.querySelector<HTMLButtonElement>('[title="Send"]')!.disabled).toBe(true);
+    release({ success: true }); await settle();
+    expect(textArea().value).toBe("");
   });
 });

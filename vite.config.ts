@@ -3,12 +3,16 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { readFileSync } from "node:fs";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf8")) as { version: string };
+// The updater compares the EMBEDDED tauri.conf.json version against the
+// release feed — that is the real build identity. Display it, not package
+// json's copy, so the two can never drift apart again.
+const tauriConf = JSON.parse(readFileSync("./src-tauri/tauri.conf.json", "utf8")) as { version: string };
 
 // https://vitejs.dev/config/
 export default defineConfig({
   define: {
     // build version surfaced in the status bar (StatusBar.svelte)
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_VERSION__: JSON.stringify(tauriConf.version),
   },
   plugins: [svelte()],
   clearScreen: false,
