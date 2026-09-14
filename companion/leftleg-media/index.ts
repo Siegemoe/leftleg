@@ -155,7 +155,10 @@ export default function (pi: ExtensionAPI) {
       if (params.output_format !== undefined) body.output_format = params.output_format;
       if (params.background !== undefined) body.background = params.background;
       if (params.n !== undefined) body.n = params.n;
-      if (references.length > 0) body.input_references = references;
+      if (references.length > 0) {
+        // OpenRouter's Image API expects chat-style reference entries, not bare strings.
+        body.input_references = references.map((url) => ({ type: "image_url", image_url: { url } }));
+      }
 
       onUpdate?.({ content: [{ type: "text", text: `Rendering with ${model}… (typically 10-90s)` }] });
 
