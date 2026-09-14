@@ -21,6 +21,34 @@ declare module "@earendil-works/pi-coding-agent" {
         handler: (args: string | undefined, ctx: ExtensionCommandContext) => void | Promise<void>;
       },
     ): void;
+    registerTool(definition: {
+      name: string;
+      label?: string;
+      description?: string;
+      promptSnippet?: string;
+      promptGuidelines?: string[];
+      parameters: unknown; // runtime TypeBox schema (validated by pi)
+      execute: (
+        toolCallId: string,
+        params: unknown,
+        signal: AbortSignal | undefined,
+        onUpdate: ((update: { content: Array<{ type: string; text?: string }> }) => void) | undefined,
+        ctx: ExtensionToolContext,
+      ) => Promise<unknown> | unknown;
+      [key: string]: unknown;
+    }): void;
+    [key: string]: unknown;
+  }
+
+  /** Tool-execute context subset (real shape lives in pi's own types). */
+  export interface ExtensionToolContext {
+    cwd?: string;
+    modelRegistry: {
+      getProviderAuth(provider: string): Promise<
+        | { auth: { apiKey?: string; baseUrl?: string }; source?: string }
+        | undefined
+      >;
+    };
     [key: string]: unknown;
   }
 }

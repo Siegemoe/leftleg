@@ -13,6 +13,7 @@ Leftleg owns only GUI concerns and treats pi's RPC protocol as the single integr
 - **Steering & follow-ups** — mirror of pi's live queue; steer a running turn or line up follow-ups.
 - **Extension surfaces** — extension UI requests become native dialogs, with process-ownership and expiry guards so stale prompts can't answer themselves.
 - **Settings workspace** — a management bridge to pi (the `/settings-mgmt` companion): core config, extension config, and package forms, all revision-checked, atomic, and read-back verified.
+- **Image generation** — the `image_generate` tool (via the `leftleg-media` companion) renders images from text prompts through OpenRouter's Image API with reference-image iteration; auth resolves inside pi, files save under `.pi/images/`, and the tool reports cost.
 - **Self-updating** — startup update checks with in-app install via Tauri's signed updater (minisign-verified artifacts, turn-safe: never interrupts a running agent).
 
 ## Install

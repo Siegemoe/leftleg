@@ -28,7 +28,9 @@ Extension dialogs are queued and replies are addressed to their owning project/g
 
 The companion in `companion/leftleg-settings/index.ts` exposes an allowlist of configuration resources. Content hashes detect stale revisions. Merge operations preserve unknown siblings; namespace replacement is used when deletion/replacement is intentional. A write can include `unsetKeys` so resets and edits commit together under one revision. Temporary files are created beside the destination, making rename work across installations on different drives. Generated model caches remain read-only through both JSON and raw write operations.
 
-Only the companion installation path is accepted by the native installer command. No changes in the audit are installed into the user's live Pi directory automatically.
+The `companion/leftleg-media/index.ts` companion registers the `image_generate` agent tool: OpenRouter's Image API invoked as an explicit, agent-visible tool call, with the credential resolved through pi's model registry (never read from files, never logged or persisted by Leftleg). Images are saved project-scoped under `.pi/images/` with timestamped, prompt-slugged names via atomic tmp+rename writes; the tool result reports saved paths and OpenRouter's reported cost.
+
+Only the two companion installation paths (settings, media) are accepted by the native installer command. No changes in the audit are installed into the user's live Pi directory automatically.
 
 ## Verification
 

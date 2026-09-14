@@ -24,6 +24,7 @@
   import { Search, X, RotateCcw, FolderOpen, RefreshCw } from "@lucide/svelte";
   import PackageForms from "./PackageForms.svelte";
   import companionSource from "../../../companion/leftleg-settings/index.ts?raw";
+  import mediaSource from "../../../companion/leftleg-media/index.ts?raw";
 
   type SectionId =
     | "runtime" | "behavior" | "models" | "tools" | "trust"
@@ -221,8 +222,11 @@
     installMsg = "";
     try {
       await writeAgentExtension("leftleg-settings/index.ts", companionSource);
+      await writeAgentExtension("leftleg-media/index.ts", mediaSource);
       await refreshCommands();
-      installMsg = companionAvailable() ? "Companion installed — ready." : "Installed, but not visible yet — restart pi (defer; nothing was interrupted).";
+      installMsg = companionAvailable()
+        ? "Companions installed — settings bridge ready; image_generate becomes available on the next pi restart or new session."
+        : "Installed, but not visible yet — restart pi (defer; nothing was interrupted).";
       await loadResources();
     } catch (e) {
       installMsg = e instanceof Error ? e.message : String(e);
@@ -791,7 +795,7 @@
             <button class="primary" disabled={installing} onclick={() => void installCompanion()}>{installing ? "Installing…" : companionAvailable() ? "Reinstall" : "Install companion"}</button>
           </div>
           {#if installMsg}<p class="hint">{installMsg}</p>{/if}
-          <p class="hint">Reserved command <span class="mono">/settings-mgmt</span>; versioned JSON requests; structured replies; availability-gated so a request can never fall through to an LLM prompt. Agent dir: <span class="mono">{agentDir || "~/.pi/agent"}</span></p>
+          <p class="hint">Reserved command <span class="mono">/settings-mgmt</span>; versioned JSON requests; structured replies; availability-gated so a request can never fall through to an LLM prompt. Installing also ships the <span class="mono">leftleg-media</span> companion (the <span class="mono">image_generate</span> tool — OpenRouter Image API, auth resolved inside pi). Agent dir: <span class="mono">{agentDir || "~/.pi/agent"}</span></p>
         </div>
         <div class="row">
           <span class="row-label">Updates</span>

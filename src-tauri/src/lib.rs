@@ -257,8 +257,8 @@ fn append_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
 }
 
 /// Write a GUI-provided file into the agent directory under `extensions/`.
-/// Reserved for explicitly installing the settings companion (path-traversal
-/// guarded; never arbitrary file targets).
+/// Reserved for explicitly installing the Leftleg companions (settings, media);
+/// path-traversal guarded; never arbitrary file targets.
 #[tauri::command]
 fn write_agent_extension(app: tauri::AppHandle, rel_path: String, content: String) -> Result<(), String> {
     let agent_dir = sessions::agent_dir();
@@ -292,10 +292,10 @@ fn companion_relative_path(rel: &str) -> Result<std::path::PathBuf, String> {
     if path.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
         return Err("path traversal rejected".into());
     }
-    if rel.replace('\\', "/") != "leftleg-settings/index.ts" {
-        return Err("only the Leftleg settings companion can be installed".into());
+    match rel.replace('\\', "/").as_str() {
+        "leftleg-settings/index.ts" | "leftleg-media/index.ts" => Ok(path.to_path_buf()),
+        _ => Err("only Leftleg companions (settings, media) can be installed".into()),
     }
-    Ok(path.to_path_buf())
 }
 
 #[cfg(test)]
@@ -308,6 +308,7 @@ mod companion_install_tests {
             assert!(companion_relative_path(invalid).is_err());
         }
         assert!(companion_relative_path("leftleg-settings/index.ts").is_ok());
+        assert!(companion_relative_path("leftleg-media/index.ts").is_ok());
     }
 }
 
