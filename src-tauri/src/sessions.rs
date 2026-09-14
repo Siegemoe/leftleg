@@ -359,10 +359,29 @@ pub fn delete_artifact_checked(project_dir: &str, path: &str) -> Result<(), Stri
     fs::remove_file(&canon_target).map_err(|e| e.to_string())
 }
 
-/// List a project's artifacts (generated images + known docs).
+/// List a project's artifacts (generated images + known docs). Also extends
+/// the asset-protocol scope with the project's images dir so the webview can
+/// stream those files into <img> tags without base64 inflation.
 #[tauri::command]
-pub async fn list_artifacts(project_dir: String) -> Result<ArtifactsReport, String> {
-    tauri::async_runtime::spawn_blocking(move || scan_artifacts(&project_dir)).await.map_err(|e| e.to_string())?
+pub async fn list_artifacts(app: tauri::AppHandle, project_dir: String) -> Result<ArtifactsReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let report = scan_artifacts(&project_dir)?;
+        let images_dir = std::path::Path::new(&project_dir).join(".pi").join("images");
+        if images_dir.is_dir() {
+            use tauri::Manager;
+            let scope = app.asset_protocol_scope();
+            // Allow both the plain and canonical forms — Windows canonicalize
+            // returns verbatim (\\?\) paths, and scope matching normalizes the
+            // request path against registered entries.
+            let _ = scope.allow_directory(&images_dir, true);
+            if let Ok(canon) = fs::canonicalize(&images_dir) {
+                let _ = scope.allow_directory(&canon, true);
+            }
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Delete one image artifact (guarded to <project>/.pi/images).

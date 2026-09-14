@@ -1,17 +1,15 @@
 <script lang="ts">
   // Project artifacts browser: images generated via the image_generate tool
   // (project-scoped .pi/images/) and the canonical project docs. Thumbnails
-  // load lazily (IntersectionObserver) and only under the inline-image size
-  // cap — oversized files render as open chips instead of crashing the
-  // webview with multi-MB data URLs.
+  // stream from disk via the asset protocol (its scope is extended to the
+  // project's images dir by list_artifacts) — no base64 inflation, no size
+  // caps; failed loads degrade to click-to-open chips.
   import { artifactsOpen, projectDir, statusNote } from "../lib/stores";
   import { get } from "svelte/store";
-  import { listArtifacts, deleteArtifact, readFileBase64, type ArtifactFile } from "../lib/api";
+  import { listArtifacts, deleteArtifact, type ArtifactFile } from "../lib/api";
   import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import { ExternalLink, Copy, Trash2, RefreshCw } from "@lucide/svelte";
-
-  // Same bound as chat/transcript images: multi-MB data URLs crash the webview.
-  const MAX_INLINE_IMAGE_BASE64 = 1_500_000;
 
   let close = () => artifactsOpen.set(false);
 
@@ -20,9 +18,9 @@
   let loadError = $state("");
   let images = $state<ArtifactFile[]>([]);
   let docs = $state<ArtifactFile[]>([]);
-  let thumbs = $state<Record<string, string>>({});
+  // Files whose asset-protocol load failed (moved/deleted/scope gap) degrade
+  // to click-to-open chips instead of broken <img> elements.
   let thumbFailed = $state<Record<string, string>>({});
-  let thumbPending = new Set<string>();
 
   async function refresh(dir: string = $projectDir) {
     if (!dir) return;
@@ -35,7 +33,6 @@
       // Drop thumb state for files that vanished between refreshes (thumbs and
       // failures alike); in-flight loads self-clean via thumbPending.
       const live = new Set(images.map((i) => i.path));
-      thumbs = Object.fromEntries(Object.entries(thumbs).filter(([p]) => live.has(p)));
       thumbFailed = Object.fromEntries(Object.entries(thumbFailed).filter(([p]) => live.has(p)));
     } catch (e) {
       loadError = e instanceof Error ? e.message : String(e);
@@ -50,62 +47,6 @@
     if (!$artifactsOpen) return;
     void refresh(dir);
   });
-
-  function estimateBase64Size(bytes: number): number {
-    return Math.ceil((bytes * 4) / 3);
-  }
-
-  function mimeFor(path: string): string {
-    const ext = (path.split(".").pop() ?? "").toLowerCase();
-    if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
-    if (ext === "webp") return "image/webp";
-    if (ext === "svg") return "image/svg+xml";
-    if (ext === "gif") return "image/gif";
-    return "image/png";
-  }
-
-  function loadThumb(file: ArtifactFile) {
-    if (thumbs[file.path] || thumbFailed[file.path] || thumbPending.has(file.path)) return;
-    if (estimateBase64Size(file.size) > MAX_INLINE_IMAGE_BASE64) return; // chip instead
-    thumbPending.add(file.path);
-    void (async () => {
-      try {
-        const b64 = await readFileBase64(file.path);
-        // Apply only if the file is still in the current listing (a refresh or
-        // project switch may have replaced the list mid-flight).
-        if (!images.some((i) => i.path === file.path)) return;
-        thumbs = { ...thumbs, [file.path]: `data:${mimeFor(file.path)};base64,${b64}` };
-      } catch (e) {
-        if (!images.some((i) => i.path === file.path)) return;
-        thumbFailed = { ...thumbFailed, [file.path]: e instanceof Error ? e.message : String(e) };
-      } finally {
-        thumbPending.delete(file.path);
-      }
-    })();
-  }
-
-  /** Load a tile's thumbnail when it scrolls into view. */
-  function lazyThumb(el: HTMLElement, path: string) {
-    if (typeof IntersectionObserver === "undefined") {
-      // jsdom (component tests) has no IntersectionObserver — load eagerly there.
-      const file = images.find((i) => i.path === path);
-      if (file) loadThumb(file);
-      return {};
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const file = images.find((i) => i.path === path); // fresh metadata at fire time
-          if (file) loadThumb(file);
-          io.disconnect();
-        }
-      },
-      { rootMargin: "240px" },
-    );
-    io.observe(el);
-    return { destroy: () => io.disconnect() };
-  }
 
   async function openFile(path: string) {
     try { await openInDefaultApp(path); }
@@ -180,18 +121,19 @@
         {:else}
           <div class="grid">
             {#each images as file (file.path)}
-              <div class="tile" use:lazyThumb={file.path}>
+              <div class="tile">
                 <div class="thumb">
-                  {#if thumbs[file.path]}
-                    <button class="thumbbtn" title="Open — {file.name}" onclick={() => void openFile(file.path)}>
-                      <img src={thumbs[file.path]} alt={file.name} loading="lazy" />
-                    </button>
-                  {:else if thumbFailed[file.path]}
-                    <span class="thumbfall mono err" title={thumbFailed[file.path]}>⚠ preview failed</span>
-                  {:else if estimateBase64Size(file.size) > MAX_INLINE_IMAGE_BASE64}
-                    <span class="thumbfall mono">{fmtSize(file.size)} — too large to preview</span>
+                  {#if thumbFailed[file.path]}
+                    <button class="thumbfall mono" title={thumbFailed[file.path]} onclick={() => void openFile(file.path)}>⚠ preview unavailable — click to open</button>
                   {:else}
-                    <div class="thumbph"></div>
+                    <button class="thumbbtn" title="Open — {file.name}" onclick={() => void openFile(file.path)}>
+                      <img
+                        src={convertFileSrc(file.path)}
+                        alt={file.name}
+                        loading="lazy"
+                        onerror={() => (thumbFailed = { ...thumbFailed, [file.path]: `preview failed: ${file.name}` })}
+                      />
+                    </button>
                   {/if}
                 </div>
                 <div class="tilemeta">
@@ -341,14 +283,6 @@
   .thumbbtn { padding: 0; border: none; background: transparent; cursor: zoom-in; line-height: 0; width: 100%; height: 100%; }
   .thumbbtn img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .thumbfall { font-size: 10.5px; color: var(--text-3); padding: 6px; text-align: center; }
-  .thumbfall.err { color: var(--danger); }
-  .thumbph {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--accent) 10%, transparent) 50%, transparent 65%);
-    animation: sweep 2.2s ease-in-out infinite;
-  }
-  @keyframes sweep { 55%, 100% { transform: translateX(24%); } }
   .tilemeta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name {
     font-size: 11.5px;

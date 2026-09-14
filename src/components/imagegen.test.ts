@@ -14,6 +14,13 @@ vi.mock("../lib/api", async (importOriginal) => {
   return { ...actual, ...mocks };
 });
 
+// The real convertFileSrc reaches into window.__TAURI_INTERNALS__ — stub a
+// deterministic asset URL for jsdom.
+vi.mock("@tauri-apps/api/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tauri-apps/api/core")>();
+  return { ...actual, convertFileSrc: (path: string) => `http://asset.localhost/${encodeURIComponent(path)}` };
+});
+
 import ToolCard from "./ToolCard.svelte";
 import Artifacts from "./Artifacts.svelte";
 import { artifactsOpen, projectDir } from "../lib/stores";
@@ -76,46 +83,34 @@ describe("ToolCard image_generate rendering", () => {
     expect(ph!.style.getPropertyValue("--ph-ar")).toBe("4 / 3");
   });
 
-  it("done state renders the inline image from details.paths", async () => {
-    mocks.readFileBase64.mockResolvedValue("QUFB");
+  it("done state renders the inline image streamed via the asset protocol", async () => {
     const item = baseItem({
       status: "done",
       output: "Saved 1 image (m):\nC:\\i\\a.png\nReported cost: $0.0200",
       details: { paths: ["C:\\i\\a.png"], model: "m", usage: { cost: 0.02 }, references: 0 },
     });
     instances.push(mount(ToolCard, { target: document.body, props: { item } }));
-    await settle();
+    flushSync();
     const img = document.body.querySelector<HTMLImageElement>(".imgbtn img");
     expect(img).toBeTruthy();
-    expect(img!.getAttribute("src")).toBe("data:image/png;base64,QUFB");
+    expect(img!.getAttribute("src")).toContain("asset.localhost");
+    expect(img!.getAttribute("src")).toContain("a.png");
     expect(document.body.textContent).toContain("m");
     expect(document.body.textContent).toContain("$0.0200");
   });
 
   it("falls back to parsing paths from the result text for history items", async () => {
-    mocks.readFileBase64.mockResolvedValue("QUFB");
     const item = baseItem({
       status: "done",
       output: "Saved 1 image (m):\nC:\\i\\b.png\nReported cost: $0.0300",
     });
     instances.push(mount(ToolCard, { target: document.body, props: { item } }));
-    await settle();
+    flushSync();
     const img = document.body.querySelector<HTMLImageElement>(".imgbtn img");
     expect(img).toBeTruthy();
-    expect(img!.getAttribute("src")).toBe("data:image/png;base64,QUFB");
+    expect(img!.getAttribute("src")).toContain("asset.localhost");
+    expect(img!.getAttribute("src")).toContain("b.png");
     expect(document.body.textContent).toContain("$0.0300");
-  });
-
-  it("oversized images render as an open chip, not an <img>", async () => {
-    mocks.readFileBase64.mockResolvedValue("X".repeat(1_600_000));
-    const item = baseItem({
-      status: "done",
-      details: { paths: ["C:\\i\\big.png"], model: "m" },
-    });
-    instances.push(mount(ToolCard, { target: document.body, props: { item } }));
-    await settle();
-    expect(document.body.querySelector("img")).toBeNull();
-    expect(document.body.textContent).toContain("too large to preview");
   });
 
   it("error state keeps the generic error presentation", () => {
@@ -139,8 +134,7 @@ describe("ToolCard image_generate rendering", () => {
 });
 
 describe("Artifacts browser", () => {
-  it("lists image tiles (with lazy thumbnail) and docs with exists flags", async () => {
-    mocks.readFileBase64.mockResolvedValue("QUFB");
+  it("lists image tiles (streamed thumbnails) and docs with exists flags", async () => {
     mocks.listArtifacts.mockResolvedValue({
       images: [{ name: "a.png", path: "C:\\i\\a.png", size: 120, modifiedMs: Date.now(), exists: true }],
       docs: [
@@ -156,9 +150,9 @@ describe("Artifacts browser", () => {
 
     expect(document.body.querySelector(".tile")).toBeTruthy();
     expect(document.body.textContent).toContain("a.png");
-    await vi.waitFor(() => {
-      expect(document.body.querySelector("img")).toBeTruthy();
-    });
+    const img = document.body.querySelector<HTMLImageElement>(".thumbbtn img");
+    expect(img).toBeTruthy();
+    expect(img!.getAttribute("src")).toContain("asset.localhost");
 
     const docsTab = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.includes("Docs"));
     docsTab!.click();

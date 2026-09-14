@@ -2,8 +2,8 @@
   import type { ToolItem } from "../lib/types";
   import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
   import { resolve as resolvePath } from "@tauri-apps/api/path";
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import { projectDir, statusNote } from "../lib/stores";
-  import { readFileBase64 } from "../lib/api";
 
   let { item }: { item: ToolItem } = $props();
 
@@ -21,10 +21,8 @@
     image_generate: "Generated image",
   };
 
-  // Base64 data URLs above this size render as file chips instead of <img>
-  // (same bound as chat-embedded images — multi-MB previews crash the webview).
-  const MAX_INLINE_IMAGE_BASE64 = 1_500_000;
-
+  // Base64 caps only apply to chat-embedded images; generated images stream
+  // via the asset protocol, so no size gate here.
   let label = $derived(toolLabel[item.name] ?? item.name);
   let target = $derived.by(() => {
     try {
@@ -70,9 +68,10 @@
 
   // ---------- image_generate presentation ----------
   // The generation flow: running → animated "developing" placeholder; done →
-  // the image renders in place. Paths come from the tool's structured details
-  // first; older sessions that persisted only the text fall back to parsing
-  // the deterministic result lines.
+  // the image renders in place, streamed from disk via the asset protocol
+  // (scope extended to <project>/.pi/images by the list_artifacts command).
+  // Paths come from the tool's structured details first; older sessions that
+  // persisted only the text fall back to parsing the deterministic lines.
 
   const isImageGen = $derived(item.name === "image_generate");
   let imageArgs = $derived.by(() => {
@@ -116,59 +115,19 @@
     return { model, cost, references };
   });
 
-  interface ImageThumb { path: string; dataUrl: string | null; tooBig: boolean; error: string | null }
-  // Cache data URLs across re-renders and transcript reloads — generating the
-  // same base64 twice costs a file read + GC churn for zero visual change.
-  // Keyed by absolute path (project-safe); bounded so long sessions with many
-  // images can't accumulate unbounded base64 in memory.
-  const thumbCache = new Map<string, ImageThumb>();
-  const THUMB_CACHE_LIMIT = 24;
-  let thumbEpoch = 0;
-  let thumbs = $state<ImageThumb[]>([]);
-
-  function mimeFor(path: string): string {
-    const ext = (path.split(".").pop() ?? "").toLowerCase();
-    if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
-    if (ext === "webp") return "image/webp";
-    if (ext === "svg") return "image/svg+xml";
-    if (ext === "gif") return "image/gif";
-    return "image/png";
-  }
-
-  $effect(() => {
-    if (!isImageGen || item.status !== "done" || imagePaths.length === 0) {
-      // Invalidate in-flight loads from a superseded render.
-      thumbEpoch++;
-      if (thumbs.length > 0) thumbs = [];
-      return;
-    }
-    // Snapshot the dependency list; the effect re-runs when it changes.
+  // Images stream via the asset protocol; a failed load (file moved/deleted,
+  // scope gap) degrades to an open-chip instead of a broken <img>. The raw
+  // record is written by onerror handlers; the derived filters it to the
+  // paths the current item still references (write-vs-read state kept
+  // separate so the cleanup can't retrigger itself).
+  let failedImagesRaw = $state<Record<string, boolean>>({});
+  let failedImages = $derived.by(() => {
     const paths = imagePaths;
-    const myEpoch = ++thumbEpoch;
-    const next: ImageThumb[] = paths.map((p) => thumbCache.get(p) ?? { path: p, dataUrl: null, tooBig: false, error: null });
-    thumbs = next;
-    for (let i = 0; i < next.length; i++) {
-      const t = next[i];
-      if (t.dataUrl !== null || t.tooBig || t.error !== null) continue;
-      void (async () => {
-        let updated: ImageThumb;
-        try {
-          const b64 = await readFileBase64(t.path);
-          updated = b64.length > MAX_INLINE_IMAGE_BASE64
-            ? { ...t, tooBig: true }
-            : { ...t, dataUrl: `data:${mimeFor(t.path)};base64,${b64}` };
-        } catch (e) {
-          updated = { ...t, error: e instanceof Error ? e.message : String(e) };
-        }
-        // Cache is path-keyed and always valid; the VIEW only takes the update
-        // if this render is still current and the entry is still blank.
-        if (thumbCache.size > THUMB_CACHE_LIMIT) thumbCache.clear();
-        thumbCache.set(t.path, updated);
-        if (myEpoch !== thumbEpoch) return;
-        thumbs = thumbs.map((x) => (x.path === t.path && x.dataUrl === null && !x.tooBig && x.error === null ? updated : x));
-      })();
-    }
+    return Object.fromEntries(Object.entries(failedImagesRaw).filter(([p]) => paths.includes(p)));
   });
+  let imageSrcs = $derived(
+    isImageGen && item.status === "done" ? imagePaths.map((p) => convertFileSrc(p)) : [],
+  );
 
   async function openImage(path: string) {
     try { await openInDefaultApp(path); }
@@ -214,22 +173,23 @@
         <div class="ph-progress mono">{progressText}</div>
       {/if}
     </div>
-  {:else if isImageGen && item.status === "done" && thumbs.length > 0}
+  {:else if isImageGen && item.status === "done" && imageSrcs.length > 0}
     <div class="imgstage">
-      <div class="imgs" class:multi={thumbs.length > 1}>
-        {#each thumbs as t (t.path)}
-          {#if t.dataUrl}
-            <button class="imgbtn" title="Open full size — {t.path}" onclick={() => void openImage(t.path)}>
-              <img src={t.dataUrl} alt={t.path.split(/[\\/]/).pop() ?? "generated image"} />
+      <div class="imgs" class:multi={imageSrcs.length > 1}>
+        {#each imageSrcs as src, i (src)}
+          {#if failedImages[imagePaths[i]]}
+            <button class="imgchip mono" title={imagePaths[i]} onclick={() => void openImage(imagePaths[i])}>
+              ⬒ {imagePaths[i].split(/[\\/]/).pop()} — preview unavailable, click to open
             </button>
-          {:else if t.tooBig}
-            <button class="imgchip mono" title={t.path} onclick={() => void openImage(t.path)}>
-              ⬒ {t.path.split(/[\\/]/).pop()} — too large to preview, click to open
-            </button>
-          {:else if t.error}
-            <span class="imgchip mono err" title={t.error}>⚠ couldn't load preview</span>
           {:else}
-            <div class="imgph small" style:--ph-ar="16 / 10"><div class="sweep"></div></div>
+            <button class="imgbtn" title="Open full size — {imagePaths[i]}" onclick={() => void openImage(imagePaths[i])}>
+              <img
+                src={src}
+                alt={imagePaths[i].split(/[\\/]/).pop() ?? "generated image"}
+                loading="lazy"
+                onerror={() => (failedImagesRaw = { ...failedImagesRaw, [imagePaths[i]]: true })}
+              />
+            </button>
           {/if}
         {/each}
       </div>
@@ -350,11 +310,7 @@
     max-width: 420px;
     aspect-ratio: var(--ph-ar, 4 / 3);
   }
-  .imgph.small {
-    max-width: 280px;
-    width: 100%;
-    border-color: var(--border);
-  }
+  .imgbtn:hover { border-color: var(--accent); }
   .imgph .sweep {
     position: absolute;
     inset: -20%;
@@ -439,5 +395,4 @@
     white-space: nowrap;
   }
   .imgchip:hover { border-color: var(--border-strong); }
-  .imgchip.err { color: var(--danger); cursor: default; }
 </style>
