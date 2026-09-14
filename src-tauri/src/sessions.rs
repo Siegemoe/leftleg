@@ -379,6 +379,60 @@ pub fn allow_project_images_scope(app: &tauri::AppHandle, project: &str) {
     }
 }
 
+// ---------- project git checkout info ----------
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRepoInfo {
+    pub repo: bool,
+    pub branch: String,
+    pub dirty: u32,
+    pub toplevel: String,
+}
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt as _GitCommandExt;
+
+fn run_git(dir: &str, args: &[&str]) -> Result<String, String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C").arg(dir).args(args);
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    let out = cmd.output().map_err(|e| format!("git: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Inspect the project's git checkout: current branch, uncommitted-entry
+/// count, and worktree root. `repo: false` when the directory isn't a
+/// worktree (or git is unavailable) — the UI treats that as "no git".
+pub fn git_repo_info_impl(project_dir: &str) -> GitRepoInfo {
+    let none = GitRepoInfo { repo: false, branch: String::new(), dirty: 0, toplevel: String::new() };
+    if run_git(project_dir, &["rev-parse", "--is-inside-work-tree"]).is_err() {
+        return none;
+    }
+    let toplevel = run_git(project_dir, &["rev-parse", "--show-toplevel"]).unwrap_or_default();
+    let branch = run_git(project_dir, &["branch", "--show-current"])
+        .ok()
+        .filter(|b| !b.is_empty())
+        .or_else(|| run_git(project_dir, &["rev-parse", "--short", "HEAD"]).ok())
+        .unwrap_or_default();
+    let dirty = run_git(project_dir, &["status", "--porcelain"])
+        .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count() as u32)
+        .unwrap_or(0);
+    GitRepoInfo { repo: true, branch, dirty, toplevel }
+}
+
+/// Git checkout info for a project directory.
+#[tauri::command]
+pub async fn git_repo_info(project_dir: String) -> Result<GitRepoInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(git_repo_info_impl(&project_dir)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// List a project's artifacts (generated images + known docs). Also extends
 /// the asset-protocol scope with the project's images dir (covers the case
 /// where images appeared without a fresh pi_start).
@@ -414,6 +468,22 @@ mod tests {
         assert_eq!(fs::read_to_string(&file).unwrap(), "new");
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn git_repo_info_reads_checkout() {
+        // The build directory lives inside this repo, so the checkout is real.
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let info = git_repo_info_impl(repo_root.to_str().unwrap());
+        assert!(info.repo);
+        assert!(!info.branch.is_empty());
+
+        let nonrepo = std::env::temp_dir().join(format!("leftleg-nonrepo-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&nonrepo).unwrap();
+        let info2 = git_repo_info_impl(nonrepo.to_str().unwrap());
+        assert!(!info2.repo);
+        assert_eq!(info2.dirty, 0);
+        fs::remove_dir_all(nonrepo).unwrap();
     }
 
     #[test]

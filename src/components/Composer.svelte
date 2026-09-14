@@ -103,7 +103,9 @@
             $draftState.attachments = $draftState.attachments.filter((a) => !submittedAttachments.includes(a));
           }
         }
-        autoGrow();
+        // The store clears synchronously but the textarea's bound value only
+        // updates after Svelte flushes — measuring now would see the old text.
+        requestAnimationFrame(() => autoGrow());
       }
     } finally {
       $draftState.sending = false;

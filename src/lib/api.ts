@@ -101,6 +101,29 @@ export function deleteArtifact(projectDir: string, path: string): Promise<void> 
   return invoke("delete_artifact", { projectDir, path });
 }
 
+export interface GitRepoInfo {
+  repo: boolean;
+  branch: string;
+  dirty: number;
+  toplevel: string;
+}
+
+/** Git checkout info for a project (branch, dirty count, worktree root). */
+export function gitRepoInfo(projectDir: string): Promise<GitRepoInfo> {
+  return invoke("git_repo_info", { projectDir });
+}
+
+export interface PiModuleInfo {
+  name: string;
+  version: string;
+  path: string;
+}
+
+/** Identity of the installed pi module (npm package name + version). */
+export function piModuleInfo(): Promise<PiModuleInfo> {
+  return invoke("pi_module_info");
+}
+
 export function getAgentDir(): Promise<string> {
   return invoke("get_agent_dir");
 }

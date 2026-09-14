@@ -1,15 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fade } from "svelte/transition";
   import { listen } from "@tauri-apps/api/event";
   import Sidebar from "./components/Sidebar.svelte";
   import Chat from "./components/Chat.svelte";
+  import StartScreen from "./components/StartScreen.svelte";
   import StatusBar from "./components/StatusBar.svelte";
   import TitleBar from "./components/TitleBar.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ExtDialog from "./components/ExtDialog.svelte";
   import Notifications from "./components/Notifications.svelte";
   import Artifacts from "./components/Artifacts.svelte";
-  import { handleEvent, handlePiExit, restartPi, sidebarOpen, settingsOpen, artifactsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
+  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, artifactsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
   import { reportError } from "./lib/errors";
@@ -73,8 +75,16 @@
         <button class="resume" onclick={() => void restartPi()}>Restart &amp; resume</button>
       </div>
     {/if}
-    <Chat />
-    <StatusBar />
+    {#if $projectDir === ""}
+      <div class="startwrap" out:fade={{ duration: 140 }}>
+        <StartScreen />
+      </div>
+    {:else}
+      <div class="chatwrap" in:fade={{ duration: 140 }}>
+        <Chat />
+      </div>
+      <StatusBar />
+    {/if}
   </main>
 </div>
 
@@ -103,6 +113,18 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+  .startwrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .chatwrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
   .exit-banner {
     flex-shrink: 0;

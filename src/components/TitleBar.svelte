@@ -3,11 +3,13 @@
   // app title, menu bar (File / Edit / View / Help), Artifacts, and window
   // controls. The bar itself is the drag region; interactive children are
   // regular elements, so clicks on them never start a window drag.
+  import { PanelLeft, Images, ListTodo, Minus, Square, X } from "@lucide/svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { appDataDir } from "@tauri-apps/api/path";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-  import { PanelLeft, Images, Minus, Square, X } from "@lucide/svelte";
-  import { checkForUpdates } from "../lib/updater";
+  import { piRequest, piModuleInfo } from "../lib/api";
+  import type { AgentMessage } from "../lib/types";
+  import { checkForUpdates, applyUpdate, updateAvailable, updateStatus, updateCheck } from "../lib/updater";
   import {
     sidebarOpen, settingsOpen, artifactsOpen, statusNote, theme,
     chooseProject, newSession, applyTheme,
@@ -19,6 +21,55 @@
   let openMenu: MenuId | null = $state(null);
   let aboutOpen = $state(false);
 
+  // ---------- Status card: todos + updates + pi module ----------
+  interface TodoTask { key: string; status: string; subject: string }
+  let statusOpen = $state(false);
+  let todos = $state<TodoTask[] | null>(null);
+  let todosLoaded = $state(false);
+  let piInfo = $state<{ name: string; version: string } | null>(null);
+
+  async function openStatus() {
+    statusOpen = !statusOpen;
+    if (!statusOpen) return;
+    todos = null;
+    todosLoaded = false;
+    void (async () => {
+      try {
+        // The task list is the latest `todo` tool call in the session —
+        // scan the transcript backwards for its arguments.
+        const res = await piRequest<{ success: boolean; data?: { messages: AgentMessage[] } }>({ type: "get_messages" }, 60);
+        const msgs = res.success && Array.isArray(res.data?.messages) ? (res.data!.messages as AgentMessage[]) : [];
+        let found: TodoTask[] | null = null;
+        for (let i = msgs.length - 1; i >= 0 && !found; i--) {
+          const content = msgs[i].content;
+          const blocks = Array.isArray(content) ? content : [];
+          for (const b of blocks) {
+            const blk = b as { type?: string; name?: string; arguments?: { tasks?: unknown } };
+            if (blk.type === "toolCall" && blk.name === "todo" && blk.arguments && Array.isArray(blk.arguments.tasks)) {
+              found = (blk.arguments.tasks as TodoTask[]).map((t) => ({
+                key: String(t.key ?? ""),
+                status: String(t.status ?? "pending"),
+                subject: String(t.subject ?? t.key ?? ""),
+              }));
+              break;
+            }
+          }
+        }
+        todos = found ?? [];
+      } catch {
+        todos = [];
+      }
+      todosLoaded = true;
+    })();
+    void (async () => {
+      try {
+        piInfo = await piModuleInfo();
+      } catch {
+        piInfo = null;
+      }
+    })();
+  }
+
   function toggleMenu(id: MenuId) {
     openMenu = openMenu === id ? null : id;
   }
@@ -28,6 +79,7 @@
   }
   function onGlobalPointerDown(e: PointerEvent) {
     if (openMenu && !(e.target as Element | null)?.closest(".menu")) openMenu = null;
+    if (statusOpen && !(e.target as Element | null)?.closest(".statuswrap")) statusOpen = false;
   }
   function onGlobalKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") openMenu = null;
@@ -143,6 +195,54 @@
     <span>Artifacts</span>
   </button>
 
+  <div class="statuswrap">
+    <button class="tb-btn" class:open={statusOpen} title="Todos, updates, and pi module" onclick={() => void openStatus()}>
+      <ListTodo size={14} strokeWidth={2} />
+      <span>Status</span>
+    </button>
+    {#if statusOpen}
+      <div class="statuscard">
+        <section>
+          <h4>Todos</h4>
+          {#if !todosLoaded}
+            <p class="dim">Loading…</p>
+          {:else if !todos || todos.length === 0}
+            <p class="dim">No task list in this session yet.</p>
+          {:else}
+            <div class="tsum">{todos.filter((t) => t.status === "completed").length}/{todos.length} done</div>
+            {#each todos as t (t.key)}
+              <div class="task">
+                <span class="st {t.status}">{t.status === "completed" ? "✓" : t.status === "in_progress" ? "●" : "○"}</span>
+                <span class="subj" class:done={t.status === "completed"}>{t.subject}</span>
+              </div>
+            {/each}
+          {/if}
+        </section>
+        <section>
+          <h4>Updates</h4>
+          {#if $updateAvailable}
+            <p class="okline">v{$updateAvailable.version} available</p>
+            <button class="mini" disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={() => void applyUpdate()}>Install & restart</button>
+          {:else if $updateCheck.status === "failed"}
+            <p class="dim">{$updateCheck.message}</p>
+            <button class="mini" onclick={() => void checkForUpdates()}>Retry check</button>
+          {:else}
+            <p class="dim">Up to date — checked {$updateCheck.at ? new Date($updateCheck.at).toLocaleTimeString() : "never"}</p>
+            <button class="mini" onclick={() => void checkForUpdates()}>Check now</button>
+          {/if}
+        </section>
+        <section>
+          <h4>Pi module</h4>
+          {#if piInfo}
+            <p class="dim mono">{piInfo.name} v{piInfo.version}</p>
+          {:else}
+            <p class="dim">Resolving the pi install…</p>
+          {/if}
+        </section>
+      </div>
+    {/if}
+  </div>
+
   <div class="win-controls">
     <button class="win-btn" title="Minimize" onclick={() => void win.minimize()}><Minus size={14} /></button>
     <button class="win-btn" title="Maximize / restore" onclick={() => void win.toggleMaximize()}><Square size={11} /></button>
@@ -241,6 +341,40 @@
   .flex-spacer { flex: 1; align-self: stretch; }
   .tb-btn.artifacts { border: 1px solid var(--border); }
   .win-controls { display: flex; align-items: center; margin-left: 4px; }
+  .statuswrap { position: relative; }
+  .tb-btn.open { background: var(--bg-surface-2); color: var(--text); }
+  .statuscard {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 70;
+    width: 340px;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 4px 12px 10px;
+    display: flex;
+    flex-direction: column;
+  }
+  .statuscard section { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .statuscard section:last-child { border-bottom: none; }
+  .statuscard h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); }
+  .dim { color: var(--text-3); font-size: 12px; margin: 2px 0; }
+  .okline { color: var(--accent); font-size: 12.5px; font-weight: 600; margin: 2px 0 6px; }
+  .mini { padding: 4px 12px; font-size: 11.5px; border-radius: 99px; border: 1px solid var(--border); background: transparent; color: var(--text-2); cursor: pointer; }
+  .mini:hover { border-color: var(--accent); color: var(--accent); }
+  .tsum { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+  .task { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 12.5px; }
+  .st { width: 14px; text-align: center; flex-shrink: 0; }
+  .st.completed { color: var(--ok); }
+  .st.in_progress { color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .st.pending { color: var(--text-3); }
+  .subj { color: var(--text-2); }
+  .subj.done { color: var(--text-3); text-decoration: line-through; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
   .win-btn {
     display: inline-flex;
     align-items: center;

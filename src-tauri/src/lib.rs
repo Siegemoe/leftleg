@@ -402,6 +402,8 @@ pub fn run() {
             sessions::read_file_base64,
             sessions::list_artifacts,
             sessions::delete_artifact,
+            sessions::git_repo_info,
+            pi::pi_module_info,
             get_agent_dir,
             append_log,
             write_agent_extension,

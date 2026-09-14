@@ -13,7 +13,8 @@
     filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, projectDisplayName,
     resolveThreadPill, splitSections, toSidebarSessions, type SidebarSection, type SidebarSession,
   } from "../lib/sidebar-model";
-  import { ChevronRight, Folder, Monitor, Moon, Search, Settings, Sun } from "@lucide/svelte";
+  import { ChevronRight, Folder, GitBranch, Monitor, Moon, Plus, Search, Settings, Sun } from "@lucide/svelte";
+  import { gitRepoInfo } from "../lib/api";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import SessionRow from "./SessionRow.svelte";
 
@@ -218,6 +219,26 @@
     node.focus();
   }
 
+  // Git checkout state for the footer chip: current branch + uncommitted
+  // count, refreshed on project switch and every 30s while mounted.
+  interface GitInfo { repo: boolean; branch: string; dirty: number; toplevel: string }
+  let gitInfo = $state<GitInfo | null>(null);
+  async function refreshGit(dir?: string) {
+    const target = dir ?? $projectDir;
+    if (!target) { gitInfo = null; return; }
+    try {
+      gitInfo = await gitRepoInfo(target);
+    } catch {
+      gitInfo = null;
+    }
+  }
+  $effect(() => {
+    const dir = $projectDir;
+    void refreshGit(dir);
+    const iv = setInterval(() => void refreshGit(), 30000);
+    return () => clearInterval(iv);
+  });
+
   const themeCycle = ["light", "dark", "system"] as const;
   function cycleTheme() {
     const next = themeCycle[(themeCycle.indexOf($theme) + 1) % themeCycle.length];
@@ -226,17 +247,7 @@
 </script>
 
 <aside style="width: {$sidebarWidth}px">
-  <div class="brand">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round">
-      <path d="M7 3v11a3 3 0 0 0 3 3h0" />
-      <path d="M7 14v7" />
-      <circle cx="10" cy="17" r="1.6" fill="var(--accent)" stroke="none" />
-    </svg>
-    <span>Leftleg</span>
-  </div>
-
   <div class="header">
-    <button class="primary new-session" onclick={() => newSession()}>+ New Session</button>
     <div class="search-row">
       <div class="search">
         <Search size={13} strokeWidth={2} />
@@ -246,6 +257,20 @@
           spellcheck="false"
         />
       </div>
+      <button class="new-session-btn" title="New session" onclick={() => newSession()}>
+        <Plus size={14} strokeWidth={2.4} />
+      </button>
+    </div>
+
+    <div class="filter-row">
+      <select
+        class="history-select"
+        bind:value={$settledView}
+        title="Which sessions show under Settled"
+      >
+        <option value="per-project">per project</option>
+        <option value="unified">one list</option>
+      </select>
       <div class="scope">
         <button
           class="scope-btn"
@@ -300,18 +325,6 @@
         {/if}
       </div>
     </div>
-  </div>
-
-  <div class="view-row">
-    <span class="view-label">History</span>
-    <select
-      class="history-select"
-      bind:value={$settledView}
-      title="Which sessions show under Settled"
-    >
-      <option value="per-project">per project</option>
-      <option value="unified">one list</option>
-    </select>
   </div>
 
   <div class="list" bind:this={listEl}>
@@ -525,6 +538,17 @@
         <Folder size={14} strokeWidth={2} />
         <span class="proj-name">{displayName($projectDir) || "Open folder…"}</span>
       </button>
+      {#if gitInfo?.repo}
+        <button
+          class="ghost git-chip"
+          title={"branch " + gitInfo.branch + (gitInfo.dirty ? ` · ${gitInfo.dirty} uncommitted` : " · clean") + (gitInfo.toplevel ? "\n" + gitInfo.toplevel : "")}
+          onclick={() => void refreshGit()}
+        >
+          <GitBranch size={13} strokeWidth={2} />
+          <span class="git-branch mono">{gitInfo.branch || "detached"}</span>
+          {#if gitInfo.dirty}<span class="git-dirty">{gitInfo.dirty}</span>{/if}
+        </button>
+      {/if}
       <button class="ghost icon-btn" title="Theme: {$theme} — click to cycle light / dark / system" onclick={cycleTheme}>
         {#if $theme === "light"}
           <Sun size={14} strokeWidth={2} />
@@ -555,39 +579,38 @@
     background: var(--bg-surface);
     min-width: 208px;
   }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 14px 8px;
-    font-weight: 700;
-    letter-spacing: 0.2px;
-  }
   .header {
-    padding: 0 10px 8px;
+    padding: 10px 10px 8px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
-  .new-session { padding: 7px 10px; font-size: 13px; }
+  .new-session-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .new-session-btn:hover { border-color: var(--accent); color: var(--accent); }
   .search-row {
     display: flex;
     gap: 6px;
     align-items: center;
   }
-  .view-row {
+  .filter-row {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
     padding: 0 2px;
   }
-  .view-label {
-    font-size: 9.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.7px;
-    color: var(--text-3);
-  }
+  .filter-row .history-select { flex: 1; min-width: 0; }
+  .filter-row .scope { flex-shrink: 0; }
   .history-select {
     flex: 1;
     min-width: 0;
@@ -772,6 +795,26 @@
     min-width: 0;
   }
   .proj-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+  .git-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 7px;
+    font-size: 10.5px;
+    color: var(--text-3);
+    flex-shrink: 0;
+  }
+  .git-chip:hover { color: var(--accent); }
+  .git-branch { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .git-dirty {
+    background: color-mix(in srgb, var(--danger) 75%, transparent);
+    color: #fff;
+    border-radius: 99px;
+    padding: 0 5px;
+    font-size: 9px;
+    line-height: 14px;
+    font-weight: 700;
+  }
   .conn { margin-top: 6px; font-size: 10.5px; color: var(--text-3); }
   .conn.on { color: var(--ok); }
 </style>

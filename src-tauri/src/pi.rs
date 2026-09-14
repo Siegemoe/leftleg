@@ -100,6 +100,40 @@ fn pi_entry_from_shim(shim: &std::path::Path) -> Result<std::path::PathBuf, Stri
     Err("Could not resolve the npm pi package next to pi.cmd".into())
 }
 
+/// Resolve the npm pi package next to pi.cmd and return its identity.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiModuleInfo {
+    pub name: String,
+    pub version: String,
+    pub path: String,
+}
+
+pub fn pi_module_info_impl() -> Result<PiModuleInfo, String> {
+    let mut where_cmd = Command::new("where.exe");
+    #[cfg(windows)]
+    where_cmd.creation_flags(CREATE_NO_WINDOW);
+    let found = where_cmd.arg("pi.cmd").output().map_err(|e| format!("locating pi: {e}"))?;
+    let paths = String::from_utf8_lossy(&found.stdout);
+    let shim = std::path::Path::new(paths.lines().next().ok_or("pi.cmd not found on PATH")?.trim());
+    let root = shim.parent().ok_or("pi shim has no parent")?;
+    for package in ["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"] {
+        let dir = root.join("node_modules").join(package);
+        let Ok(raw) = std::fs::read_to_string(dir.join("package.json")) else { continue };
+        let manifest: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        let name = manifest.get("name").and_then(|v| v.as_str()).unwrap_or(package).to_string();
+        let version = manifest.get("version").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+        return Ok(PiModuleInfo { name, version, path: dir.to_string_lossy().into_owned() });
+    }
+    Err("Could not resolve the npm pi package".into())
+}
+
+/// Identity of the installed pi module (npm package name + version).
+#[tauri::command]
+pub async fn pi_module_info() -> Result<PiModuleInfo, String> {
+    tauri::async_runtime::spawn_blocking(pi_module_info_impl).await.map_err(|e| e.to_string())?
+}
+
 /// Handle to a running `pi --mode rpc` subprocess.
 pub struct PiProcess {
     /// Unique per spawn — the webview uses it to drop stale events from a
