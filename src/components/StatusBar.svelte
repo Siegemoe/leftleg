@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { rpcState, stats, streaming, queue, statusNote, extStatuses, models, setModel } from "../lib/stores";
+  import { rpcState, stats, streaming, queue, statusNote, extStatuses, models, setModel, pinnedModels } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
   import { ChevronDown } from "@lucide/svelte";
   import { updateCheck, checkForUpdates, applyUpdate, updateAvailable, updateStatus } from "../lib/updater";
@@ -77,6 +77,56 @@
       statusNote.set(`Couldn't switch model: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+  const modelKey = (m: ModelInfo) => `${m.provider}/${m.id}`;
+  let modelQuery = $state("");
+  function togglePinModel(m: ModelInfo) {
+    const key = modelKey(m);
+    pinnedModels.update((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
+  }
+  let filteredModels = $derived.by(() => {
+    const q = modelQuery.trim().toLowerCase();
+    const all = $models;
+    if (!q) return all;
+    return all.filter((m) => `${m.name} ${m.provider}/${m.id}`.toLowerCase().includes(q));
+  });
+  let pinnedSet = $derived(new Set($pinnedModels));
+  let groupedModels = $derived.by(() => {
+    const pinned = filteredModels.filter((m) => pinnedSet.has(modelKey(m)));
+    const rest = filteredModels.filter((m) => !pinnedSet.has(modelKey(m)));
+    return { pinned, rest };
+  });
+
+  // ---------- extension status chips ----------
+  // setStatus payloads may be plain strings or JSON objects (e.g. the quality
+  // extension posts {prettier:"pending",lsp:"ok",...} as one string) — parse
+  // object payloads into one chip per extension with a state tone.
+  const extChips = $derived.by(() => {
+    const chips: { key: string; name: string; state: string; tone: "ok" | "err" | "neutral" }[] = [];
+    for (const [key, raw] of Object.entries($extStatuses)) {
+      const text = String(raw).trim();
+      let parsed: Record<string, unknown> | null = null;
+      if (text.startsWith("{")) {
+        try {
+          const j = JSON.parse(text);
+          if (j && typeof j === "object" && !Array.isArray(j)) parsed = j as Record<string, unknown>;
+        } catch { /* plain text */ }
+      }
+      if (parsed) {
+        for (const [name, state] of Object.entries(parsed)) {
+          const s = String(state).toLowerCase();
+          chips.push({
+            key: `${key}.${name}`,
+            name,
+            state: String(state),
+            tone: s === "ok" || s === "ready" || s === "done" ? "ok" : s === "error" || s === "failed" ? "err" : "neutral",
+          });
+        }
+      } else {
+        chips.push({ key, name: key, state: text, tone: "neutral" });
+      }
+    }
+    return chips;
+  });
   function onStatusbarPointerDown(e: PointerEvent) {
     if (modelOpen && !(e.target as Element | null)?.closest(".modelwrap")) modelOpen = false;
   }
@@ -103,20 +153,38 @@
 
   {#if $rpcState?.model}
     <div class="modelwrap">
-      <button class="pill as-btn" title="Switch model — {$rpcState.model.provider} / {$rpcState.model.id}" onclick={() => (modelOpen = !modelOpen)}>
+      <button class="pill as-btn" title="Switch model — {$rpcState.model.provider} / {$rpcState.model.id}" onclick={() => { modelOpen = !modelOpen; if (modelOpen) modelQuery = ""; }}>
         {$rpcState.model.name}
         <ChevronDown size={11} />
       </button>
       {#if modelOpen}
         <div class="modelmenu">
-          {#each $models as m (m.provider + "/" + m.id)}
-            <button class="modelitem" class:active={$rpcState.model?.provider === m.provider && $rpcState.model?.id === m.id} onclick={() => void pickModel(m)}>
-              <span class="mn">{m.name}</span>
-              <span class="mi mono">{m.provider}/{m.id}</span>
-            </button>
-          {:else}
-            <span class="modelitem dim">No models listed yet — they appear once pi reports its catalog.</span>
-          {/each}
+          <div class="msearch">
+            <input placeholder="Search models…" bind:value={modelQuery} spellcheck="false" />
+          </div>
+          {#if groupedModels.pinned.length > 0}
+            <div class="msection">Pinned</div>
+            {#each groupedModels.pinned as m (m.provider + "/" + m.id)}
+              <div class="modelitem" class:active={$rpcState.model?.provider === m.provider && $rpcState.model?.id === m.id} role="button" tabindex="0" onclick={() => void pickModel(m)} onkeydown={(e) => { if (e.key === "Enter") void pickModel(m); }}>
+                <button class="star" class:on={pinnedSet.has(modelKey(m))} title={pinnedSet.has(modelKey(m)) ? "Unpin" : "Pin to top"} onclick={(e) => { e.stopPropagation(); togglePinModel(m); }}>{pinnedSet.has(modelKey(m)) ? "★" : "☆"}</button>
+                <span class="mn">{m.name}</span>
+                <span class="mi mono">{m.provider}/{m.id}</span>
+              </div>
+            {/each}
+          {/if}
+          {#if groupedModels.rest.length > 0}
+            {#if groupedModels.pinned.length > 0}<div class="msection">All models</div>{/if}
+            {#each groupedModels.rest as m (m.provider + "/" + m.id)}
+              <div class="modelitem" class:active={$rpcState.model?.provider === m.provider && $rpcState.model?.id === m.id} role="button" tabindex="0" onclick={() => void pickModel(m)} onkeydown={(e) => { if (e.key === "Enter") void pickModel(m); }}>
+                <button class="star" class:on={pinnedSet.has(modelKey(m))} title={pinnedSet.has(modelKey(m)) ? "Unpin" : "Pin to top"} onclick={(e) => { e.stopPropagation(); togglePinModel(m); }}>{pinnedSet.has(modelKey(m)) ? "★" : "☆"}</button>
+                <span class="mn">{m.name}</span>
+                <span class="mi mono">{m.provider}/{m.id}</span>
+              </div>
+            {/each}
+          {/if}
+          {#if filteredModels.length === 0}
+            <span class="modelitem dim">No models match "{modelQuery}".</span>
+          {/if}
         </div>
       {/if}
     </div>
@@ -138,8 +206,11 @@
     </span>
   {/if}
 
-  {#each Object.entries($extStatuses) as [key, text] (key)}
-    <span class="pill ext-status" title="Extension status: {key}">{text}</span>
+  {#each extChips as c (c.key)}
+    <span class="pill ext-status {c.tone}" title="Extension {c.name}: {c.state}">
+      {c.name}
+      <span class="ext-state">{c.state}</span>
+    </span>
   {/each}
 
   {#if $queue.steering.length + $queue.followUp.length > 0}
@@ -209,6 +280,39 @@
   .upd.ready:hover { background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface-2)); }
   .upd.warn { color: orange; border-color: orange; }
   .upd:disabled { opacity: 0.8; cursor: default; }
+  .msearch { padding: 2px 4px 6px; }
+  .msearch input {
+    width: 100%;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 5px 8px;
+    font-size: 11.5px;
+    color: var(--text);
+  }
+  .msearch input:focus { outline: none; border-color: var(--accent); }
+  .msection {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-3);
+    padding: 4px 6px 2px;
+  }
+  .modelitem .star {
+    background: transparent;
+    border: none;
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: 12.5px;
+    padding: 0 1px;
+    flex-shrink: 0;
+  }
+  .modelitem .star:hover { color: var(--accent); }
+  .modelitem .star.on { color: #f5c451; }
+  .ext-status.ok { color: var(--ok); }
+  .ext-status.err { color: var(--danger); }
+  .ext-state { color: var(--text-3); font-size: 10.5px; }
   .modelwrap { position: relative; }
   .modelmenu {
     position: absolute;

@@ -828,6 +828,7 @@
           <span class="row-label">Raw config editors (validated; unknown fields preserved)</span>
           <select id="adv-target" onchange={(e) => { const t = e.currentTarget.value; if (t) void loadExt(t).catch(() => {}); }}>
             <option value="">choose a registered resource…</option>
+            <option value="media-config">media-config</option>
             <option value="settings-global">settings-global</option>
             <option value="settings-project">settings-project</option>
             <option value="99extensions">99extensions</option>

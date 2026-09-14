@@ -84,6 +84,8 @@ export const sessionQuery = writable<string>("");
 export const projectScope = writable<string | null>(null);
 /** How the Settled history section renders across projects. */
 export const settledView = writable<"per-project" | "unified">("per-project");
+/** Pinned image/agent models ("provider/id" keys) shown first in the model dropdown. */
+export const pinnedModels = writable<string[]>([]);
 /** Mirror of pi's auto-retry flag as last set from Leftleg (pi's get_state doesn't report it). */
 export const autoRetry = writable<boolean>(true);
 
@@ -923,8 +925,25 @@ async function newSessionImpl() {
 export function switchToProject(dir: string, sessionPath?: string) { return navigate(() => switchToProjectImpl(dir, sessionPath)); }
 
 async function switchToProjectImpl(dir: string, sessionPath?: string) {
+  let resumedFallback = false;
+  let startErrText = "";
+  // The requested session may be dropped by the fresh-start fallback below.
+  let requestedSession: string | undefined = sessionPath;
   try {
-    const pid = await api.piStart(dir, sessionPath ?? null);
+    let pid: number;
+    try {
+      pid = await api.piStart(dir, sessionPath ?? null);
+    } catch (startErr) {
+      // pi exits at startup when the session file is missing — fall back
+      // visibly to a fresh start (the same contract the old boot resume had).
+      // The note is emitted at the end of the switch: restoreSurface below
+      // would otherwise wipe it from the fresh surface.
+      if (!sessionPath) throw startErr;
+      resumedFallback = true;
+      startErrText = startErr instanceof Error ? startErr.message : String(startErr);
+      requestedSession = undefined; // land on the fresh session, not the failed one
+      pid = await api.piStart(dir, null);
+    }
     recordProcess(dir, pid);
     saveSurface();
     projectDir.set(dir);
@@ -938,7 +957,7 @@ async function switchToProjectImpl(dir: string, sessionPath?: string) {
     await refreshRpcState();
     let switched = false;
     // Trust pi: on a reused process it may not be in the requested session.
-    if (sessionPath && get(activeSessionPath) !== sessionPath) {
+    if (requestedSession && get(activeSessionPath) !== requestedSession) {
       try {
         const r = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>(
           { type: "switch_session", sessionPath },
@@ -965,6 +984,9 @@ async function switchToProjectImpl(dir: string, sessionPath?: string) {
     await refreshSessions();
     if (get(activeSessionPath)) markVisited(get(activeSessionPath)!);
     void persistLastSession(get(activeSessionPath));
+    if (resumedFallback) {
+      transientNote(`Couldn't resume session (${startErrText}) — starting fresh.`);
+    }
   } catch (e) {
     transientNote(`Couldn't open project: ${e}`);
   }
@@ -1272,6 +1294,15 @@ async function restartPiImpl() {
 }
 
 /** Pick a project folder, persist it, and make it the active project — no app reload. */
+/** The session a project should resume: the remembered one when it still
+ * exists, otherwise the project's most recent session. Undefined = fresh. */
+export function lastSessionFor(dir: string): string | undefined {
+  const remembered = (guiStateCache?.lastSessionByProject as Record<string, string> | undefined)?.[dir];
+  const inProject = get(sessions).filter((s) => s.cwd === dir);
+  if (remembered && inProject.some((s) => s.path === remembered)) return remembered;
+  return [...inProject].sort((a, b) => b.fileModified - a.fileModified)[0]?.path;
+}
+
 export async function chooseProject() {
   const picked = await openFileDialog({
     directory: true,
@@ -1298,8 +1329,6 @@ async function bootImpl() {
   guiStateCache = gui;
   const t = (gui.theme as "light" | "dark" | "system") ?? "system";
   applyTheme(t);
-  const dir = (gui.projectDir as string) ?? "";
-  projectDir.set(dir);
   sidebarOpen.set((gui.sidebarOpen as boolean) ?? true);
   // Sidebar state: sections, pins, project preferences, seen/unseen tracking.
   pins.set((gui.pins as string[]) ?? []);
@@ -1308,6 +1337,7 @@ async function bootImpl() {
   visitedAt.set((gui.visitedAt as Record<string, number>) ?? {});
   sidebarWidth.set((gui.sidebarWidth as number) ?? 256);
   settledView.set((gui.settledView as "per-project" | "unified") ?? "per-project");
+  pinnedModels.set((gui.pinnedModels as string[]) ?? []);
   autoRetry.set(true);
 
   // Persist theme + sidebar changes
@@ -1343,6 +1373,10 @@ async function bootImpl() {
     gui.settledView = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
+  pinnedModels.subscribe(async (v) => {
+    gui.pinnedModels = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
   delete gui.autoRetry; // agent settings are persisted only by Pi
 
   // React to OS theme changes when in system mode
@@ -1351,46 +1385,7 @@ async function bootImpl() {
   });
 
   await refreshSessions();
-  if (!dir) return;
-
-  // 2. Start pi — resuming the session the sidebar will highlight, so the
-  // subprocess boots INTO that session instead of a fresh one.
-  try {
-    const projSessions = get(sessions).filter((s) => s.cwd === dir);
-    const lastMap = (gui.lastSessionByProject as Record<string, string> | undefined) ?? {};
-    const remembered = lastMap[dir];
-    const resumePath = projSessions.some((s) => s.path === remembered)
-      ? remembered
-      : projSessions[0]?.path;
-    let resumed = false;
-    try {
-      const pid = await api.piStart(dir, resumePath);
-      recordProcess(dir, pid);
-      resumed = true;
-    } catch (e) {
-      // e.g. the remembered session file was deleted — fall back visibly.
-      transientNote(`Couldn't resume session (${e}) — starting fresh.`);
-      const pid = await api.piStart(dir);
-      recordProcess(dir, pid);
-    }
-    connected.set(true);
-    await refreshRpcState();
-    // Trust pi: if it didn't boot into the requested session, try once to
-    // switch it there; whatever pi reports afterwards is shown as active.
-    if (resumed && resumePath && get(activeSessionPath) !== resumePath) {
-      try {
-        const r = await requestForView<{ success: boolean }>({ type: "switch_session", sessionPath: resumePath }, 120);
-        if (r.success) await refreshRpcState();
-      } catch { /* pi's own state wins */ }
-    }
-    await refreshModels();
-    await refreshCommands();
-    if (get(activeSessionPath)) await reloadMessages();
-    await refreshStats();
-    void persistLastSession(get(activeSessionPath));
-  } catch (e) {
-    connected.set(false);
-    disconnected.set(true);
-    transientNote(`Failed to start pi: ${e}`);
-  }
+  // Project activation is deliberately manual: the start scene lists the
+  // saved project as a card and pi starts only when the user picks one —
+  // the startup view always holds, and no process spawns unprompted.
 }

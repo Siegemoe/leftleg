@@ -38,11 +38,11 @@ vi.mock("./api", () => {
 import {
   abort, activeSessionPath, boot, cloneSession, commands, composerDraft, connected,
   dismissFailedUser, dismissNotification, disconnected, exportSessionHtml, extDialog,
-  extStatuses, extWidgets, handleEvent, handlePiExit, items, lastProcByProject, newSession,
+  extStatuses, extWidgets, handleEvent, handlePiExit, items, lastProcByProject, lastSessionFor, newSession,
   notifications, openSession, pins, projectDir, projectMeta, projectScope, queue, restartPi,
   retryFailedUser, rpcState, sendPrompt, sessionQuery, sessionStates, settled, settledView,
   settleSession, sessions, sidebarWidth, statusNote, streaming, activeSessionByProject,
-  unsettleSession, visitedAt, togglePin,
+  switchToProject, unsettleSession, visitedAt, togglePin,
 } from "./stores";
 import type { FakePi } from "./test/fake-pi";
 import { FakePiHub, OTHER_PROJECT, type FakePiHubOptions } from "./test/fake-pi-hub";
@@ -122,6 +122,17 @@ async function drain() {
   await flush();
 }
 
+/** Boot, then explicitly activate the test project — manual activation is the
+ * product behavior now: the start scene owns the first project pick, so pi
+ * only starts when a project is chosen. Resumes the project's remembered /
+ * most-recent session, mirroring what the old boot auto-resume did. */
+async function bootActive() {
+  await boot();
+  await drain();
+  await switchToProject(PROJECT_DIR, lastSessionFor(PROJECT_DIR));
+  await drain();
+}
+
 // jsdom lacks matchMedia; boot() subscribes to the system theme via it.
 if (typeof window.matchMedia !== "function") {
   Object.defineProperty(window, "matchMedia", {
@@ -184,8 +195,15 @@ afterEach(() => {
 });
 
 describe("journey: startup and session identity", () => {
-  it("boots pi INTO the project's most recent session, with the active session derived from pi", async () => {
+  it("picking a project boots pi INTO its most recent session, with the active session derived from pi", async () => {
     await boot();
+    await drain();
+
+    // The start scene holds: no pi, no activation until a card is picked.
+    expect(get(connected)).toBe(false);
+    expect(hub.spawnCount(PROJECT_DIR)).toBe(0);
+
+    await switchToProject(PROJECT_DIR, SESSION_A);
     await drain();
 
     expect(get(connected)).toBe(true);
@@ -205,12 +223,17 @@ describe("journey: startup and session identity", () => {
     expect(map[PROJECT_DIR]).toBe(SESSION_A);
   });
 
-  it("boots a fresh session when the project has none yet", async () => {
+  it("picking a project with no sessions starts a fresh one", async () => {
     hub = makeHub({ sessions: FIXTURE_SESSIONS.filter((s) => s.cwd !== PROJECT_DIR) });
     wire(hub);
     fake = activeFake(hub);
 
     await boot();
+    await drain();
+
+    // Start scene holds; picking the session-less project starts fresh.
+    expect(hub.spawnCount(PROJECT_DIR)).toBe(0);
+    await switchToProject(PROJECT_DIR);
     await drain();
 
     expect(hub.spawnCount(PROJECT_DIR)).toBe(1);
@@ -219,7 +242,7 @@ describe("journey: startup and session identity", () => {
     expect(get(items)).toEqual([]);
   });
 
-  it("falls back to the most recent project session when the remembered one is gone", async () => {
+  it("resumes the most recent project session when the remembered one is gone", async () => {
     hub = makeHub({
       guiState: { projectDir: PROJECT_DIR, lastSessionByProject: { [PROJECT_DIR]: "/gone/deleted.jsonl" } },
     });
@@ -227,6 +250,12 @@ describe("journey: startup and session identity", () => {
     fake = activeFake(hub);
 
     await boot();
+    await drain();
+
+    // Remembered session is gone — the start-scene pick falls back to the
+    // project's most recent session.
+    expect(lastSessionFor(PROJECT_DIR)).toBe(SESSION_A);
+    await switchToProject(PROJECT_DIR, lastSessionFor(PROJECT_DIR));
     await drain();
 
     expect(fake.sessionFile).toBe(SESSION_A);
@@ -242,7 +271,7 @@ describe("journey: startup and session identity", () => {
       return original(project, sessionPath, forceRestart);
     };
 
-    await boot();
+    await switchToProject(PROJECT_DIR, SESSION_A);
     await drain();
 
     expect(get(statusNote)).toContain("starting fresh");
@@ -254,7 +283,7 @@ describe("journey: startup and session identity", () => {
 
 describe("journey: session selection", () => {
   beforeEach(async () => {
-    await boot();
+    await bootActive();
     await drain();
   });
 
@@ -295,7 +324,7 @@ describe("journey: session selection", () => {
 
 describe("journey: prompt delivery", () => {
   beforeEach(async () => {
-    await boot();
+    await bootActive();
     await drain();
   });
 
@@ -396,7 +425,7 @@ describe("journey: prompt delivery", () => {
 
 describe("journey: steering and abort", () => {
   beforeEach(async () => {
-    await boot();
+    await bootActive();
     await drain();
   });
 
@@ -438,7 +467,7 @@ describe("journey: steering and abort", () => {
 
 describe("journey: process exit and recovery", () => {
   beforeEach(async () => {
-    await boot();
+    await bootActive();
     await drain();
   });
 
@@ -517,7 +546,7 @@ describe("journey: process exit and recovery", () => {
 
 describe("journey: extension surfaces", () => {
   beforeEach(async () => {
-    await boot();
+    await bootActive();
     await drain();
   });
 
@@ -607,7 +636,7 @@ describe("recorded protocol replay (compatibility drift guard)", () => {
 
 describe("journey: session actions", () => {
   beforeEach(async () => {
-    await boot();
+    await bootActive();
     await drain();
   });
 
@@ -636,7 +665,7 @@ describe("journey: session actions", () => {
 
 describe("journey: multi-project orchestration", () => {
   beforeEach(async () => {
-    await boot();
+    await bootActive();
     await drain();
   });
 

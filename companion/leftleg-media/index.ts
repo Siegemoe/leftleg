@@ -24,6 +24,7 @@
  */
 
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -112,6 +113,18 @@ function readReference(path: string): string {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
+function readMediaConfig(): Partial<ImageGenParams> {
+  try {
+    const envDir = process.env.PI_CODING_AGENT_DIR;
+    const agentDir = envDir && envDir.trim() ? envDir : join(homedir(), ".pi", "agent");
+    const raw = readFileSync(join(agentDir, "extensions", "leftleg-media", "config.json"), "utf-8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Partial<ImageGenParams>) : {};
+  } catch {
+    return {}; // no config yet — built-in defaults apply
+  }
+}
+
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "image_generate",
@@ -136,7 +149,10 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, rawParams, signal, onUpdate, ctx) {
       const params = rawParams as ImageGenParams;
-      const model = params.model?.trim() || DEFAULT_MODEL;
+      const cfg = readMediaConfig();
+      // Explicit tool args win; otherwise the GUI-configured defaults apply;
+      // otherwise the built-in default model.
+      const model = (params.model ?? cfg.model ?? "").toString().trim() || DEFAULT_MODEL;
 
       // Auth: resolved through pi's registry (stored key or OAuth) — the key
       // lives only in this closure for the duration of the request.
@@ -149,11 +165,16 @@ export default function (pi: ExtensionAPI) {
       const references = (params.reference_images ?? []).map(readReference);
 
       const body: Record<string, unknown> = { model, prompt: params.prompt };
-      if (params.resolution !== undefined) body.resolution = params.resolution;
-      if (params.aspect_ratio !== undefined && params.aspect_ratio !== "") body.aspect_ratio = params.aspect_ratio;
-      if (params.quality !== undefined) body.quality = params.quality;
-      if (params.output_format !== undefined) body.output_format = params.output_format;
-      if (params.background !== undefined) body.background = params.background;
+      const resolution = params.resolution ?? cfg.resolution;
+      const aspect = params.aspect_ratio ?? cfg.aspect_ratio;
+      const quality = params.quality ?? cfg.quality;
+      const format = params.output_format ?? cfg.output_format;
+      const background = params.background ?? cfg.background;
+      if (resolution !== undefined) body.resolution = resolution;
+      if (aspect !== undefined && aspect !== "") body.aspect_ratio = aspect;
+      if (quality !== undefined) body.quality = quality;
+      if (format !== undefined) body.output_format = format;
+      if (background !== undefined) body.background = background;
       if (params.n !== undefined) body.n = params.n;
       if (references.length > 0) {
         // OpenRouter's Image API expects chat-style reference entries, not bare strings.

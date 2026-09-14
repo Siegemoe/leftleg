@@ -5,7 +5,7 @@
   // already typed a message, sends it as the first prompt.
   import { fade } from "svelte/transition";
   import { Folder, ArrowRight } from "@lucide/svelte";
-  import { projectMeta, projectDir, sessions, statusNote, switchToProject, sendPrompt } from "../lib/stores";
+  import { projectMeta, projectDir, sessions, statusNote, switchToProject, sendPrompt, lastSessionFor } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { chooseProject } from "../lib/stores";
 
@@ -33,7 +33,8 @@
     if (busy) return;
     busy = true;
     try {
-      await switchToProject(dir);
+      // Resume the project's remembered/most-recent session when it has one.
+      await switchToProject(dir, lastSessionFor(dir));
       const text = draft.trim();
       if (text) {
         draft = "";

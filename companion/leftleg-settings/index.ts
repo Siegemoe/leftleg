@@ -40,6 +40,7 @@ export function resolveTarget(target: string, agentDir: string, projectDir: stri
     case "system-md-project": return projectDir ? join(projectDir, ".pi", "SYSTEM.md") : null;
     case "append-system-md-project": return projectDir ? join(projectDir, ".pi", "APPEND_SYSTEM.md") : null;
     case "agents-md-project": return projectDir ? join(projectDir, "AGENTS.md") : null;
+    case "media-config": return join(agentDir, "extensions", "leftleg-media", "config.json");
     case "settings-global": return join(agentDir, "settings.json");
     case "settings-project": return projectDir ? join(projectDir, ".pi", "settings.json") : null;
     case "trust": return join(agentDir, "trust.json");

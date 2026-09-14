@@ -13,7 +13,7 @@
     filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, projectDisplayName,
     resolveThreadPill, splitSections, toSidebarSessions, type SidebarSection, type SidebarSession,
   } from "../lib/sidebar-model";
-  import { ChevronRight, Folder, GitBranch, Monitor, Moon, Plus, Search, Settings, Sun } from "@lucide/svelte";
+  import { ChevronRight, Folder, GitBranch, Layers, List, Monitor, Moon, Plus, Search, Settings, Sun } from "@lucide/svelte";
   import { gitRepoInfo } from "../lib/api";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import SessionRow from "./SessionRow.svelte";
@@ -263,25 +263,19 @@
     </div>
 
     <div class="filter-row">
-      <select
-        class="history-select"
-        bind:value={$settledView}
-        title="Which sessions show under Settled"
-      >
-        <option value="per-project">per project</option>
-        <option value="unified">one list</option>
-      </select>
       <div class="scope">
         <button
-          class="scope-btn"
+          class="scope-btn wide"
           class:on={$projectScope !== null}
           title={$projectScope ? "Filtering: " + displayName($projectScope) : "Filter threads by project"}
           onclick={() => { scopeOpen = !scopeOpen; scopeQuery = ""; }}
         >
           {#if $projectScope}
             <span class="scope-icon">{$projectMeta[$projectScope]?.icon ?? "📁"}</span>
+            <span class="scope-name">{displayName($projectScope)}</span>
           {:else}
             <Folder size={13} strokeWidth={2} />
+            <span class="scope-name">All projects</span>
           {/if}
         </button>
         {#if scopeOpen}
@@ -324,6 +318,19 @@
           </div>
         {/if}
       </div>
+      <button
+        class="view-toggle"
+        title="Switch history layout — per project ↔ one list"
+        onclick={() => settledView.update((v) => (v === "per-project" ? "unified" : "per-project"))}
+      >
+        {#if $settledView === "per-project"}
+          <Layers size={12} strokeWidth={2} />
+          <span>per project</span>
+        {:else}
+          <List size={12} strokeWidth={2} />
+          <span>one list</span>
+        {/if}
+      </button>
     </div>
   </div>
 
@@ -534,9 +541,8 @@
       <button class="ghost icon-btn" title="Settings" onclick={() => { settingsProject.set(null); settingsOpen.set(true); }}>
         <Settings size={15} strokeWidth={2} />
       </button>
-      <button class="project-btn" onclick={chooseProject} title="Change project folder">
+      <button class="ghost icon-btn" title="Project folder" onclick={chooseProject}>
         <Folder size={14} strokeWidth={2} />
-        <span class="proj-name">{displayName($projectDir) || "Open folder…"}</span>
       </button>
       {#if gitInfo?.repo}
         <button
@@ -559,8 +565,19 @@
         {/if}
       </button>
     </div>
-    <div class="conn" class:on={$connected}>
-      {$connected ? "pi connected" : "pi offline"}
+    <div class="footer-row">
+      <button class="ghost icon-btn" title="Theme: {$theme} — click to cycle light / dark / system" onclick={cycleTheme}>
+        {#if $theme === "light"}
+          <Sun size={14} strokeWidth={2} />
+        {:else if $theme === "dark"}
+          <Moon size={14} strokeWidth={2} />
+        {:else}
+          <Monitor size={14} strokeWidth={2} />
+        {/if}
+      </button>
+      <div class="conn" class:on={$connected}>
+        {$connected ? "pi connected" : "pi offline"}
+      </div>
     </div>
   </div>
 </aside>
@@ -609,18 +626,29 @@
     gap: 6px;
     padding: 0 2px;
   }
-  .filter-row .history-select { flex: 1; min-width: 0; }
-  .filter-row .scope { flex-shrink: 0; }
-  .history-select {
-    flex: 1;
-    min-width: 0;
-    font-size: 11px;
-    padding: 3px 6px;
+  .filter-row .scope { flex: 1; min-width: 0; }
+  .scope-btn.wide { width: 100%; justify-content: flex-start; gap: 6px; }
+  .scope-btn.wide .scope-name {
+    display: inline;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .view-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 10.5px;
     background: var(--bg-inset);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--text-2);
+    cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
+  .view-toggle:hover { border-color: var(--accent); color: var(--accent); }
   .settled-label.unified { margin-top: 4px; }
   .search {
     flex: 1;
@@ -782,7 +810,7 @@
   .footer { flex-shrink: 0; border-top: 1px solid var(--border); padding: 8px 10px; }
   .footer-row { display: flex; align-items: center; gap: 6px; }
   .project-btn {
-    flex: 1;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -794,7 +822,6 @@
     font-size: 12.5px;
     min-width: 0;
   }
-  .proj-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
   .git-chip {
     display: inline-flex;
     align-items: center;
