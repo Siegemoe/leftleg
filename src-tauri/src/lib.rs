@@ -158,6 +158,9 @@ fn pi_start(
             return Err(format!("session file not found: {path}"));
         }
     }
+    // Grant the webview asset access to this project's generated images so
+    // tool-card previews work from the first generation on.
+    sessions::allow_project_images_scope(&app, &project);
     let proc = PiProcess::spawn(app, &project, session_path.as_deref())?;
     let id = proc.id;
     if let Err(error) = state.insert(&project, proc.clone()) {
