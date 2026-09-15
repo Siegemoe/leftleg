@@ -232,6 +232,27 @@ describe("handleEvent: tool lifecycle", () => {
 });
 
 describe("rebuildFromMessages: timing derivation", () => {
+  it.each([false, true])("measures a live turn through completion (turn_start=%s)", async (hasTurnStart) => {
+    vi.useFakeTimers();
+    let displayedDuration: number | undefined;
+    const unsubscribe = items.subscribe((value) => {
+      displayedDuration = (value.find((item) => item.kind === "assistant") as AssistantItem | undefined)?.turnDurationMs;
+    });
+    try {
+      vi.setSystemTime(1000);
+      await handleEvent({ type: "agent_start" });
+      if (hasTurnStart) await handleEvent({ type: "turn_start", timestamp: 1000 } as never);
+      vi.setSystemTime(2000);
+      await handleEvent({ type: "message_start", message: { role: "assistant" } });
+      await handleEvent({ type: "message_end", message: { role: "assistant", timestamp: 2000, content: [] } });
+      vi.setSystemTime(16000);
+      await handleEvent({ type: "agent_end" });
+      const assistant = get(items).find((item) => item.kind === "assistant") as AssistantItem;
+      expect(assistant.turnDurationMs).toBe(15000);
+      expect(displayedDuration).toBe(15000);
+    } finally { unsubscribe(); vi.useRealTimers(); }
+  });
+
   it("derives tool execution duration from call → result message timestamps", () => {
     rebuildFromMessages([
       {

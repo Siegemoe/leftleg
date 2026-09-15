@@ -456,12 +456,14 @@ function currentTextBlock(item: AssistantItem, contentIndex: number | undefined)
 
 /** Close out a dangling streaming assistant item (agent done, or the process died). */
 function finalizeStreaming(surface = mainSurface) {
+  let changed = false;
   // Stamp the total turn duration on the last assistant item before closing out.
   if (surface.turnStartTs !== null) {
     const a = surface.items;
     const lastAssistant = [...get(a)].reverse().find((x) => x.kind === "assistant") as AssistantItem | undefined;
     if (lastAssistant) {
-      lastAssistant.turnDurationMs = (lastAssistant.timestamp ?? Date.now()) - surface.turnStartTs;
+      lastAssistant.turnDurationMs = Math.max(0, Date.now() - surface.turnStartTs);
+      changed = true;
     }
     surface.turnStartTs = null;
   }
@@ -469,8 +471,9 @@ function finalizeStreaming(surface = mainSurface) {
     surface.assistant.streaming = false;
     for (const b of surface.assistant.blocks) if (b.type !== "toolcall") b.done = true;
     surface.assistant = null;
-    surface.items.update((a) => a);
+    changed = true;
   }
+  if (changed) surface.items.update((a) => a);
 }
 
 let itemSeq = 0;
@@ -510,6 +513,7 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
   if (foreground && evt.type.startsWith("agent_")) activityRevision++;
   switch (evt.type) {
     case "agent_start":
+      if (surface.turnStartTs === null) surface.turnStartTs = Date.now();
       streaming.set(true);
       setSessionStatus(get(activeSessionPath), "active", "working");
       break;
@@ -538,10 +542,6 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     case "turn_start": {
       // pi's authoritative turn boundary; fall back to our own clock.
       surface.turnStartTs = typeof evt.timestamp === "number" ? evt.timestamp : (surface.turnStartTs ?? Date.now());
-      break;
-    }
-    case "agent_start": {
-      if (surface.turnStartTs === null) surface.turnStartTs = Date.now();
       break;
     }
     case "message_update": {

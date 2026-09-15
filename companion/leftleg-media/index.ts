@@ -23,7 +23,7 @@
  * aborted generations are not billed.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -109,8 +109,11 @@ function writeFileAtomic(file: string, data: Buffer): void {
   }
 }
 
-function readReference(path: string): string {
-  const abs = resolve(path);
+function readReference(path: string, cwd: string): string {
+  const abs = resolve(cwd, path);
+  if (statSync(abs).size > MAX_REFERENCE_BYTES) {
+    throw new Error(`${path}: reference image exceeds 10 MiB limit`);
+  }
   const buf = readFileSync(abs);
   if (buf.length > MAX_REFERENCE_BYTES) {
     throw new Error(`${path}: reference image exceeds 10 MiB limit`);
@@ -120,6 +123,22 @@ function readReference(path: string): string {
     throw new Error(`${path}: not a readable png/jpeg/gif/webp image`);
   }
   return `data:${mime};base64,${buf.toString("base64")}`;
+}
+
+function decodeImage(item: { b64_json?: string; media_type?: string }) {
+  const encoded = typeof item?.b64_json === "string" ? item.b64_json.replace(/\s/g, "") : "";
+  if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+    throw new Error("OpenRouter returned invalid base64 image data.");
+  }
+  const bytes = Buffer.from(encoded, "base64");
+  if (bytes.toString("base64").replace(/=+$/, "") !== encoded.replace(/=+$/, "")) {
+    throw new Error("OpenRouter returned invalid base64 image data.");
+  }
+  // media_type is optional. Prefer raster signatures so JPEG/WebP responses
+  // without that field are not silently mislabeled as PNG.
+  const mime = sniffMime(bytes) ?? (item.media_type === "image/svg+xml" && /<svg[\s/>]/i.test(bytes.toString("utf8")) ? "image/svg+xml" : null);
+  if (!mime) throw new Error("OpenRouter returned unsupported or invalid image data.");
+  return { bytes, mime };
 }
 
 function readMediaConfig(): Partial<ImageGenParams> {
@@ -139,7 +158,7 @@ export default function (pi: ExtensionAPI) {
     name: "image_generate",
     label: "Generate image",
     description:
-      "Generate images from a text prompt via OpenRouter's Image API. Supports reference images (image-to-image iteration), resolution/aspect/quality/format options, and 1-10 images per call. Saves files under .pi/images/ in the project and returns their paths plus the reported cost. Billing is all-or-nothing: failed calls cost nothing.",
+      "Generate images from a text prompt via OpenRouter's Image API. Supports reference images (image-to-image iteration), resolution/aspect/quality/format options, and 1-10 images per call. Saves files under .pi/images/ in the project and returns their paths plus the reported cost. A local save failure may occur after generation has been billed.",
     promptSnippet: "Generate or iterate on images from text prompts (OpenRouter Image API)",
     promptGuidelines: [
       "Use image_generate when the user asks to create, draw, render, or generate an image, or to iterate on an existing image.",
@@ -158,6 +177,8 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, rawParams, signal, onUpdate, ctx) {
       const params = rawParams as ImageGenParams;
+      const cwd = typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
+      signal?.throwIfAborted();
       const cfg = readMediaConfig();
       // Explicit tool args win; otherwise the GUI-configured defaults apply;
       // otherwise the built-in default model.
@@ -171,7 +192,8 @@ export default function (pi: ExtensionAPI) {
         throw new Error("No OpenRouter credential configured in pi — set one with /login (OpenRouter) or an OpenRouter API key, then retry.");
       }
 
-      const references = (params.reference_images ?? []).map(readReference);
+      const references = (params.reference_images ?? []).map((path) => readReference(path, cwd));
+      signal?.throwIfAborted();
 
       const body: Record<string, unknown> = { model, prompt: params.prompt };
       const resolution = params.resolution ?? cfg.resolution;
@@ -199,6 +221,7 @@ export default function (pi: ExtensionAPI) {
         signal,
       });
       const text = await res.text();
+      signal?.throwIfAborted();
       if (!res.ok) {
         let message = text.slice(0, 500);
         try {
@@ -209,21 +232,23 @@ export default function (pi: ExtensionAPI) {
       }
 
       const parsed = JSON.parse(text) as ImageApiResponse;
-      const cwd = typeof ctx?.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd();
+      if (!Array.isArray(parsed?.data) || parsed.data.length === 0) {
+        throw new Error("OpenRouter returned no images for this request.");
+      }
+      // Validate the entire response before creating files; a bad later entry
+      // must not leave a partial batch while reporting total failure.
+      const data = parsed.data.map(decodeImage);
       const dir = join(cwd, ".pi", "images");
       mkdirSync(dir, { recursive: true });
 
       const stamp = timestamp();
       const slug = slugify(params.prompt);
-      const data = parsed.data ?? [];
       const saved: string[] = [];
       for (const [i, item] of data.entries()) {
-        if (!item.b64_json) continue;
-        const bytes = Buffer.from(item.b64_json, "base64");
         const suffix = data.length > 1 ? `-${i + 1}` : "";
         const nonce = randomUUID().slice(0, 8);
-        const file = join(dir, `${stamp}-${slug}${suffix}-${nonce}.${extFor(item.media_type)}`);
-        writeFileAtomic(file, bytes);
+        const file = join(dir, `${stamp}-${slug}${suffix}-${nonce}.${extFor(item.mime)}`);
+        writeFileAtomic(file, item.bytes);
         saved.push(file);
       }
       if (saved.length === 0) {

@@ -98,9 +98,10 @@
     if (!isImageGen || item.status !== "done") return [];
     const fromDetails = item.details?.paths;
     if (Array.isArray(fromDetails) && fromDetails.every((p) => typeof p === "string")) {
-      return fromDetails as string[];
+      const paths = [...new Set((fromDetails as string[]).filter((p) => p.trim()))];
+      if (paths.length) return paths;
     }
-    return parsePathsFromOutput(item.output);
+    return [...new Set(parsePathsFromOutput(item.output))];
   });
   let imageMeta = $derived.by(() => {
     if (!isImageGen) return null;

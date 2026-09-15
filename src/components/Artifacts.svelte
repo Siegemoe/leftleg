@@ -5,7 +5,7 @@
   // project's images dir by list_artifacts) — no base64 inflation, no size
   // caps; failed loads degrade to click-to-open chips. Rendered as a card
   // inside the right panel (panel open + artifacts tab).
-  import { projectDir, rightPanelOpen, rightPanelTab, statusNote } from "../lib/stores";
+  import { projectDir, rightPanelOpen, rightPanelTab, statusNote, items } from "../lib/stores";
   import { get } from "svelte/store";
   import { listArtifacts, deleteArtifact, type ArtifactFile } from "../lib/api";
   import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
@@ -41,10 +41,8 @@
       images = report.images;
       docs = report.docs;
       loadedProject = dir;
-      // Drop thumb state for files that vanished between refreshes (thumbs and
-      // failures alike); in-flight loads self-clean via thumbPending.
-      const live = new Set(images.map((i) => i.path));
-      thumbFailed = Object.fromEntries(Object.entries(thumbFailed).filter(([p]) => live.has(p)));
+      // Refresh also retries transient asset failures after scope or file repair.
+      thumbFailed = {};
     } catch (e) {
       if (revision !== refreshRevision || dir !== $projectDir) return;
       loadError = e instanceof Error ? e.message : String(e);
@@ -55,8 +53,12 @@
 
   // Reload when the card becomes visible (panel opens on this tab) or the
   // focused project changes.
+  const completedGenerations = $derived($items
+    .filter((item) => item.kind === "tool" && item.name === "image_generate" && item.status !== "running")
+    .map((item) => item.kind === "tool" ? item.toolCallId : "").join("\0"));
   $effect(() => {
     const dir = $projectDir; // tracked: project switch while open refreshes the list
+    completedGenerations; // tracked: new outputs appear while the gallery stays open
     if (!$rightPanelOpen || $rightPanelTab !== "artifacts") return;
     void refresh(dir);
   });

@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 
 import ToolCard from "./ToolCard.svelte";
 import Artifacts from "./Artifacts.svelte";
-import { rightPanelOpen, rightPanelTab, projectDir } from "../lib/stores";
+import { rightPanelOpen, rightPanelTab, projectDir, items } from "../lib/stores";
 
 const instances: ReturnType<typeof mount>[] = [];
 
@@ -56,6 +56,14 @@ async function settle() {
 }
 
 describe("ToolCard image_generate rendering", () => {
+  it("deduplicates repeated paths in stored image results", () => {
+    instances.push(mount(ToolCard, { target: document.body, props: { item: baseItem({
+      status: "done", details: { paths: ["C:\\i\\a.png", "C:\\i\\a.png"] },
+    }) } }));
+    flushSync();
+    expect(document.body.querySelectorAll(".imgbtn img")).toHaveLength(1);
+  });
+
   it("running state shows the animated placeholder with aspect ratio and progress, no <img>", () => {
     const item = baseItem({ output: "Rendering with google/gemini-3.1-flash-image… (typically 10-90s)" });
     instances.push(mount(ToolCard, { target: document.body, props: { item } }));
@@ -134,6 +142,36 @@ describe("ToolCard image_generate rendering", () => {
 });
 
 describe("Artifacts browser", () => {
+  it("refreshes an already-open gallery after an image tool completes", async () => {
+    items.set([]);
+    mocks.listArtifacts.mockResolvedValue({ images: [], docs: [] });
+    projectDir.set("/proj");
+    rightPanelTab.set("artifacts");
+    rightPanelOpen.set(true);
+    instances.push(mount(Artifacts, { target: document.body }));
+    await settle();
+    mocks.listArtifacts.mockResolvedValue({ images: [{ name: "new.png", path: "/proj/.pi/images/new.png", size: 1, modifiedMs: 2, exists: true }], docs: [] });
+    items.set([baseItem({ status: "done", details: { paths: ["/proj/.pi/images/new.png"] } })]);
+    await settle();
+    expect(document.body.textContent).toContain("new.png");
+    items.set([]);
+  });
+
+  it("retries a failed thumbnail when Refresh is clicked", async () => {
+    mocks.listArtifacts.mockResolvedValue({ images: [{ name: "a.png", path: "/proj/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true }], docs: [] });
+    projectDir.set("/proj");
+    rightPanelTab.set("artifacts");
+    rightPanelOpen.set(true);
+    instances.push(mount(Artifacts, { target: document.body }));
+    await settle();
+    document.body.querySelector(".thumbbtn img")!.dispatchEvent(new Event("error"));
+    flushSync();
+    expect(document.body.querySelector(".thumbfall")).not.toBeNull();
+    document.body.querySelector<HTMLButtonElement>('button[title="Refresh"]')!.click();
+    await settle();
+    expect(document.body.querySelector(".thumbbtn img")).not.toBeNull();
+  });
+
   it("lists image tiles (streamed thumbnails) and docs with exists flags", async () => {
     mocks.listArtifacts.mockResolvedValue({
       images: [{ name: "a.png", path: "C:\\i\\a.png", size: 120, modifiedMs: Date.now(), exists: true }],
