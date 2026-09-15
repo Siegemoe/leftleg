@@ -366,6 +366,10 @@ pub fn delete_artifact_checked(project_dir: &str, path: &str) -> Result<(), Stri
 pub fn allow_project_images_scope(app: &tauri::AppHandle, project: &str) {
     use tauri::Manager;
     let images_dir = std::path::Path::new(project).join(".pi").join("images");
+    // The first generated image arrives after project activation. Ensure the
+    // managed directory exists now so its scope is already registered when
+    // that first tool result renders.
+    let _ = fs::create_dir_all(&images_dir);
     if !images_dir.is_dir() {
         return;
     }

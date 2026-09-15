@@ -17,7 +17,7 @@
   const mgmtRequest = bindManagement();
   import {
     getPath, setPath, cloneJson, sourceOf, effectiveValue, defaultValue,
-    isUnsafeConfigKey,
+    isUnsafeConfigKey, preparePatch,
     BUILTIN_TOOLS, THINKING_LEVELS, type Scope,
   } from "../../lib/settings/state";
   import { writeAgentExtension, getAgentDir } from "../../lib/api";
@@ -284,7 +284,8 @@
   async function saveExt(target: string, patch: Record<string, unknown>) {
     try {
       const cur = extFiles[target];
-      await mgmtRequest("write", { target, mode: "merge", patch, revision: cur?.revision ?? null });
+      const changes = preparePatch(patch);
+      await mgmtRequest("write", { target, mode: "merge", ...changes, revision: cur?.revision ?? null });
       await loadExt(target);
       flashSaved();
     } catch (e) {
@@ -767,7 +768,7 @@
         </div>
         <div class="row">
           <span class="row-label">i18n locale (pi-extensions-i18n config.json)</span>
-          <select value={String(getPath(extDraft("i18n-config"), "locale") ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (v) void saveExt("i18n-config", { locale: v }); }}>
+          <select value={String(getPath(extDraft("i18n-config"), "locale") ?? "")} onchange={(e) => void saveExt("i18n-config", { locale: e.currentTarget.value || undefined })}>
             <option value="">(unset — extension default)</option>
             <option value="en-US">en-US</option>
             <option value="zh-CN">zh-CN</option>
@@ -778,8 +779,8 @@
           <span class="row-label">Distill config (extensions/pi-distill/config.json)</span>
           <div class="inline wrap">
             <label class="check"><input type="checkbox" checked={getPath(extDraft("distill-config"), "enabled") === true} onchange={(e) => void saveExt("distill-config", { enabled: e.currentTarget.checked })} /> enabled</label>
-            <input class="num" type="number" value={String(getPath(extDraft("distill-config"), "minChars") ?? "")} onchange={(e) => void saveExt("distill-config", { minChars: Number(e.currentTarget.value) })} title="minChars" />
-            <input class="num" type="number" value={String(getPath(extDraft("distill-config"), "maxChars") ?? "")} onchange={(e) => void saveExt("distill-config", { maxChars: Number(e.currentTarget.value) })} title="maxChars" />
+            <input class="num" type="number" value={String(getPath(extDraft("distill-config"), "minChars") ?? "")} onchange={(e) => void saveExt("distill-config", { minChars: e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value) })} title="minChars" />
+            <input class="num" type="number" value={String(getPath(extDraft("distill-config"), "maxChars") ?? "")} onchange={(e) => void saveExt("distill-config", { maxChars: e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value) })} title="maxChars" />
             <input class="mono" value={String(getPath(extDraft("distill-config"), "model") ?? "")} onchange={(e) => void saveExt("distill-config", { model: e.currentTarget.value || undefined })} placeholder="model (blank = current-model fallback)" />
           </div>
           <p class="hint">Full field set incl. per-tool enablement and render options: pending — advanced JSON editor covers it meanwhile.</p>
@@ -787,8 +788,8 @@
         <div class="row">
           <span class="row-label">Todo &amp; background tasks (99extensions.json — namespace-safe)</span>
           <div class="inline wrap">
-            <span class="chip">todo.collapsedTaskLimit</span><input class="num" type="number" min={1} max={10} value={String(getPath(extDraft("99extensions"), "todo.collapsedTaskLimit") ?? "")} onchange={(e) => void saveExtNamespace("99extensions", "todo", { ...((extDraft("99extensions").todo ?? {}) as Record<string, unknown>), collapsedTaskLimit: Number(e.currentTarget.value) })} />
-            <span class="chip">todo.reminderInterval</span><input class="num" type="number" min={0} max={20} value={String(getPath(extDraft("99extensions"), "todo.reminderInterval") ?? "")} onchange={(e) => void saveExtNamespace("99extensions", "todo", { ...((extDraft("99extensions").todo ?? {}) as Record<string, unknown>), reminderInterval: Number(e.currentTarget.value) })} />
+            <span class="chip">todo.collapsedTaskLimit</span><input class="num" type="number" min={1} max={10} value={String(getPath(extDraft("99extensions"), "todo.collapsedTaskLimit") ?? "")} onchange={(e) => void saveExtNamespace("99extensions", "todo", { ...((extDraft("99extensions").todo ?? {}) as Record<string, unknown>), collapsedTaskLimit: e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value) })} />
+            <span class="chip">todo.reminderInterval</span><input class="num" type="number" min={0} max={20} value={String(getPath(extDraft("99extensions"), "todo.reminderInterval") ?? "")} onchange={(e) => void saveExtNamespace("99extensions", "todo", { ...((extDraft("99extensions").todo ?? {}) as Record<string, unknown>), reminderInterval: e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value) })} />
           </div>
           <p class="hint">Namespace writes replace ONLY the todo / background-tasks namespaces; every other namespace in 99extensions.json is preserved. reminderInterval changes model context; collapsedTaskLimit is presentation.</p>
         </div>

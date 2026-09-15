@@ -5,12 +5,26 @@
   // already typed a message, sends it as the first prompt.
   import { fade } from "svelte/transition";
   import { Folder, ArrowRight } from "@lucide/svelte";
-  import { projectMeta, projectDir, sessions, statusNote, switchToProject, sendPrompt, lastSessionFor } from "../lib/stores";
+  import { projectMeta, projectDir, sessions, statusNote, switchToProject, sendPrompt, lastSessionFor, requestComposerText } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { chooseProject } from "../lib/stores";
+  import { composerDraftFor } from "../lib/composer-drafts";
+  import { untrack } from "svelte";
 
-  let draft = $state("");
+  const startupDraft = untrack(() => composerDraftFor("startup project"));
   let busy = $state(false);
+
+  async function sendFirstPrompt(text: string) {
+    if (!text) return;
+    const result = await sendPrompt(text, []);
+    if (result.ok) $startupDraft.text = "";
+    else {
+      requestComposerText(text);
+      // Ownership moves to the active project's composer. Keeping a second
+      // startup copy would block updates and could resend it on a later visit.
+      $startupDraft.text = "";
+    }
+  }
 
   // Every non-forgotten project we know about: union of session history and
   // saved project metadata, newest activity first (same shape as the sidebar
@@ -33,13 +47,11 @@
     if (busy) return;
     busy = true;
     try {
+      const text = $startupDraft.text.trim();
       // Resume the project's remembered/most-recent session when it has one.
-      await switchToProject(dir, lastSessionFor(dir));
-      const text = draft.trim();
-      if (text) {
-        draft = "";
-        await sendPrompt(text, []);
-      }
+      const opened = await switchToProject(dir, lastSessionFor(dir));
+      if (!opened) return;
+      await sendFirstPrompt(text);
     } catch (e) {
       statusNote.set(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -47,8 +59,19 @@
     }
   }
 
-  function openFolder() {
-    void chooseProject();
+  async function openFolder() {
+    if (busy) return;
+    busy = true;
+    try {
+      const text = $startupDraft.text.trim();
+      const opened = await chooseProject();
+      if (!opened) return;
+      await sendFirstPrompt(text);
+    } catch (e) {
+      statusNote.set(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      busy = false;
+    }
   }
 </script>
 
@@ -67,7 +90,7 @@
       {:else}
         <p class="empty">No known projects yet — choose a folder to add your first one.</p>
       {/each}
-      <button class="card ghostcard" onclick={openFolder} disabled={busy}>
+      <button class="card ghostcard" onclick={() => void openFolder()} disabled={busy}>
         <span class="icon"><Folder size={18} /></span>
         <span class="name">Choose a folder…</span>
       </button>
@@ -76,7 +99,7 @@
     <div class="composerbox">
       <textarea
         placeholder="Type your message, then pick a project above to send it…"
-        bind:value={draft}
+        bind:value={$startupDraft.text}
         rows={3}
         spellcheck="false"
         onkeydown={(e) => {

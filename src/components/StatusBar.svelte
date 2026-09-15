@@ -42,8 +42,11 @@
   });
   let updateChip = $derived.by(() => {
     const c = $updateCheck;
-    if ($updateStatus === "downloading" || $updateStatus === "ready") {
+    if ($updateStatus === "downloading") {
       return { cls: "ready", label: "⟳ update downloading…", title: "The update is downloading — it will install and relaunch when ready.", act: "none" as const };
+    }
+    if ($updateStatus === "ready") {
+      return { cls: "ready", label: "⟳ update downloaded — install", title: "The update is downloaded — click to finish installing and restart.", act: "install" as const };
     }
     if (c.status === "available") {
       return { cls: "ready", label: "⟳ update ready — install", title: `${c.message} — click to install & restart`, act: "install" as const };

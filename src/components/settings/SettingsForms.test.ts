@@ -74,6 +74,17 @@ it("clearing a settings field performs one atomic reset-and-edit request", async
   expect(mocks.request.mock.calls.some(([op]) => op === "unset")).toBe(false);
   expect(host.textContent).toContain("Saved");
 });
+it("removes an extension override when its form is reset to the default", async () => {
+  doc = { model: "custom/image-model", keep: true };
+  instance = mount(SettingsWorkspace, { target: host }); await settle();
+  button(host, "Models & cycling").click(); await settle();
+  const input = host.querySelector<HTMLInputElement>("#media-model")!;
+  expect(input.value).toBe("custom/image-model");
+  input.value = ""; input.dispatchEvent(new Event("change", { bubbles: true })); await settle();
+  expect(doc.model).toBeUndefined();
+  expect(doc.keep).toBe(true);
+  expect(mocks.request.mock.calls.some(([op, params]) => op === "write" && params.unsetKeys?.includes("model"))).toBe(true);
+});
 it("sends the actual typed runtime session name", async () => {
   instance = mount(SettingsWorkspace, { target: host }); await settle();
   button(host, "Current runtime").click(); flushSync();

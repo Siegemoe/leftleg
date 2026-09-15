@@ -67,6 +67,11 @@
       const cur = map.get(s.projectDir);
       if (!cur || s.timestampMs > cur.latest) map.set(s.projectDir, { latest: s.timestampMs });
     }
+    for (const dir of Object.keys($projectMeta)) {
+      if ($projectMeta[dir]?.forgotten && dir !== $projectDir) continue;
+      if (!map.has(dir)) map.set(dir, { latest: 0 });
+    }
+    if ($projectDir && !map.has($projectDir)) map.set($projectDir, { latest: 0 });
     return [...map.entries()].sort((a, b) => b[1].latest - a[1].latest);
   });
 
@@ -223,13 +228,16 @@
   // count, refreshed on project switch and every 30s while mounted.
   interface GitInfo { repo: boolean; branch: string; dirty: number; toplevel: string }
   let gitInfo = $state<GitInfo | null>(null);
+  let gitRevision = 0;
   async function refreshGit(dir?: string) {
     const target = dir ?? $projectDir;
+    const revision = ++gitRevision;
     if (!target) { gitInfo = null; return; }
     try {
-      gitInfo = await gitRepoInfo(target);
+      const result = await gitRepoInfo(target);
+      if (revision === gitRevision && target === $projectDir) gitInfo = result;
     } catch {
-      gitInfo = null;
+      if (revision === gitRevision && target === $projectDir) gitInfo = null;
     }
   }
   $effect(() => {

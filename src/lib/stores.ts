@@ -924,7 +924,7 @@ async function newSessionImpl() {
  */
 export function switchToProject(dir: string, sessionPath?: string) { return navigate(() => switchToProjectImpl(dir, sessionPath)); }
 
-async function switchToProjectImpl(dir: string, sessionPath?: string) {
+async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<boolean> {
   let resumedFallback = false;
   let startErrText = "";
   // The requested session may be dropped by the fresh-start fallback below.
@@ -982,13 +982,19 @@ async function switchToProjectImpl(dir: string, sessionPath?: string) {
     if (!switched && (!get(streaming) || get(items).length === 0)) await reloadMessages();
     await refreshStats();
     await refreshSessions();
+    // Keep projects with no persisted session yet available in the startup and
+    // sidebar pickers. Project metadata is GUI-owned; Pi remains authoritative
+    // for the session itself.
+    projectMeta.update((m) => m[dir] ? m : { ...m, [dir]: {} });
     if (get(activeSessionPath)) markVisited(get(activeSessionPath)!);
     void persistLastSession(get(activeSessionPath));
     if (resumedFallback) {
       transientNote(`Couldn't resume session (${startErrText}) — starting fresh.`);
     }
+    return true;
   } catch (e) {
     transientNote(`Couldn't open project: ${e}`);
+    return false;
   }
 }
 
@@ -1309,12 +1315,10 @@ export async function chooseProject() {
     multiple: false,
     title: "Choose project folder for pi",
   });
-  if (typeof picked !== "string") return;
-  if (guiStateCache) {
-    guiStateCache.projectDir = picked;
-    try { await api.writeGuiState(guiStateCache); } catch { /* ignore */ }
-  }
-  await switchToProject(picked);
+  if (typeof picked !== "string") return null;
+  // A successful switch persists the project through persistLastSession.
+  // Do not replace the last working project when Pi cannot start in this one.
+  return await switchToProject(picked) ? picked : null;
 }
 
 export function boot() { return navigate(() => bootImpl()); }

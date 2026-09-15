@@ -7,11 +7,13 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { appDataDir } from "@tauri-apps/api/path";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+  import { get } from "svelte/store";
   import { piRequest, piModuleInfo } from "../lib/api";
   import type { AgentMessage } from "../lib/types";
   import { checkForUpdates, applyUpdate, updateAvailable, updateStatus, updateCheck } from "../lib/updater";
   import {
-    sidebarOpen, settingsOpen, artifactsOpen, statusNote, theme,
+    sidebarOpen, settingsOpen, settingsProject, artifactsOpen, statusNote, theme,
+    projectDir, activeSessionPath, lastProcByProject,
     chooseProject, newSession, applyTheme,
   } from "../lib/stores";
 
@@ -27,17 +29,34 @@
   let todos = $state<TodoTask[] | null>(null);
   let todosLoaded = $state(false);
   let piInfo = $state<{ name: string; version: string } | null>(null);
+  let statusRevision = 0;
+
+  function closeStatus() {
+    statusOpen = false;
+    statusRevision++;
+  }
 
   async function openStatus() {
-    statusOpen = !statusOpen;
-    if (!statusOpen) return;
+    if (statusOpen) return closeStatus();
+    statusOpen = true;
+    const revision = ++statusRevision;
+    const ownerProject = get(projectDir);
+    const ownerSession = get(activeSessionPath);
+    const ownerProc = get(lastProcByProject)[ownerProject];
+    const stillCurrent = () => revision === statusRevision
+      && statusOpen
+      && ownerProject === get(projectDir)
+      && ownerSession === get(activeSessionPath)
+      && ownerProc === get(lastProcByProject)[ownerProject];
     todos = null;
     todosLoaded = false;
     void (async () => {
       try {
         // The task list is the latest `todo` tool call in the session —
         // scan the transcript backwards for its arguments.
-        const res = await piRequest<{ success: boolean; data?: { messages: AgentMessage[] } }>({ type: "get_messages" }, 60);
+        const res = await piRequest<{ success: boolean; data?: { messages: AgentMessage[] } }>(
+          { type: "get_messages" }, 60, ownerProject || null, ownerProc,
+        );
         const msgs = res.success && Array.isArray(res.data?.messages) ? (res.data!.messages as AgentMessage[]) : [];
         let found: TodoTask[] | null = null;
         for (let i = msgs.length - 1; i >= 0 && !found; i--) {
@@ -55,11 +74,11 @@
             }
           }
         }
-        todos = found ?? [];
+        if (stillCurrent()) todos = found ?? [];
       } catch {
-        todos = [];
+        if (stillCurrent()) todos = [];
       }
-      todosLoaded = true;
+      if (stillCurrent()) todosLoaded = true;
     })();
     void (async () => {
       try {
@@ -73,16 +92,20 @@
   function toggleMenu(id: MenuId) {
     openMenu = openMenu === id ? null : id;
   }
-  function run(action: () => void | Promise<void>) {
+  function run(action: () => unknown | Promise<unknown>) {
     openMenu = null;
     void action();
   }
   function onGlobalPointerDown(e: PointerEvent) {
     if (openMenu && !(e.target as Element | null)?.closest(".menu")) openMenu = null;
-    if (statusOpen && !(e.target as Element | null)?.closest(".statuswrap")) statusOpen = false;
+    if (statusOpen && !(e.target as Element | null)?.closest(".statuswrap")) closeStatus();
   }
   function onGlobalKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") openMenu = null;
+    if (e.key === "Escape") {
+      openMenu = null;
+      if (statusOpen) closeStatus();
+      aboutOpen = false;
+    }
   }
 
   // ---------- Edit (best-effort webview editing) ----------
@@ -143,7 +166,7 @@
           <button onclick={() => run(() => newSession())}>New Session<span class="hint-key">Ctrl+N</span></button>
           <button onclick={() => run(() => chooseProject())}>Choose Project Folder…</button>
           <div class="sep"></div>
-          <button onclick={() => run(() => settingsOpen.set(true))}>Settings…</button>
+          <button onclick={() => run(() => { settingsProject.set(null); settingsOpen.set(true); })}>Settings…</button>
           <div class="sep"></div>
           <button onclick={() => run(() => win.close())}>Exit</button>
         </div>

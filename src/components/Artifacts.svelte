@@ -18,26 +18,39 @@
   let loadError = $state("");
   let images = $state<ArtifactFile[]>([]);
   let docs = $state<ArtifactFile[]>([]);
+  let loadedProject = $state("");
+  let refreshRevision = 0;
   // Files whose asset-protocol load failed (moved/deleted/scope gap) degrade
   // to click-to-open chips instead of broken <img> elements.
   let thumbFailed = $state<Record<string, string>>({});
 
   async function refresh(dir: string = $projectDir) {
-    if (!dir) return;
+    const revision = ++refreshRevision;
+    if (!dir) {
+      images = [];
+      docs = [];
+      loadedProject = "";
+      loading = false;
+      loadError = "";
+      return;
+    }
     loading = true;
     loadError = "";
     try {
       const report = await listArtifacts(dir);
+      if (revision !== refreshRevision || dir !== $projectDir) return;
       images = report.images;
       docs = report.docs;
+      loadedProject = dir;
       // Drop thumb state for files that vanished between refreshes (thumbs and
       // failures alike); in-flight loads self-clean via thumbPending.
       const live = new Set(images.map((i) => i.path));
       thumbFailed = Object.fromEntries(Object.entries(thumbFailed).filter(([p]) => live.has(p)));
     } catch (e) {
+      if (revision !== refreshRevision || dir !== $projectDir) return;
       loadError = e instanceof Error ? e.message : String(e);
     } finally {
-      loading = false;
+      if (revision === refreshRevision) loading = false;
     }
   }
 
@@ -66,9 +79,11 @@
 
   async function removeImage(file: ArtifactFile) {
     if (!confirm(`Delete ${file.name}? This cannot be undone.`)) return;
+    const owner = loadedProject;
+    if (!owner) return;
     try {
-      await deleteArtifact($projectDir, file.path);
-      await refresh();
+      await deleteArtifact(owner, file.path);
+      if ($projectDir === owner) await refresh(owner);
     } catch (e) {
       statusNote.set(`Couldn't delete: ${e instanceof Error ? e.message : String(e)}`);
     }

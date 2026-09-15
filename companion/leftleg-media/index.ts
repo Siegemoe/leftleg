@@ -23,7 +23,8 @@
  * aborted generations are not billed.
  */
 
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { Type } from "typebox";
@@ -67,7 +68,7 @@ function slugify(text: string): string {
 function timestamp(): string {
   const d = new Date();
   const p = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(d.getMilliseconds(), 3)}`;
 }
 
 function extFor(mediaType: string | undefined): string {
@@ -95,8 +96,16 @@ function writeFileAtomic(file: string, data: Buffer): void {
   try {
     renameSync(tmp, file);
   } catch (e) {
-    try { renameSync(tmp, file); } catch { /* second attempt on transient sharing violations */ }
-    if (!statSync(file, { throwIfNoEntry: false })) throw e;
+    try {
+      renameSync(tmp, file);
+    } catch (retryError) {
+      // If the first rename completed despite reporting an error, the temp file
+      // is gone and the destination is authoritative. A surviving temp means
+      // this write did not land; never mistake a pre-existing file for success.
+      if (!existsSync(tmp) && existsSync(file)) return;
+      try { unlinkSync(tmp); } catch { /* best-effort cleanup before surfacing the write failure */ }
+      throw retryError instanceof Error ? retryError : e;
+    }
   }
 }
 
@@ -212,7 +221,8 @@ export default function (pi: ExtensionAPI) {
         if (!item.b64_json) continue;
         const bytes = Buffer.from(item.b64_json, "base64");
         const suffix = data.length > 1 ? `-${i + 1}` : "";
-        const file = join(dir, `${stamp}-${slug}${suffix}.${extFor(item.media_type)}`);
+        const nonce = randomUUID().slice(0, 8);
+        const file = join(dir, `${stamp}-${slug}${suffix}-${nonce}.${extFor(item.media_type)}`);
         writeFileAtomic(file, bytes);
         saved.push(file);
       }

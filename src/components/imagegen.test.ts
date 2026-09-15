@@ -171,4 +171,50 @@ describe("Artifacts browser", () => {
     await settle();
     expect(document.body.textContent).toContain("No generated images yet");
   });
+
+  it("does not let a slow previous project replace the current project's artifacts", async () => {
+    let resolveA!: (value: unknown) => void;
+    let resolveB!: (value: unknown) => void;
+    mocks.listArtifacts
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveA = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve; }));
+
+    projectDir.set("/a");
+    artifactsOpen.set(true);
+    instances.push(mount(Artifacts, { target: document.body }));
+    await vi.waitFor(() => expect(mocks.listArtifacts).toHaveBeenCalledWith("/a"));
+
+    projectDir.set("/b");
+    flushSync();
+    await vi.waitFor(() => expect(mocks.listArtifacts).toHaveBeenCalledWith("/b"));
+    resolveB({ images: [{ name: "b.png", path: "/b/.pi/images/b.png", size: 1, modifiedMs: 2, exists: true }], docs: [] });
+    await settle();
+    resolveA({ images: [{ name: "a.png", path: "/a/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true }], docs: [] });
+    await settle();
+
+    expect(document.body.textContent).toContain("b.png");
+    expect(document.body.textContent).not.toContain("a.png");
+  });
+
+  it("deletes a visible artifact against the project that supplied it", async () => {
+    let resolveB!: (value: unknown) => void;
+    mocks.listArtifacts
+      .mockResolvedValueOnce({ images: [{ name: "a.png", path: "/a/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true }], docs: [] })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve; }));
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    projectDir.set("/a");
+    artifactsOpen.set(true);
+    instances.push(mount(Artifacts, { target: document.body }));
+    await settle();
+    projectDir.set("/b");
+    flushSync();
+    await vi.waitFor(() => expect(mocks.listArtifacts).toHaveBeenCalledWith("/b"));
+
+    document.body.querySelector<HTMLButtonElement>('button[title="Delete"]')!.click();
+    await vi.waitFor(() => expect(mocks.deleteArtifact).toHaveBeenCalledWith("/a", "/a/.pi/images/a.png"));
+    resolveB({ images: [], docs: [] });
+    await settle();
+    vi.unstubAllGlobals();
+  });
 });

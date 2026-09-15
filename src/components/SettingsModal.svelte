@@ -2,10 +2,10 @@
   // Thin shell hosting the full settings workspace. All prior settings
   // functionality (runtime controls, theme, project presentation, extension
   // commands, session actions) moved into SettingsWorkspace categories.
-  import { settingsOpen, projectDir, lastProcByProject, navigating } from "../lib/stores";
+  import { settingsOpen, settingsProject, projectDir, lastProcByProject, navigating } from "../lib/stores";
   import SettingsWorkspace from "./settings/SettingsWorkspace.svelte";
 
-  let close = () => settingsOpen.set(false);
+  let close = () => { settingsProject.set(null); settingsOpen.set(false); };
 </script>
 
 <div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) close(); }} role="presentation">
