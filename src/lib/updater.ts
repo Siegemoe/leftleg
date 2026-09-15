@@ -26,6 +26,7 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 let checkInFlight: Promise<Update | null> | null = null;
 let applyInFlight: Promise<void> | null = null;
 let downloadedUpdate: Update | null = null;
+let checkRevision = 0;
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -53,12 +54,18 @@ async function replaceAvailable(update: Update | null): Promise<void> {
 
 async function runCheck(): Promise<Update | null> {
   if (applyInFlight) return get(updateAvailable);
+  const revision = ++checkRevision;
   updateStatus.set("checking");
   updateError.set("");
   updateCheck.set({ status: "checking", at: get(updateCheck).at, message: "" });
   try {
     const update = await check({ timeout: CHECK_TIMEOUT_MS });
+    if (revision !== checkRevision) {
+      await closeUpdate(update ?? null);
+      return null;
+    }
     await replaceAvailable(update ?? null);
+    if (revision !== checkRevision) return null;
     updateStatus.set("idle");
     if (update) {
       updateCheck.set({ status: "available", at: Date.now(), message: `v${update.version} is available` });
@@ -67,7 +74,9 @@ async function runCheck(): Promise<Update | null> {
     }
     return update ?? null;
   } catch (error) {
+    if (revision !== checkRevision) return null;
     await replaceAvailable(null);
+    if (revision !== checkRevision) return null;
     const message = checkFailureMessage(error);
     updateError.set(message);
     updateStatus.set("error");
@@ -98,6 +107,9 @@ function blockerMessage(blockers: string[]): string {
 }
 
 async function runApplyUpdate(): Promise<void> {
+  // A check may replace and close the old native resource. Finish it before
+  // choosing the resource this installation owns.
+  if (checkInFlight) await checkInFlight;
   const update = get(updateAvailable);
   if (!update) return;
   let nativePrepared = false;
@@ -155,11 +167,13 @@ export function applyUpdate(): Promise<void> {
 
 export async function dismissUpdate(): Promise<void> {
   if (applyInFlight) return;
+  checkRevision++;
   const update = get(updateAvailable);
   downloadedUpdate = null;
   updateAvailable.set(null);
   updateError.set("");
   updateStatus.set("idle");
+  updateCheck.set({ status: "idle", at: null, message: "" });
   await closeUpdate(update);
 }
 

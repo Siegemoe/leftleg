@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 
 import ToolCard from "./ToolCard.svelte";
 import Artifacts from "./Artifacts.svelte";
-import { artifactsOpen, projectDir } from "../lib/stores";
+import { rightPanelOpen, rightPanelTab, projectDir } from "../lib/stores";
 
 const instances: ReturnType<typeof mount>[] = [];
 
@@ -31,7 +31,7 @@ afterEach(async () => {
   for (const i of instances.splice(0)) await unmount(i);
   document.body.replaceChildren();
   vi.clearAllMocks();
-  artifactsOpen.set(false);
+  rightPanelOpen.set(false);
 });
 
 function baseItem(overrides: Partial<ToolItem>): ToolItem {
@@ -144,7 +144,8 @@ describe("Artifacts browser", () => {
       ],
     });
     projectDir.set("/proj");
-    artifactsOpen.set(true);
+    rightPanelTab.set("artifacts");
+    rightPanelOpen.set(true);
     instances.push(mount(Artifacts, { target: document.body }));
     await settle();
 
@@ -166,7 +167,8 @@ describe("Artifacts browser", () => {
   it("shows the empty state when the project has no images", async () => {
     mocks.listArtifacts.mockResolvedValue({ images: [], docs: [] });
     projectDir.set("/proj");
-    artifactsOpen.set(true);
+    rightPanelTab.set("artifacts");
+    rightPanelOpen.set(true);
     instances.push(mount(Artifacts, { target: document.body }));
     await settle();
     expect(document.body.textContent).toContain("No generated images yet");
@@ -180,7 +182,8 @@ describe("Artifacts browser", () => {
       .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve; }));
 
     projectDir.set("/a");
-    artifactsOpen.set(true);
+    rightPanelTab.set("artifacts");
+    rightPanelOpen.set(true);
     instances.push(mount(Artifacts, { target: document.body }));
     await vi.waitFor(() => expect(mocks.listArtifacts).toHaveBeenCalledWith("/a"));
 
@@ -204,7 +207,8 @@ describe("Artifacts browser", () => {
     vi.stubGlobal("confirm", vi.fn(() => true));
 
     projectDir.set("/a");
-    artifactsOpen.set(true);
+    rightPanelTab.set("artifacts");
+    rightPanelOpen.set(true);
     instances.push(mount(Artifacts, { target: document.body }));
     await settle();
     projectDir.set("/b");

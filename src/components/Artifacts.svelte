@@ -3,15 +3,14 @@
   // (project-scoped .pi/images/) and the canonical project docs. Thumbnails
   // stream from disk via the asset protocol (its scope is extended to the
   // project's images dir by list_artifacts) — no base64 inflation, no size
-  // caps; failed loads degrade to click-to-open chips.
-  import { artifactsOpen, projectDir, statusNote } from "../lib/stores";
+  // caps; failed loads degrade to click-to-open chips. Rendered as a card
+  // inside the right panel (panel open + artifacts tab).
+  import { projectDir, rightPanelOpen, rightPanelTab, statusNote } from "../lib/stores";
   import { get } from "svelte/store";
   import { listArtifacts, deleteArtifact, type ArtifactFile } from "../lib/api";
   import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { ExternalLink, Copy, Trash2, RefreshCw } from "@lucide/svelte";
-
-  let close = () => artifactsOpen.set(false);
 
   let tab = $state<"images" | "docs">("images");
   let loading = $state(false);
@@ -54,10 +53,11 @@
     }
   }
 
-  // Reload whenever the browser opens or the focused project changes.
+  // Reload when the card becomes visible (panel opens on this tab) or the
+  // focused project changes.
   $effect(() => {
     const dir = $projectDir; // tracked: project switch while open refreshes the list
-    if (!$artifactsOpen) return;
+    if (!$rightPanelOpen || $rightPanelTab !== "artifacts") return;
     void refresh(dir);
   });
 
@@ -104,119 +104,102 @@
   }
 </script>
 
-<div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) close(); }} role="presentation">
-  <div class="panel" role="dialog" aria-modal="true">
-    <header>
-      <h2>Artifacts</h2>
-      <span class="sub mono" title={$projectDir}>{$projectDir || "no project"}</span>
-      <span class="spacer"></span>
-      <button class="ghost icon" title="Refresh" onclick={() => void refresh()} disabled={loading}>
-        <span class="iconspin" class:on={loading}><RefreshCw size={14} /></span>
-      </button>
-      <button class="ghost x" onclick={close}>✕</button>
-    </header>
+<div class="artifacts">
+  <header>
+    <h2>Artifacts</h2>
+    <span class="sub mono" title={$projectDir}>{$projectDir || "no project"}</span>
+    <span class="spacer"></span>
+    <button class="ghost icon" title="Refresh" onclick={() => void refresh()} disabled={loading}>
+      <span class="iconspin" class:on={loading}><RefreshCw size={14} /></span>
+    </button>
+  </header>
 
-    <nav class="tabs">
-      <button class="tab" class:active={tab === "images"} onclick={() => (tab = "images")}>
-        Images <span class="count">{images.length}</span>
-      </button>
-      <button class="tab" class:active={tab === "docs"} onclick={() => (tab = "docs")}>
-        Docs <span class="count">{docs.filter((d) => d.exists).length}/{docs.length}</span>
-      </button>
-    </nav>
+  <nav class="tabs">
+    <button class="tab" class:active={tab === "images"} onclick={() => (tab = "images")}>
+      Images <span class="count">{images.length}</span>
+    </button>
+    <button class="tab" class:active={tab === "docs"} onclick={() => (tab = "docs")}>
+      Docs <span class="count">{docs.filter((d) => d.exists).length}/{docs.length}</span>
+    </button>
+  </nav>
 
-    <div class="content">
-      {#if loadError}
-        <p class="state err">⚠ {loadError}</p>
-      {:else if loading && images.length === 0 && docs.length === 0}
-        <p class="state">Loading…</p>
-      {:else if tab === "images"}
-        {#if images.length === 0}
-          <p class="state">No generated images yet — ask the agent to create one (saved to <span class="mono">.pi/images/</span>).</p>
-        {:else}
-          <div class="grid">
-            {#each images as file (file.path)}
-              <div class="tile">
-                <div class="thumb">
-                  {#if thumbFailed[file.path]}
-                    <button class="thumbfall mono" title={thumbFailed[file.path]} onclick={() => void openFile(file.path)}>⚠ preview unavailable — click to open</button>
-                  {:else}
-                    <button class="thumbbtn" title="Open — {file.name}" onclick={() => void openFile(file.path)}>
-                      <img
-                        src={convertFileSrc(file.path)}
-                        alt={file.name}
-                        loading="lazy"
-                        onerror={() => (thumbFailed = { ...thumbFailed, [file.path]: `preview failed: ${file.name}` })}
-                      />
-                    </button>
-                  {/if}
-                </div>
-                <div class="tilemeta">
-                  <span class="name" title={file.path}>{file.name}</span>
-                  <span class="meta">{fmtSize(file.size)} · {fmtTime(file.modifiedMs)}</span>
-                </div>
-                <div class="tileactions">
-                  <button class="ghost icon" title="Open externally" onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button>
-                  <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
-                  <button class="ghost icon danger" title="Delete" onclick={() => void removeImage(file)}><Trash2 size={13} /></button>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
+  <div class="content">
+    {#if loadError}
+      <p class="state err">⚠ {loadError}</p>
+    {:else if loading && images.length === 0 && docs.length === 0}
+      <p class="state">Loading…</p>
+    {:else if tab === "images"}
+      {#if images.length === 0}
+        <p class="state">No generated images yet — ask the agent to create one (saved to <span class="mono">.pi/images/</span>).</p>
       {:else}
-        <div class="docs">
-          {#each docs as file (file.name)}
-            <div class="docrow" class:missing={!file.exists}>
-              <div class="docinfo">
-                <span class="name mono">{file.name}</span>
-                <span class="meta" title={file.path}>{file.exists ? `${fmtSize(file.size)} · ${fmtTime(file.modifiedMs)}` : "not present"}</span>
+        <div class="grid">
+          {#each images as file (file.path)}
+            <div class="tile">
+              <div class="thumb">
+                {#if thumbFailed[file.path]}
+                  <button class="thumbfall mono" title={thumbFailed[file.path]} onclick={() => void openFile(file.path)}>⚠ preview unavailable — click to open</button>
+                {:else}
+                  <button class="thumbbtn" title="Open — {file.name}" onclick={() => void openFile(file.path)}>
+                    <img
+                      src={convertFileSrc(file.path)}
+                      alt={file.name}
+                      loading="lazy"
+                      onerror={() => (thumbFailed = { ...thumbFailed, [file.path]: `preview failed: ${file.name}` })}
+                    />
+                  </button>
+                {/if}
+              </div>
+              <div class="tilemeta">
+                <span class="name" title={file.path}>{file.name}</span>
+                <span class="meta">{fmtSize(file.size)} · {fmtTime(file.modifiedMs)}</span>
               </div>
               <div class="tileactions">
-                {#if file.exists}
-                  <button class="ghost icon" title="Open externally — {file.path}" onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button>
-                  <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
-                {/if}
+                <button class="ghost icon" title="Open externally" onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button>
+                <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
+                <button class="ghost icon danger" title="Delete" onclick={() => void removeImage(file)}><Trash2 size={13} /></button>
               </div>
             </div>
           {/each}
-          <p class="hint">Docs are the project's canonical context files pi reads on startup.</p>
         </div>
       {/if}
-    </div>
+    {:else}
+      <div class="docs">
+        {#each docs as file (file.name)}
+          <div class="docrow" class:missing={!file.exists}>
+            <div class="docinfo">
+              <span class="name mono">{file.name}</span>
+              <span class="meta" title={file.path}>{file.exists ? `${fmtSize(file.size)} · ${fmtTime(file.modifiedMs)}` : "not present"}</span>
+            </div>
+            <div class="tileactions">
+              {#if file.exists}
+                <button class="ghost icon" title="Open externally — {file.path}" onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button>
+                <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+        <p class="hint">Docs are the project's canonical context files pi reads on startup.</p>
+      </div>
+    {/if}
   </div>
 </div>
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(10, 10, 16, 0.55);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-  .panel {
-    width: min(860px, 94vw);
-    height: min(680px, 90vh);
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    box-shadow: var(--shadow);
+  .artifacts {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
   }
   header {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 20px;
+    padding: 12px 14px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  h2 { margin: 0; font-size: 16px; }
+  h2 { margin: 0; font-size: 14.5px; }
   .sub {
     flex: 1;
     font-size: 11px;
@@ -225,7 +208,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .ghost.icon, .ghost.x {
+  .spacer { flex: 1; }
+  .ghost.icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -236,7 +220,7 @@
     color: var(--text-2);
     cursor: pointer;
   }
-  .ghost.icon:hover, .ghost.x:hover { background: var(--bg-surface-2); }
+  .ghost.icon:hover { background: var(--bg-surface-2); }
   .ghost.danger { color: var(--danger); }
   .ghost.danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
   .iconspin { display: inline-flex; }
@@ -245,7 +229,7 @@
   .tabs {
     display: flex;
     gap: 4px;
-    padding: 8px 20px 0;
+    padding: 8px 14px 0;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -269,12 +253,12 @@
     margin-left: 4px;
   }
   .tab.active .count { color: var(--accent); }
-  .content { flex: 1; overflow-y: auto; padding: 16px 20px 20px; }
+  .content { flex: 1; overflow-y: auto; padding: 14px; }
   .state { color: var(--text-3); font-size: 12.5px; padding: 24px 4px; }
   .state.err { color: var(--danger); }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 12px;
   }
   .tile {

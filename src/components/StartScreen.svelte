@@ -5,7 +5,7 @@
   // already typed a message, sends it as the first prompt.
   import { fade } from "svelte/transition";
   import { Folder, ArrowRight } from "@lucide/svelte";
-  import { projectMeta, projectDir, sessions, statusNote, switchToProject, sendPrompt, lastSessionFor, requestComposerText } from "../lib/stores";
+  import { projectMeta, projectDir, activeSessionPath, sessions, statusNote, switchToProject, sendPrompt, lastSessionFor } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { chooseProject } from "../lib/stores";
   import { composerDraftFor } from "../lib/composer-drafts";
@@ -15,15 +15,18 @@
   let busy = $state(false);
 
   async function sendFirstPrompt(text: string) {
-    if (!text) return;
-    const result = await sendPrompt(text, []);
-    if (result.ok) $startupDraft.text = "";
-    else {
-      requestComposerText(text);
-      // Ownership moves to the active project's composer. Keeping a second
-      // startup copy would block updates and could resend it on a later visit.
-      $startupDraft.text = "";
+    if (!text.trim()) return;
+    // The startup component may unmount and the active project may change
+    // before Pi replies. Recovery belongs to the composer that sent this text.
+    const destination = composerDraftFor(`${$projectDir}:${$activeSessionPath ?? ""}`);
+    const result = await sendPrompt(text.trim(), []);
+    if (!result.ok) {
+      destination.update((draft) => ({ ...draft, text: draft.text ? `${text}\n${draft.text}` : text }));
     }
+    // Consume only the submitted revision; later typing must survive.
+    startupDraft.update((draft) => ({
+      ...draft, text: draft.text.startsWith(text) ? draft.text.slice(text.length) : draft.text,
+    }));
   }
 
   // Every non-forgotten project we know about: union of session history and
@@ -47,10 +50,10 @@
     if (busy) return;
     busy = true;
     try {
-      const text = $startupDraft.text.trim();
+      const text = $startupDraft.text;
       // Resume the project's remembered/most-recent session when it has one.
       const opened = await switchToProject(dir, lastSessionFor(dir));
-      if (!opened) return;
+      if (!opened || $projectDir !== dir) return;
       await sendFirstPrompt(text);
     } catch (e) {
       statusNote.set(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
@@ -63,9 +66,9 @@
     if (busy) return;
     busy = true;
     try {
-      const text = $startupDraft.text.trim();
+      const text = $startupDraft.text;
       const opened = await chooseProject();
-      if (!opened) return;
+      if (!opened || $projectDir !== opened) return;
       await sendFirstPrompt(text);
     } catch (e) {
       statusNote.set(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
@@ -79,6 +82,7 @@
   <div class="start-inner">
     <h1>Pick a project to begin</h1>
     <p class="sub">Your message is sent to the project you choose — pi always runs inside a project folder.</p>
+    {#if $statusNote}<p role="status">{$statusNote}</p>{/if}
 
     <div class="cards">
       {#each projects as [dir] (dir)}

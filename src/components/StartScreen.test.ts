@@ -18,7 +18,7 @@ vi.mock("../lib/stores", async (importOriginal) => {
 });
 
 import StartScreen from "./StartScreen.svelte";
-import { collectUpdateInstallBlockers, projectDir, projectMeta, sessions } from "../lib/stores";
+import { activeSessionPath, collectUpdateInstallBlockers, projectDir, projectMeta, sessions, statusNote } from "../lib/stores";
 import { composerDraftFor } from "../lib/composer-drafts";
 
 let instance: ReturnType<typeof mount> | null = null;
@@ -39,12 +39,15 @@ beforeEach(() => {
   projectDir.set("");
   projectMeta.set({ "/proj": { name: "Project" } });
   sessions.set([]);
+  activeSessionPath.set("/session-a");
+  statusNote.set("");
+  composerDraftFor("/proj:/session-a").set({ text: "", sending: false, lastExtensionNonce: 0, attachments: [] });
   composerDraftFor("startup project").set({ text: "", sending: false, lastExtensionNonce: 0, attachments: [] });
-  mocks.switchToProject.mockReset().mockResolvedValue(true);
+  mocks.switchToProject.mockReset().mockImplementation(async (dir: string) => { projectDir.set(dir); return true; });
   mocks.sendPrompt.mockReset().mockResolvedValue({ ok: true });
   mocks.lastSessionFor.mockReset().mockReturnValue(undefined);
   mocks.requestComposerText.mockReset();
-  mocks.chooseProject.mockReset().mockResolvedValue("/new-project");
+  mocks.chooseProject.mockReset().mockImplementation(async () => { projectDir.set("/new-project"); return "/new-project"; });
 });
 
 afterEach(async () => {
@@ -54,6 +57,65 @@ afterEach(async () => {
 });
 
 describe("startup project prompt", () => {
+  it("uses the session loaded after the startup screen unmounts", async () => {
+    let finishOpen!: (value: boolean) => void;
+    mocks.switchToProject.mockImplementation(() => {
+      projectDir.set("/proj");
+      return new Promise((resolve) => { finishOpen = resolve; });
+    });
+    mocks.sendPrompt.mockResolvedValue({ ok: false });
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    typeDraft("recover after startup");
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+    await unmount(instance);
+    instance = null;
+    activeSessionPath.set("/late-session");
+    finishOpen(true);
+    await settle();
+    expect(get(composerDraftFor("/proj:/late-session")).text).toBe("recover after startup");
+  });
+
+  it("shows the reason a project could not open on the startup screen", async () => {
+    mocks.switchToProject.mockImplementation(async () => { statusNote.set("Couldn't open project: permission denied"); return false; });
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+    expect(document.body.textContent).toContain("Couldn't open project: permission denied");
+  });
+
+  it("keeps edits made while the initial prompt is pending", async () => {
+    let finish!: (value: { ok: boolean }) => void;
+    mocks.sendPrompt.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    typeDraft("first");
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+    typeDraft("first and more");
+    finish({ ok: true });
+    await settle();
+    expect(get(composerDraftFor("startup project")).text).toBe(" and more");
+  });
+
+  it("restores a rejected prompt to its original project after navigation", async () => {
+    let finish!: (value: { ok: boolean }) => void;
+    mocks.sendPrompt.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    typeDraft("for project A");
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+    projectDir.set("/project-b");
+    activeSessionPath.set("/session-b");
+    finish({ ok: false });
+    await settle();
+    expect(get(composerDraftFor("/proj:/session-a")).text).toBe("for project A");
+    expect(mocks.requestComposerText).not.toHaveBeenCalled();
+  });
+
   it("keeps the draft and does not send when the project cannot open", async () => {
     mocks.switchToProject.mockResolvedValue(false);
     instance = mount(StartScreen, { target: document.body });
@@ -78,7 +140,7 @@ describe("startup project prompt", () => {
     await settle();
 
     expect(mocks.sendPrompt).toHaveBeenCalledWith("retry me", []);
-    expect(mocks.requestComposerText).toHaveBeenCalledWith("retry me");
+    expect(get(composerDraftFor("/proj:/session-a")).text).toBe("retry me");
     expect(get(composerDraftFor("startup project")).text).toBe("");
     expect(collectUpdateInstallBlockers()).not.toContain("startup project has unsent text");
   });

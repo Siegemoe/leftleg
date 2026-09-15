@@ -14,8 +14,19 @@ export const theme = writable<"light" | "dark" | "system">("system");
 export const projectDir = writable<string>("");
 export const sidebarOpen = writable<boolean>(true);
 export const settingsOpen = writable<boolean>(false);
-/** Artifacts browser (project images + docs) visibility. */
-export const artifactsOpen = writable<boolean>(false);
+/** Right panel (Status / Artifacts / … cards beside the chat). */
+export type RightPanelTab = "status" | "artifacts";
+export const rightPanelOpen = writable<boolean>(false);
+export const rightPanelTab = writable<RightPanelTab>("status");
+export const rightPanelWidth = writable<number>(420);
+/** Open the right panel on a tab; re-triggering the active tab closes it. */
+export function openRightPanel(tab: RightPanelTab) {
+  if (get(rightPanelOpen) && get(rightPanelTab) === tab) rightPanelOpen.set(false);
+  else {
+    rightPanelTab.set(tab);
+    rightPanelOpen.set(true);
+  }
+}
 /** Which project the settings modal is scoped to (null = general view). */
 export const settingsProject = writable<string | null>(null);
 
@@ -1347,6 +1358,9 @@ async function bootImpl() {
   sidebarWidth.set((gui.sidebarWidth as number) ?? 256);
   settledView.set((gui.settledView as "per-project" | "unified") ?? "per-project");
   pinnedModels.set((gui.pinnedModels as string[]) ?? []);
+  rightPanelOpen.set((gui.rightPanelOpen as boolean) ?? false);
+  rightPanelTab.set((gui.rightPanelTab as RightPanelTab) ?? "status");
+  rightPanelWidth.set((gui.rightPanelWidth as number) ?? 420);
   autoRetry.set(true);
 
   // Persist theme + sidebar changes
@@ -1384,6 +1398,18 @@ async function bootImpl() {
   });
   pinnedModels.subscribe(async (v) => {
     gui.pinnedModels = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  rightPanelOpen.subscribe(async (v) => {
+    gui.rightPanelOpen = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  rightPanelTab.subscribe(async (v) => {
+    gui.rightPanelTab = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  rightPanelWidth.subscribe(async (v) => {
+    gui.rightPanelWidth = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
   delete gui.autoRetry; // agent settings are persisted only by Pi

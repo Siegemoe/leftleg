@@ -10,8 +10,8 @@
   import SettingsModal from "./components/SettingsModal.svelte";
   import ExtDialog from "./components/ExtDialog.svelte";
   import Notifications from "./components/Notifications.svelte";
-  import Artifacts from "./components/Artifacts.svelte";
-  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, artifactsOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
+  import RightPanel from "./components/RightPanel.svelte";
+  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
   import { reportError } from "./lib/errors";
@@ -86,6 +86,9 @@
       <StatusBar />
     {/if}
   </main>
+  {#if $rightPanelOpen}
+    <RightPanel />
+  {/if}
 </div>
 
 {#if $settingsOpen}
@@ -98,9 +101,6 @@
   <ExtDialog />
 {/if}
 
-{#if $artifactsOpen}
-  <Artifacts />
-{/if}
 
 <style>
   .shell {

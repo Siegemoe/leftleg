@@ -21,7 +21,7 @@ vi.mock("./stores", () => ({
 }));
 
 import {
-  applyUpdate, dismissUpdate, updateAvailable, updateError, updateStatus,
+  applyUpdate, checkForUpdates, dismissUpdate, updateAvailable, updateError, updateStatus, updateCheck,
 } from "./updater";
 import { updateInstallLock } from "./stores";
 
@@ -39,6 +39,7 @@ function fakeUpdate() {
 }
 
 beforeEach(() => {
+  mocks.check.mockReset();
   mocks.blockers.mockReset().mockReturnValue([]);
   mocks.prepareForUpdate.mockReset().mockResolvedValue(1);
   mocks.cancelUpdateShutdown.mockReset().mockResolvedValue(undefined);
@@ -53,6 +54,40 @@ afterEach(async () => {
 });
 
 describe("safe update installation", () => {
+  it("waits for an ongoing check before selecting the update to install", async () => {
+    const previous = fakeUpdate();
+    const fresh = fakeUpdate();
+    updateAvailable.set(previous as never);
+    let finishCheck!: (value: unknown) => void;
+    mocks.check.mockImplementation(() => new Promise((resolve) => { finishCheck = resolve; }));
+    const checking = checkForUpdates();
+    const applying = applyUpdate();
+    const downloadedBeforeCheck = previous.download.mock.calls.length;
+    finishCheck(fresh);
+    await Promise.all([checking, applying]);
+
+    expect(downloadedBeforeCheck).toBe(0);
+    expect(previous.install).not.toHaveBeenCalled();
+    expect(fresh.install).toHaveBeenCalledOnce();
+    expect(fresh.close).not.toHaveBeenCalled();
+  });
+
+  it("keeps a dismissed update dismissed when a pending check finishes", async () => {
+    const previous = fakeUpdate();
+    const fresh = fakeUpdate();
+    updateAvailable.set(previous as never);
+    let finishCheck!: (value: unknown) => void;
+    mocks.check.mockImplementation(() => new Promise((resolve) => { finishCheck = resolve; }));
+    const checking = checkForUpdates();
+    await dismissUpdate();
+    finishCheck(fresh);
+    await checking;
+
+    expect(get(updateAvailable)).toBeNull();
+    expect(get(updateCheck).status).toBe("idle");
+    expect(fresh.close).toHaveBeenCalledOnce();
+  });
+
   it("downloads but refuses installation when work appears before the final boundary", async () => {
     const update = fakeUpdate();
     updateAvailable.set(update as never);
