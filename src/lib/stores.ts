@@ -400,6 +400,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
             kind: "tool", toolCallId: tc.id, name: tc.name,
             args: JSON.stringify(tc.arguments ?? {}, null, 2),
             status: "running", output: "", outputTruncated: false, isError: false,
+            startedAt: m.timestamp,
           };
           toolIndex.set(tc.id, tool);
           out.push(tool);
@@ -416,6 +417,12 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         existing.status = m.isError ? "error" : "done";
         existing.details = m.details ?? undefined;
         existing.timestamp = m.timestamp;
+        // History has no live start event — derive execution time from the
+        // call-issuance → result-recorded message timestamps.
+        if (existing.startedAt !== undefined && m.timestamp !== undefined && m.timestamp >= existing.startedAt) {
+          existing.endedAt = m.timestamp;
+          existing.durationMs = m.timestamp - existing.startedAt;
+        }
       }
     } else if (m.role === "bashExecution") {
       out.push({

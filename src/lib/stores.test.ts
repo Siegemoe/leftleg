@@ -231,6 +231,47 @@ describe("handleEvent: tool lifecycle", () => {
   });
 });
 
+describe("rebuildFromMessages: timing derivation", () => {
+  it("derives tool execution duration from call → result message timestamps", () => {
+    rebuildFromMessages([
+      {
+        role: "assistant",
+        timestamp: 1_000,
+        content: [{ type: "toolCall", id: "tc1", name: "image_generate", arguments: { prompt: "x" } }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "tc1",
+        timestamp: 16_500,
+        content: [{ type: "text", text: "Saved 1 image (m):\\nC:\\i\\a.png" }],
+      },
+    ] as unknown as AgentMessage[]);
+    const tool = get(items).find((x) => x.kind === "tool") as ToolItem;
+    expect(tool.startedAt).toBe(1_000);
+    expect(tool.endedAt).toBe(16_500);
+    expect(tool.durationMs).toBe(15_500);
+    expect(tool.status).toBe("done");
+  });
+
+  it("leaves duration unset when the call timestamp is missing", () => {
+    rebuildFromMessages([
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "tc2", name: "bash", arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "tc2",
+        timestamp: 500,
+        content: [{ type: "text", text: "ok" }],
+      },
+    ] as unknown as AgentMessage[]);
+    const tool = get(items).find((x) => x.kind === "tool") as ToolItem;
+    expect(tool.status).toBe("done");
+    expect(tool.durationMs).toBeUndefined();
+  });
+});
+
 describe("handleEvent: misc events", () => {
   it("queue_update mirrors steering/follow-up queues", async () => {
     await handleEvent({ type: "queue_update", steering: ["s1"], followUp: ["f1", "f2"] } as never);

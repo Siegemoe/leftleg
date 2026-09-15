@@ -134,6 +134,18 @@
     try { await openInDefaultApp(path); }
     catch (e) { statusNote.set(`Couldn't open image: ${e}`); }
   }
+
+  // Live elapsed timer — ticks only while this card is running with a known
+  // start (GUI-measured at tool_execution_start).
+  let now = $state(Date.now());
+  $effect(() => {
+    if (item.status !== "running" || item.startedAt === undefined) return;
+    const iv = setInterval(() => (now = Date.now()), 500);
+    return () => clearInterval(iv);
+  });
+  let liveElapsed = $derived(
+    item.status === "running" && item.startedAt !== undefined ? formatDuration(Math.max(0, now - item.startedAt)) : "",
+  );
 </script>
 
 <div class="card" class:running={item.status === "running"} class:error={item.status === "error"} class:imggen={isImageGen}>
@@ -150,6 +162,8 @@
     {/if}
     {#if item.durationMs}
       <span class="meta" title="Execution time">{formatDuration(item.durationMs)}</span>
+    {:else if liveElapsed}
+      <span class="meta mono" title="Elapsed">{liveElapsed}</span>
     {/if}
     <span class="spacer"></span>
     {#if isImageGen && imageMeta?.cost !== undefined}
@@ -176,6 +190,9 @@
       {#if progressText}
         <div class="ph-progress mono">{progressText}</div>
       {/if}
+      {#if liveElapsed}
+        <div class="imgtime mono">{liveElapsed} elapsed</div>
+      {/if}
     </div>
   {:else if isImageGen && item.status === "done" && imageSrcs.length > 0}
     <div class="imgstage">
@@ -197,6 +214,9 @@
           {/if}
         {/each}
       </div>
+      {#if item.durationMs !== undefined}
+        <div class="imgtime">Generated in {formatDuration(item.durationMs)}</div>
+      {/if}
     </div>
   {/if}
 
@@ -362,6 +382,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .imgtime {
+    color: var(--text-3);
+    font-size: 11px;
+    text-align: center;
+    padding: 0 4px 2px;
   }
   .imgs { display: flex; gap: 8px; flex-wrap: wrap; }
   .imgs.multi { max-height: 420px; overflow-y: auto; }
