@@ -4,16 +4,16 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, switchToProject, connected, newSession, openSession, pins,
+    activeSessionPath, switchToProject, applyTheme, connected, newSession, openSession, pins,
     projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
-    settingsProject, sidebarWidth, togglePin, unsettleSession, visitedAt,
+    settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
   } from "../lib/stores";
   import {
     filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, projectDisplayName,
     resolveThreadPill, splitSections, toSidebarSessions, type SidebarSection, type SidebarSession,
   } from "../lib/sidebar-model";
-  import { ChevronRight, Folder, GitBranch, Layers, List, Plus, Search, Settings } from "@lucide/svelte";
+  import { ChevronRight, Folder, GitBranch, Layers, List, Monitor, Moon, Plus, Search, Settings, Sun } from "@lucide/svelte";
   import { gitRepoInfo } from "../lib/api";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import SessionRow from "./SessionRow.svelte";
@@ -238,6 +238,12 @@
     const iv = setInterval(() => void refreshGit(), 30000);
     return () => clearInterval(iv);
   });
+
+  const themeCycle = ["light", "dark", "system"] as const;
+  function cycleTheme() {
+    const next = themeCycle[(themeCycle.indexOf($theme) + 1) % themeCycle.length];
+    applyTheme(next);
+  }
 
 </script>
 
@@ -533,9 +539,23 @@
 
   <div class="footer">
     <div class="footer-row">
+      <button class="ghost icon-btn" title="Theme: {$theme} — click to cycle light / dark / system" onclick={cycleTheme}>
+        {#if $theme === "light"}
+          <Sun size={14} strokeWidth={2} />
+        {:else if $theme === "dark"}
+          <Moon size={14} strokeWidth={2} />
+        {:else}
+          <Monitor size={14} strokeWidth={2} />
+        {/if}
+      </button>
       <button class="ghost icon-btn" title="Settings" onclick={() => { settingsProject.set(null); settingsOpen.set(true); }}>
         <Settings size={15} strokeWidth={2} />
       </button>
+    </div>
+    <div class="footer-row">
+      <div class="conn" class:on={$connected}>
+        {$connected ? "pi connected" : "pi offline"}
+      </div>
       {#if gitInfo?.repo}
         <button
           class="ghost git-chip"
@@ -547,11 +567,6 @@
           {#if gitInfo.dirty}<span class="git-dirty">{gitInfo.dirty}</span>{/if}
         </button>
       {/if}
-    </div>
-    <div class="footer-row">
-      <div class="conn" class:on={$connected}>
-        {$connected ? "pi connected" : "pi offline"}
-      </div>
     </div>
   </div>
 </aside>
@@ -783,6 +798,7 @@
   .resize-handle:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
   .footer { flex-shrink: 0; border-top: 1px solid var(--border); padding: 8px 10px; }
   .footer-row { display: flex; align-items: center; gap: 6px; }
+  .footer-row + .footer-row { margin-top: 6px; }
   .project-btn {
     flex-shrink: 0;
     display: flex;
@@ -816,6 +832,6 @@
     line-height: 14px;
     font-weight: 700;
   }
-  .conn { margin-top: 6px; font-size: 10.5px; color: var(--text-3); }
+  .conn { font-size: 10.5px; color: var(--text-3); }
   .conn.on { color: var(--ok); }
 </style>
