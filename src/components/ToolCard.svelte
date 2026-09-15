@@ -4,6 +4,7 @@
   import { resolve as resolvePath } from "@tauri-apps/api/path";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { projectDir, statusNote } from "../lib/stores";
+  import { formatDuration } from "../lib/time-format";
 
   let { item }: { item: ToolItem } = $props();
 
@@ -146,6 +147,9 @@
     {/if}
     {#if lines !== null}
       <span class="meta">{lines} lines</span>
+    {/if}
+    {#if item.durationMs}
+      <span class="meta" title="Execution time">{formatDuration(item.durationMs)}</span>
     {/if}
     <span class="spacer"></span>
     {#if isImageGen && imageMeta?.cost !== undefined}

@@ -2,9 +2,11 @@
   import type { UiItem } from "../lib/types";
   import ToolCard from "./ToolCard.svelte";
   import { renderMarkdown, renderStreamingMarkdown } from "../lib/markdown";
-import { sanitizeThinking } from "../lib/thinking";
-  import { retryFailedUser, dismissFailedUser } from "../lib/stores";
-  import { Lightbulb, TriangleAlert } from "@lucide/svelte";
+  import { sanitizeThinking } from "../lib/thinking";
+  import { dayHeaderLabel, formatDuration } from "../lib/time-format";
+  import { retryFailedUser, dismissFailedUser, statusNote } from "../lib/stores";
+  import { Lightbulb, TriangleAlert, Copy } from "@lucide/svelte";
+  import { get } from "svelte/store";
 
   let { item }: { item: UiItem } = $props();
 
@@ -14,6 +16,21 @@ import { sanitizeThinking } from "../lib/thinking";
 
   function onDismiss(id: string | undefined) {
     if (id) dismissFailedUser(id);
+  }
+
+  function responseText(): string {
+    if (item.kind !== "assistant") return "";
+    return item.blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n\n").trim();
+  }
+
+  async function copyResponse() {
+    try {
+      await navigator.clipboard.writeText(responseText());
+      statusNote.set("Response copied");
+      setTimeout(() => { if (get(statusNote) === "Response copied") statusNote.set(""); }, 3000);
+    } catch (e) {
+      statusNote.set(`Couldn't copy: ${e}`);
+    }
   }
 
   // markdown render keyed on text length so streaming re-renders cheaply
@@ -62,12 +79,16 @@ import { sanitizeThinking } from "../lib/thinking";
 {:else if item.kind === "assistant"}
   <div class="row assistant">
     <div class="stack">
+      {#if item.timestamp}
+        <div class="msg-time">{dayHeaderLabel(item.timestamp)}</div>
+      {/if}
       {#each item.blocks as block}
         {#if block.type === "thinking"}
           <details class="thinking" open={!block.done}>
             <summary>
               <Lightbulb size={12} strokeWidth={2} class="ic-inline" />
               {block.done ? "Thought process" : "Thinking…"}
+              {#if block.durationMs}<span class="think-dur">· {formatDuration(block.durationMs)}</span>{/if}
             </summary>
             <div class="think-body">{sanitizeThinking(block.text)}</div>
           </details>
@@ -82,6 +103,15 @@ import { sanitizeThinking } from "../lib/thinking";
       {/if}
       {#if item.streaming}
         <span class="cursor"></span>
+      {:else}
+        {#if responseText()}
+          <button class="copy-btn" title="Copy response text" onclick={() => void copyResponse()}>
+            <Copy size={11} strokeWidth={2} /> Copy
+          </button>
+        {/if}
+        {#if item.turnDurationMs}
+          <div class="turn-meta">turn · {formatDuration(item.turnDurationMs)}</div>
+        {/if}
       {/if}
     </div>
   </div>
@@ -219,6 +249,37 @@ import { sanitizeThinking } from "../lib/thinking";
     font-size: 12px;
     line-height: 1.5;
   }
+  .msg-time {
+    font-size: 10.5px;
+    color: var(--text-3);
+    padding: 2px 0;
+    letter-spacing: 0.3px;
+    user-select: none;
+  }
+  .think-dur {
+    color: var(--text-3);
+    font-weight: 400;
+    margin-left: 4px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .copy-btn {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    padding: 2px 9px;
+    font-size: 10.5px;
+    color: var(--text-3);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    cursor: pointer;
+    opacity: 0.75;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--border-strong); opacity: 1; }
+  .turn-meta { font-size: 10.5px; color: var(--text-3); padding: 1px 0; user-select: none; }
   .error-note {
     color: var(--danger);
     font-size: 12.5px;

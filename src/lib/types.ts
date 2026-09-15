@@ -92,7 +92,7 @@ export interface SessionInfo {
 
 export type Block =
   | { type: "text"; text: string; done: boolean }
-  | { type: "thinking"; text: string; done: boolean }
+  | { type: "thinking"; text: string; done: boolean; startedAt?: number; durationMs?: number }
   | { type: "toolcall"; toolCallId: string; name: string; args: string };
 
 export type ToolStatus = "running" | "done" | "error";
@@ -107,6 +107,12 @@ export interface ToolItem {
   outputTruncated: boolean;
   isError: boolean;
   diff?: string;
+  /** GUI-measured execution timing (tool_execution_start → _end). */
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+  /** Receipt time used for day grouping (approximate for history items). */
+  timestamp?: number;
   /** Structured tool result details (image_generate → { paths, model, usage }). */
   details?: Record<string, unknown>;
 }
@@ -125,6 +131,8 @@ export interface UserItem {
   status?: "sending" | "accepted" | "failed";
   id?: string; // client-side id for retry targeting (only on optimistic bubbles)
   error?: string;
+  /** Receipt/creation time for day grouping. */
+  timestamp?: number;
 }
 
 export interface AssistantItem {
@@ -134,6 +142,10 @@ export interface AssistantItem {
   stopReason?: string;
   errorMessage?: string;
   streaming: boolean;
+  /** pi message timestamp (epoch ms) — drives the response day header. */
+  timestamp?: number;
+  /** GUI-measured total turn duration, stamped on the last assistant item. */
+  turnDurationMs?: number;
 }
 
 export interface BashItem {
@@ -142,6 +154,7 @@ export interface BashItem {
   output: string;
   exitCode: number;
   isError: boolean;
+  timestamp?: number;
 }
 
 export type UiItem = UserItem | AssistantItem | ToolItem | BashItem;

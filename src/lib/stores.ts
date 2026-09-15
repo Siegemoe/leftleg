@@ -221,6 +221,8 @@ const mainSurface = {
   items, streaming, queue, extStatuses, extWidgets, extDialog, composerDraft, activeSessionPath, statusNote,
   assistant: null as AssistantItem | null,
   dialogs: [] as ExtDialogData[],
+  /** GUI-measured turn start (turn_start timestamp); cleared when the turn settles. */
+  turnStartTs: null as number | null,
 };
 type RenderSurface = typeof mainSurface;
 let transcriptRevision = 0;
@@ -269,7 +271,7 @@ function blankSurface(): RenderSurface {
   return { items: writable<UiItem[]>([]), streaming: writable(false),
     queue: writable({ steering: [] as string[], followUp: [] as string[] }),
     extStatuses: writable({}), extWidgets: writable({}), extDialog: writable(null),
-    composerDraft: writable(null), activeSessionPath: writable(null), statusNote: writable(""), assistant: null, dialogs: [] };
+    composerDraft: writable(null), activeSessionPath: writable(null), statusNote: writable(""), assistant: null, dialogs: [], turnStartTs: null };
 }
 function saveSurface() {
   const dir = get(projectDir), proc = get(lastProcByProject)[dir];
@@ -286,6 +288,7 @@ function saveSurface() {
     statusNote: writable(get(statusNote)),
     assistant: mainSurface.assistant,
     dialogs: mainSurface.dialogs,
+    turnStartTs: mainSurface.turnStartTs,
   } });
 }
 function surfaceFor(dir: string, proc: number): RenderSurface {
@@ -366,7 +369,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
           }
           return { name: a.fileName ?? "image", dataUrl: `data:${a.mimeType ?? "image/png"};base64,${data}` };
         });
-      out.push({ kind: "user", text: contentText(m.content as never), images });
+      out.push({ kind: "user", text: contentText(m.content as never), images, timestamp: m.timestamp });
     } else if (m.role === "assistant") {
       const blocks: Block[] = [];
       const content = m.content ?? [];
@@ -384,6 +387,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         usage: m.usage, stopReason: m.stopReason,
         errorMessage: m.stopReason === "error" ? m.errorMessage : undefined,
         streaming: false,
+        timestamp: m.timestamp,
       };
       out.push(item);
       // register tool calls for pairing with results
@@ -409,6 +413,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         existing.isError = !!m.isError;
         existing.status = m.isError ? "error" : "done";
         existing.details = m.details ?? undefined;
+        existing.timestamp = m.timestamp;
       }
     } else if (m.role === "bashExecution") {
       out.push({
@@ -416,6 +421,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         output: (m as { output?: string }).output ?? "",
         exitCode: (m as { exitCode?: number }).exitCode ?? 0,
         isError: ((m as { exitCode?: number }).exitCode ?? 0) !== 0,
+        timestamp: m.timestamp,
       });
     }
   }
@@ -441,6 +447,15 @@ function currentTextBlock(item: AssistantItem, contentIndex: number | undefined)
 
 /** Close out a dangling streaming assistant item (agent done, or the process died). */
 function finalizeStreaming(surface = mainSurface) {
+  // Stamp the total turn duration on the last assistant item before closing out.
+  if (surface.turnStartTs !== null) {
+    const a = surface.items;
+    const lastAssistant = [...get(a)].reverse().find((x) => x.kind === "assistant") as AssistantItem | undefined;
+    if (lastAssistant) {
+      lastAssistant.turnDurationMs = (lastAssistant.timestamp ?? Date.now()) - surface.turnStartTs;
+    }
+    surface.turnStartTs = null;
+  }
   if (surface.assistant) {
     surface.assistant.streaming = false;
     for (const b of surface.assistant.blocks) if (b.type !== "toolcall") b.done = true;
@@ -505,10 +520,19 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     case "message_start": {
       const m = typeof evt.message === "object" ? evt.message : undefined;
       if (m?.role === "assistant") {
-        const item: AssistantItem = { kind: "assistant", blocks: [], streaming: true };
+        const item: AssistantItem = { kind: "assistant", blocks: [], streaming: true, timestamp: Date.now() };
         surface.assistant = item;
         items.update((a) => [...a, item]);
       }
+      break;
+    }
+    case "turn_start": {
+      // pi's authoritative turn boundary; fall back to our own clock.
+      surface.turnStartTs = typeof evt.timestamp === "number" ? evt.timestamp : (surface.turnStartTs ?? Date.now());
+      break;
+    }
+    case "agent_start": {
+      if (surface.turnStartTs === null) surface.turnStartTs = Date.now();
       break;
     }
     case "message_update": {
@@ -524,7 +548,7 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         const b = currentTextBlock(item, d.contentIndex);
         if (b && b.type === "text") { b.text = (d as { content?: string }).content ?? b.text; b.done = true; }
       } else if (d.type === "thinking_start") {
-        item.blocks[d.contentIndex ?? item.blocks.length] = { type: "thinking", text: "", done: false };
+        item.blocks[d.contentIndex ?? item.blocks.length] = { type: "thinking", text: "", done: false, startedAt: Date.now() };
       } else if (d.type === "thinking_delta") {
         const b = currentTextBlock(item, d.contentIndex);
         if (b && b.type === "thinking") b.text += d.delta ?? "";
@@ -535,6 +559,7 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
           // concatenation can carry provider debris that the final message fixes.
           b.text = (d as { content?: string }).content ?? b.text;
           b.done = true;
+          if (b.startedAt !== undefined) b.durationMs = Date.now() - b.startedAt;
         }
       } else if (d.type === "toolcall_start") {
         // Pi's contentIndex counts tool calls as well as text/thinking. Keep
@@ -592,6 +617,7 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         surface.assistant.usage = m.usage;
         surface.assistant.stopReason = m.stopReason;
         surface.assistant.errorMessage = m.stopReason === "error" ? m.errorMessage : undefined;
+        surface.assistant.timestamp = typeof m.timestamp === "number" ? m.timestamp : surface.assistant.timestamp;
         surface.assistant.streaming = false;
         surface.assistant = null;
         items.update((a) => a);
@@ -608,6 +634,7 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         }
         t.args = JSON.stringify(evt.args ?? {}, null, 2);
         t.status = "running";
+        t.startedAt = Date.now();
         return a;
       });
       break;
@@ -634,6 +661,9 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
           t.isError = !!evt.isError;
           t.status = evt.isError ? "error" : "done";
           t.details = evt.result?.details ?? undefined;
+          t.endedAt = Date.now();
+          t.timestamp = t.endedAt;
+          if (t.startedAt !== undefined) t.durationMs = t.endedAt - t.startedAt;
         }
         return a;
       });
@@ -837,7 +867,7 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
   // Optimistic user bubble, visibly in flight until pi answers.
   const bubbleId = newId();
   items.update((a) => [...a, {
-    kind: "user", text: trimmed, id: bubbleId, status: "sending",
+    kind: "user", text: trimmed, id: bubbleId, status: "sending", timestamp: Date.now(),
     images: images.map((i) => ({ name: i.name, dataUrl: `data:${i.mimeType};base64,${i.data}` })),
   }]);
   function delivery(patch: Partial<UserItem>) {
