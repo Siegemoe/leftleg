@@ -1,0 +1,142 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  piIntegrityReport: vi.fn(),
+  runPiManager: vi.fn(),
+  pushNotification: vi.fn(),
+  setGuiStateValue: vi.fn(),
+  guiStateValue: vi.fn(),
+}));
+
+vi.mock("./api", () => ({
+  piIntegrityReport: mocks.piIntegrityReport,
+  runPiManager: mocks.runPiManager,
+}));
+vi.mock("./stores", () => ({
+  pushNotification: mocks.pushNotification,
+  setGuiStateValue: mocks.setGuiStateValue,
+  guiStateValue: mocks.guiStateValue,
+  streaming: { subscribe: (fn: (v: boolean) => void) => { fn(false); return () => {}; } },
+  updateInstallLock: { subscribe: (fn: (v: boolean) => void) => { fn(false); return () => {}; } },
+}));
+
+import { integrityGate, runStartupPiUpdate, summarizeUpdateOutput } from "./pi-update";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.guiStateValue.mockReturnValue(0); // no debounce stamp
+  mocks.runPiManager.mockResolvedValue({ exitCode: 0, stdout: "" });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("summarizeUpdateOutput", () => {
+  it("extracts upgrade lines with version arrows", () => {
+    const out = [
+      "Updating packages…",
+      "pi-distill 1.0.0 → 1.1.0",
+      "@bacnh85/pi-web 2.0.0 -> 2.1.0",
+      "pi is up to date (0.85.1)",
+      "",
+    ].join("\n");
+    expect(summarizeUpdateOutput(out)).toEqual([
+      "pi-distill 1.0.0 → 1.1.0",
+      "@bacnh85/pi-web 2.0.0 -> 2.1.0",
+    ]);
+  });
+
+  it("returns nothing when already current", () => {
+    expect(summarizeUpdateOutput("all packages up to date")).toEqual([]);
+  });
+});
+
+describe("integrityGate", () => {
+  it("passes when every source is npm-registry", async () => {
+    mocks.piIntegrityReport.mockResolvedValue({
+      extensions: [{ source: "npm:@foo/bar", trusted: true }, { source: "npm:pi-distill", trusted: true }],
+    });
+    expect(await integrityGate()).toEqual({ ok: true, flagged: [] });
+  });
+
+  it("flags non-registry sources", async () => {
+    mocks.piIntegrityReport.mockResolvedValue({
+      extensions: [
+        { source: "npm:@foo/bar", trusted: true },
+        { source: "./local/ext.ts", trusted: false },
+        { source: "git:github.com/x/y", trusted: false },
+      ],
+    });
+    const gate = await integrityGate();
+    expect(gate.ok).toBe(false);
+    expect(gate.flagged).toEqual(["./local/ext.ts", "git:github.com/x/y"]);
+  });
+
+  it("treats an unreadable report as a pass (pi verifies its own installs)", async () => {
+    mocks.piIntegrityReport.mockRejectedValue(new Error("no settings"));
+    expect(await integrityGate()).toEqual({ ok: true, flagged: [] });
+  });
+});
+
+describe("runStartupPiUpdate", () => {
+  it("holds the update and warns when the integrity gate flags sources", async () => {
+    mocks.piIntegrityReport.mockResolvedValue({
+      extensions: [{ source: "./local.ts", trusted: false }],
+    });
+    runStartupPiUpdate();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.runPiManager).not.toHaveBeenCalled();
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      "warning",
+      expect.stringContaining("./local.ts"),
+    );
+    expect(mocks.setGuiStateValue).not.toHaveBeenCalled();
+  });
+
+  it("runs pi update --all, stamps the run, and reports upgrades", async () => {
+    mocks.piIntegrityReport.mockResolvedValue({ extensions: [] });
+    mocks.runPiManager.mockResolvedValue({
+      exitCode: 0,
+      stdout: "pi 0.85.1 → 0.86.0",
+    });
+    runStartupPiUpdate();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.runPiManager).toHaveBeenCalledWith(["--all"]);
+    expect(mocks.setGuiStateValue).toHaveBeenCalledWith("piUpdateLastRun", expect.any(Number));
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      "info",
+      expect.stringContaining("pi updated"),
+    );
+  });
+
+  it("stays silent when everything is already current", async () => {
+    mocks.piIntegrityReport.mockResolvedValue({ extensions: [{ source: "npm:x", trusted: true }] });
+    mocks.runPiManager.mockResolvedValue({ exitCode: 0, stdout: "all up to date" });
+    runStartupPiUpdate();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.pushNotification).not.toHaveBeenCalled();
+  });
+
+  it("reports a non-zero exit as an error", async () => {
+    mocks.piIntegrityReport.mockResolvedValue({ extensions: [] });
+    mocks.runPiManager.mockResolvedValue({ exitCode: 1, stdout: "boom" });
+    runStartupPiUpdate();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      "error",
+      expect.stringContaining("exit 1"),
+    );
+  });
+
+  it("skips entirely while the debounce window is fresh", async () => {
+    mocks.guiStateValue.mockReturnValue(Date.now() - 60_000); // ran a minute ago
+    runStartupPiUpdate();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.piIntegrityReport).not.toHaveBeenCalled();
+    expect(mocks.runPiManager).not.toHaveBeenCalled();
+  });
+});

@@ -1226,6 +1226,19 @@ export async function respondToExtDialog(response: Record<string, unknown>) {
 /** GUI state loaded during boot; reused for last-session persistence. */
 let guiStateCache: Record<string, unknown> | null = null;
 
+/** Read a GUI-state value (post-boot) for lightweight stamps that don't
+ * warrant their own store. */
+export function guiStateValue(key: string): unknown {
+  return guiStateCache?.[key];
+}
+
+/** Write a GUI-state value and persist the blob (best-effort). */
+export async function setGuiStateValue(key: string, value: unknown): Promise<void> {
+  if (!guiStateCache || guiStateCache[key] === value) return;
+  guiStateCache[key] = value;
+  try { await api.writeGuiState(guiStateCache); } catch { /* ignore */ }
+}
+
 async function persistLastSession(path: string | null) {
   const dir = get(projectDir);
   if (!dir || !guiStateCache) return;

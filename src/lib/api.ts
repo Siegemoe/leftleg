@@ -124,6 +124,30 @@ export function piModuleInfo(): Promise<PiModuleInfo> {
   return invoke("pi_module_info");
 }
 
+export interface PiManagerResult {
+  exitCode: number;
+  stdout: string;
+}
+
+/** Run `pi update` with allowlisted flags via the guarded Rust runner. */
+export function runPiManager(flags: string[]): Promise<PiManagerResult> {
+  return invoke("run_pi_manager", { flags });
+}
+
+export interface ExtensionIntegrity {
+  source: string;
+  trusted: boolean;
+}
+
+export interface PiIntegrityReport {
+  extensions: ExtensionIntegrity[];
+}
+
+/** Read-only integrity report over the user's pi extension sources. */
+export function piIntegrityReport(): Promise<PiIntegrityReport> {
+  return invoke("pi_integrity_report");
+}
+
 export function getAgentDir(): Promise<string> {
   return invoke("get_agent_dir");
 }

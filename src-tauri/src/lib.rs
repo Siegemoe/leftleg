@@ -1,4 +1,5 @@
 mod pi;
+mod pimgr;
 mod sessions;
 
 use pi::PiProcess;
@@ -404,6 +405,8 @@ pub fn run() {
             sessions::delete_artifact,
             sessions::git_repo_info,
             pi::pi_module_info,
+            pimgr::run_pi_manager,
+            pimgr::pi_integrity_report,
             get_agent_dir,
             append_log,
             write_agent_extension,

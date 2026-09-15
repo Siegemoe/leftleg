@@ -15,6 +15,7 @@
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
   import { reportError } from "./lib/errors";
+  import { runStartupPiUpdate } from "./lib/pi-update";
   import { startupUpdateCheck, updateAvailable, updateStatus, updateError, applyUpdate, dismissUpdate } from "./lib/updater";
 
   let cleanup: (() => void) | null = null;
@@ -41,6 +42,8 @@
     })().catch((e) => { cleanup?.(); reportError("boot", String(e)); });
     // Non-blocking startup update check — banner renders only when available.
     startupUpdateCheck();
+    // Non-blocking pi harness/extension updater (integrity-gated, debounced).
+    runStartupPiUpdate();
     return () => { disposed = true; cleanup?.(); };
   });
 </script>

@@ -2,7 +2,7 @@
   // Status card: session todos + pi module. Lives inside the right panel
   // (extracted from the old TitleBar dropdown; the app-updates section was
   // dropped as redundant with the title-bar banner + Settings → Updates).
-  import { piRequest, piModuleInfo } from "../lib/api";
+  import { piRequest, piModuleInfo, piIntegrityReport } from "../lib/api";
   import type { AgentMessage } from "../lib/types";
   import { activeSessionPath, lastProcByProject, projectDir } from "../lib/stores";
 
@@ -11,6 +11,7 @@
   let todos = $state<TodoTask[] | null>(null);
   let todosLoaded = $state(false);
   let piInfo = $state<{ name: string; version: string } | null>(null);
+  let integrity = $state<{ extensions: { source: string; trusted: boolean }[] } | null>(null);
   let revision = 0;
 
   // The task list is the latest `todo` tool call in the session — scan the
@@ -56,6 +57,9 @@
     void (async () => {
       try { piInfo = await piModuleInfo(); } catch { piInfo = null; }
     })();
+    void (async () => {
+      try { integrity = await piIntegrityReport(); } catch { integrity = null; }
+    })();
   });
 </script>
 
@@ -84,6 +88,22 @@
       <p class="dim">Resolving the pi install…</p>
     {/if}
   </section>
+  <section>
+    <h4>Extensions</h4>
+    {#if integrity}
+      {@const flagged = integrity.extensions.filter((e) => !e.trusted)}
+      {#if flagged.length === 0}
+        <p class="dim">{integrity.extensions.length} installed · all npm-registry sources</p>
+      {:else}
+        <p class="dim warn">⚠ {flagged.length} unregistered source(s) — updates held</p>
+        {#each flagged as f (f)}
+          <p class="dim mono">{f}</p>
+        {/each}
+      {/if}
+    {:else}
+      <p class="dim">Checking extension sources…</p>
+    {/if}
+  </section>
 </div>
 
 <style>
@@ -99,6 +119,7 @@
   .statuscard section:last-child { border-bottom: none; }
   .statuscard h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); }
   .dim { color: var(--text-3); font-size: 12px; margin: 2px 0; }
+  .warn { color: var(--danger); }
   .tsum { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
   .task { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 12.5px; }
   .st { width: 14px; text-align: center; flex-shrink: 0; }
