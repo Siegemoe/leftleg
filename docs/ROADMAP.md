@@ -13,6 +13,14 @@
 - [x] Capabilities: core + dialog + opener
 - [x] NSIS installer, Start Menu launch
 
+## v0.2.x — shipped (beyond the v0 list)
+- [x] Custom title bar with File/Edit/View/Help menus, proactive update control, model dropdown
+- [x] Model picker: pinning + search
+- [x] Media: image_generate companion, artifacts browser, media defaults in Settings → Models
+- [x] Startup project scene; per-project session groups, Pinned/Active/Settled sections, drag-to-pin
+- [x] Sidebar footer: theme + settings (row 1), connection + git branch chip (row 2)
+- [x] CI release pipeline proven on v0.2.3 (tag → signed NSIS + latest.json → draft → publish; see docs/RELEASE.md)
+
 ## v0.1 — polish (next)
 - [ ] Acceptance test: use Leftleg to develop Leftleg, end to end
 - [ ] pi-exit → in-app restart button (currently: status note only)
@@ -33,8 +41,8 @@
 - [ ] Multi-project: session list grouped by cwd, quick switch (pi restart per project)
 
 ## v0.3 — ambition
-- [ ] Auto-update (tauri updater)
-- [ ] Tray icon + background sessions
+- [x] Auto-update (tauri updater) — shipped in 0.2.2: update banner + Settings → Updates; feed = `releases/latest/download/latest.json`
+- [ ] Tray icon + background sessions — close-to-tray (window close currently kills the app; muscle-memory trap)
 - [ ] Telemetry-free crash reporting via the log pipeline
 - [ ] Automated UI smoke tests (click-through: launch → pick project → send → tool card renders)
 - [x] Rust unit tests: JSONL line classification, pending map, session header parse (+ first-user-message extraction, base64)

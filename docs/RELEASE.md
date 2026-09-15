@@ -29,11 +29,18 @@ the signed NSIS updater, generates `latest.json`, and creates a **draft** GitHub
 release. Inspect its installer, `.sig`, and `latest.json`, then publish the draft
 so `/releases/latest/download/latest.json` becomes live.
 
+Provenance: v0.2.3 was the first fully CI-published release. The v0.2.1 and
+v0.2.2 tag runs failed the version-identity gate (`Cargo.toml` and the
+lockfiles were never bumped), so those shipped via the manual path below.
+
 The manual process below is recovery guidance when GitHub Actions is unavailable.
 
 1. **Bump the version** in `src-tauri/tauri.conf.json`, `package.json`, and
    `src-tauri/Cargo.toml`, then regenerate `package-lock.json` and
-   `src-tauri/Cargo.lock`. The release workflow rejects mismatches.
+   `src-tauri/Cargo.lock`. The release workflow rejects mismatches — it
+   compares five values (`tauri.conf.json`, `package.json`, both
+   `package-lock.json` version fields, and `cargo metadata`'s `leftleg`
+   version) and requires the tag to be exactly `v<version>`.
 2. **Build signed artifacts** (new shell so the env var applies; `setx` only
    affects future shells):
    ```powershell
@@ -41,6 +48,13 @@ The manual process below is recovery guidance when GitHub Actions is unavailable
    npm.cmd run tauri build     # npm.cmd avoids the Windows PowerShell 5.1 .ps1 execution-policy block
    # at the "Password:" prompt, press Enter
    ```
+
+   Run this in an **interactive** terminal. The `Password:` prompt cannot be
+   answered from piped/non-interactive shells (agent shells, `... | tail`):
+   the build finishes bundling, then blocks forever waiting on stdin. The
+   tell-tale is a finished `Leftleg_<V>_x64-setup.exe` with **no** `.sig`
+   beside it — an unsigned build cannot serve updates. In an interactive or
+   PTY session, press Enter at the prompt and signing completes.
 3. **Artifacts** (in `src-tauri/target/release/bundle/nsis/`):
    - `Leftleg_<V>_x64-setup.exe`
    - `Leftleg_<V>_x64-setup.exe.sig` ← proof the signing env var was set. If
@@ -56,6 +70,12 @@ The manual process below is recovery guidance when GitHub Actions is unavailable
    told "up to date" (see Settings → Updates for the check result either way).
 
 ## latest.json template
+
+The CI path (tauri-action) authors this file itself: asset URLs use the
+`https://api.github.com/repos/.../releases/assets/<id>` style and an extra
+`windows-x86_64-nsis` platform key mirrors the NSIS asset — the updater
+follows the API asset URL fine. Hand-author the file only on the manual
+path, using the template below.
 
 ```json
 {
