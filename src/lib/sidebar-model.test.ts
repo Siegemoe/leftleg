@@ -80,6 +80,7 @@ describe("groupSessionsByProject", () => {
       sessions,
       displayName: (d) => d,
       icon: () => undefined,
+      color: () => undefined,
       isForgotten: () => false,
       scope: null,
     });
@@ -93,6 +94,7 @@ describe("groupSessionsByProject", () => {
       sessions,
       displayName: (d) => d,
       icon: () => undefined,
+      color: () => undefined,
       isForgotten: (d) => d === "/b",
       scope: null,
     });

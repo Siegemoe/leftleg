@@ -91,6 +91,7 @@ export interface ProjectGroup {
   dir: string;
   displayName: string;
   icon?: string;
+  color?: string;
   sessions: SidebarSession[];
   pill: SidebarPill | null;
   /** Latest activity across the group — group sort key. */
@@ -106,6 +107,7 @@ export function groupSessionsByProject(input: {
   sessions: readonly SidebarSession[];
   displayName: (dir: string) => string;
   icon: (dir: string) => string | undefined;
+  color: (dir: string) => string | undefined;
   isForgotten: (dir: string) => boolean;
   scope: string | null;
 }): ProjectGroup[] {
@@ -127,6 +129,7 @@ export function groupSessionsByProject(input: {
       dir,
       displayName: input.displayName(dir),
       icon: input.icon(dir),
+      color: input.color(dir),
       sessions,
       pill,
       activityMs: sessions.reduce((max, s) => Math.max(max, s.timestampMs), 0),

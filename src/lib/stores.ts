@@ -77,6 +77,8 @@ function projectLabel(dir: string): string {
 export interface ProjectMeta {
   name?: string;
   icon?: string;
+  /** Bold accent color for the project icon (CSS color; empty = theme default). */
+  color?: string;
   defaultModel?: { provider: string; id: string };
   forgotten?: boolean;
 }

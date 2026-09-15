@@ -12,6 +12,7 @@
     statusNote,
   } from "../../lib/stores";
   import { companionAvailable, bindManagement } from "../../lib/settings/mgmt";
+  import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle } from "../../lib/project-icons";
   import { checkForUpdates, applyUpdate, updateAvailable, updateCheck, updateStatus } from "../../lib/updater";
   import { onDestroy, untrack } from "svelte";
   const mgmtRequest = bindManagement();
@@ -824,8 +825,18 @@
               </select>
             </div>
             <div class="inline">
-              {#each ["📁", "⚡", "🧠", "🚀", "🎨", "🛠", "📊", "🧪", "🏠", "⭐"] as icon (icon)}
-                <button class="ghost icon-pick" class:active={meta.icon === icon} onclick={() => updateProjectMeta(dir, { icon: icon === meta.icon ? undefined : icon })}>{icon}</button>
+              {#each PROJECT_ICON_CHOICES as icon (icon)}
+                <button class="ghost icon-pick" class:active={meta.icon === icon} title={icon} onclick={() => updateProjectMeta(dir, { icon: icon === meta.icon ? undefined : icon })}>{icon}</button>
+              {/each}
+            </div>
+            <div class="inline">
+              <span class="pick-label">color</span>
+              {#each PROJECT_COLOR_CHOICES as c (c)}
+                {#if c}
+                  <button class="color-pick" class:active={meta.color === c} style={`background:${c}`} title={c} aria-label={`icon color ${c}`} onclick={() => updateProjectMeta(dir, { color: meta.color === c ? undefined : c })}></button>
+                {:else}
+                  <button class="color-pick none" class:active={!meta.color} title="theme default" aria-label="theme default icon color" onclick={() => updateProjectMeta(dir, { color: undefined })}></button>
+                {/if}
               {/each}
             </div>
             <div class="inline">
@@ -1091,4 +1102,17 @@
   .adv-json { font-size: 11.5px; }
   .icon-pick { font-size: 14px; padding: 3px 6px; }
   .icon-pick.active { background: var(--accent-soft); color: var(--accent); }
+  .pick-label { font-size: 11px; color: var(--text-3); align-self: center; user-select: none; }
+  .color-pick {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .color-pick:hover { transform: scale(1.12); }
+  .color-pick.active { border-color: var(--bg-surface); box-shadow: 0 0 0 1.5px var(--text-2); }
+  .color-pick.none { background: transparent; border: 1.5px dashed var(--text-3); }
 </style>
