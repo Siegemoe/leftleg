@@ -519,7 +519,12 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         if (b && b.type === "thinking") b.text += d.delta ?? "";
       } else if (d.type === "thinking_end") {
         const b = currentTextBlock(item, d.contentIndex);
-        if (b && b.type === "thinking") { b.done = true; }
+        if (b && b.type === "thinking") {
+          // Adopt the authoritative content like text_end does — streamed delta
+          // concatenation can carry provider debris that the final message fixes.
+          b.text = (d as { content?: string }).content ?? b.text;
+          b.done = true;
+        }
       } else if (d.type === "toolcall_start") {
         // Pi's contentIndex counts tool calls as well as text/thinking. Keep
         // that slot occupied so later deltas cannot create sparse blocks.

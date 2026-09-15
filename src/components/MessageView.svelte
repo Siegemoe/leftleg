@@ -2,6 +2,7 @@
   import type { UiItem } from "../lib/types";
   import ToolCard from "./ToolCard.svelte";
   import { renderMarkdown, renderStreamingMarkdown } from "../lib/markdown";
+import { sanitizeThinking } from "../lib/thinking";
   import { retryFailedUser, dismissFailedUser } from "../lib/stores";
   import { Lightbulb, TriangleAlert } from "@lucide/svelte";
 
@@ -68,7 +69,7 @@
               <Lightbulb size={12} strokeWidth={2} class="ic-inline" />
               {block.done ? "Thought process" : "Thinking…"}
             </summary>
-            <div class="think-body">{block.text}</div>
+            <div class="think-body">{sanitizeThinking(block.text)}</div>
           </details>
         {:else if block.type === "text"}
           {#if block.text.trim()}
