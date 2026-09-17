@@ -3,7 +3,7 @@ import { flushSync, mount, unmount } from "svelte";
 import type { ToolItem } from "../lib/types";
 
 const mocks = vi.hoisted(() => ({
-  readFileBase64: vi.fn(),
+  openPathLocal: vi.fn().mockResolvedValue(undefined),
   listArtifacts: vi.fn(),
   deleteArtifact: vi.fn(),
 }));

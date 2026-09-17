@@ -6,6 +6,7 @@
 
 use serde::Serialize;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 #[cfg(windows)]
@@ -47,6 +48,32 @@ fn resolve_pi_shim() -> Result<std::path::PathBuf, String> {
     Ok(std::path::PathBuf::from(line))
 }
 
+/// Single-flight + state flag for managed `pi update` runs. While set,
+/// `run_pi_manager` refuses concurrent invocations, and `pi_start` refuses to
+/// spawn: the update rewrites the npm package a live pi runs from, so new
+/// processes must not start (and two updates must not interleave) meanwhile.
+static PI_UPDATE_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// True while a managed `pi update` subprocess is in flight.
+pub fn pi_update_running() -> bool {
+    PI_UPDATE_RUNNING.load(Ordering::SeqCst)
+}
+
+/// Run `pi update` with the given (pre-validated) flags, single-flight: the
+/// compare_exchange closes the gap a frontend-side lock leaves open (two
+/// webview callers, or a stale frontend that lost its in-flight flag).
+pub fn run_pi_manager_impl(flags: Vec<String>) -> Result<PiManagerResult, String> {
+    if PI_UPDATE_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("pi update is already running".into());
+    }
+    let result = run_pi_update(flags);
+    PI_UPDATE_RUNNING.store(false, Ordering::SeqCst);
+    result
+}
+
 /// Run `pi update` with the given (pre-validated) flags: no shell, captured
 /// output, bounded runtime — a hung package manager must not pin the request,
 /// and a timed-out run must not leak its process tree.
@@ -56,7 +83,7 @@ fn resolve_pi_shim() -> Result<std::path::PathBuf, String> {
 /// stderr are drained by dedicated readers so the child can never block on a
 /// full pipe; on timeout the whole tree is killed, which closes the pipe write
 /// ends and lets the readers finish before we report.
-pub fn run_pi_manager_impl(flags: Vec<String>) -> Result<PiManagerResult, String> {
+fn run_pi_update(flags: Vec<String>) -> Result<PiManagerResult, String> {
     use std::io::Read;
     validate_update_flags(&flags)?;
     let shim = resolve_pi_shim()?;

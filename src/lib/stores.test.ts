@@ -11,7 +11,8 @@ vi.mock("./api", () => ({
   listSessions: vi.fn().mockResolvedValue([]),
   readGuiState: vi.fn().mockResolvedValue({}),
   writeGuiState: vi.fn().mockResolvedValue(undefined),
-  readFileBase64: vi.fn().mockResolvedValue(""),
+  pickAttachments: vi.fn().mockResolvedValue([]),
+  openPathLocal: vi.fn().mockResolvedValue(undefined),
   getAgentDir: vi.fn().mockResolvedValue(""),
   pendingGuiWriteCount: vi.fn().mockReturnValue(0),
 }));

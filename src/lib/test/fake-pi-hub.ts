@@ -146,7 +146,6 @@ export class FakePiHub {
   writeGuiState = async (state: Record<string, unknown>): Promise<void> => {
     this.gui = JSON.parse(JSON.stringify(state));
   };
-  readFileBase64 = (_path?: string): Promise<string> => Promise.resolve("");
   getAgentDir = (): Promise<string> => Promise.resolve("/home/test/.pi/agent");
 
   private resolve(project?: string | null): FakePi {

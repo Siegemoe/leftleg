@@ -5,7 +5,7 @@ import { writable } from "svelte/store";
 const mocks = vi.hoisted(() => ({
   checkForUpdates: vi.fn(),
   applyUpdate: vi.fn(),
-  openPath: vi.fn(),
+  openPathLocal: vi.fn(),
   openUrl: vi.fn(),
 }));
 
@@ -13,7 +13,8 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn() }),
 }));
 vi.mock("@tauri-apps/api/path", () => ({ appDataDir: vi.fn().mockResolvedValue("/app") }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openPath: mocks.openPath, openUrl: mocks.openUrl }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: mocks.openUrl }));
+vi.mock("../lib/api", () => ({ openPathLocal: mocks.openPathLocal }));
 vi.mock("../lib/updater", () => ({
   checkForUpdates: mocks.checkForUpdates,
   applyUpdate: mocks.applyUpdate,

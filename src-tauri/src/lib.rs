@@ -2,6 +2,10 @@ mod pi;
 mod pimgr;
 mod sessions;
 
+/// Containment boundary for local opens, re-exported for the integration
+/// test that exercises it without opening anything.
+pub use sessions::open_path_allowed;
+
 use pi::PiProcess;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -111,6 +115,13 @@ impl PiState {
         removed
     }
 
+    /// Snapshot of every project with a registered process (live or dying).
+    /// Used by path-containment checks: files a tool card or artifact row
+    /// offers to open must live under one of these, the agent dir, or app data.
+    pub fn project_dirs(&self) -> Vec<String> {
+        self.processes.lock().unwrap().keys().cloned().collect()
+    }
+
     /// Atomically reject new work and detach every owned Pi process. Callers
     /// kill the returned processes outside the map lock so shutdown cannot
     /// deadlock with a reader or writer finishing its work.
@@ -154,6 +165,12 @@ async fn pi_start(
     // Check before both the reuse and spawn paths. `insert` rechecks under the
     // process-map lock to cover a shutdown that starts while spawning.
     state.ensure_available()?;
+    // The update rewrites the npm package pi runs from — spawning during it
+    // can load a half-written bundle. The frontend defers too; this is the
+    // native backstop for races (and for a frontend that lost its lock).
+    if pimgr::pi_update_running() {
+        return Err("pi update is running — start the project when it finishes".into());
+    }
     if !std::path::Path::new(&project).is_dir() {
         return Err(format!("not a directory: {project}"));
     }
@@ -490,7 +507,8 @@ pub fn run() {
             sessions::list_sessions,
             sessions::read_gui_state,
             sessions::write_gui_state,
-            sessions::read_file_base64,
+            sessions::pick_and_read_files,
+            sessions::open_path,
             sessions::list_artifacts,
             sessions::delete_artifact,
             sessions::git_repo_info,

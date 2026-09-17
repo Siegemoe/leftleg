@@ -13,14 +13,11 @@ vi.mock("../lib/api", () => ({
   listSessions: vi.fn().mockResolvedValue([]),
   readGuiState: vi.fn().mockResolvedValue({}),
   writeGuiState: vi.fn().mockResolvedValue(undefined),
-  readFileBase64: vi.fn().mockResolvedValue(""),
+  pickAttachments: vi.fn().mockResolvedValue([]),
   getAgentDir: vi.fn().mockResolvedValue(""),
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
-
 import * as api from "../lib/api";
-import * as dialog from "@tauri-apps/plugin-dialog";
 import Composer from "./Composer.svelte";
 import { composerDraft, connected, projectDir, requestComposerText, streaming } from "../lib/stores";
 
@@ -144,13 +141,16 @@ describe("Composer draft revisions", () => {
     flushSync();
 
     type("with image");
-    vi.mocked(api.readFileBase64).mockResolvedValue("QUJD");
-    vi.mocked(dialog.open).mockResolvedValueOnce(["/images/first.png"]);
+    vi.mocked(api.pickAttachments).mockResolvedValueOnce([
+      { name: "first.png", path: "/images/first.png", data: "QUJD" },
+    ]);
     host.querySelector<HTMLButtonElement>('[title="Attach images or files"]')!.click();
     await settle();
     clickSend();
     await settle();
-    vi.mocked(dialog.open).mockResolvedValueOnce(["/images/second.png"]);
+    vi.mocked(api.pickAttachments).mockResolvedValueOnce([
+      { name: "second.png", path: "/images/second.png", data: "REVG" },
+    ]);
     host.querySelector<HTMLButtonElement>('[title="Attach images or files"]')!.click();
     await settle();
     release({ success: true });

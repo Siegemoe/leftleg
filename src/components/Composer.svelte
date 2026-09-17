@@ -1,9 +1,8 @@
 <script lang="ts">
   import { sendPrompt, abort, streaming, statusNote, transientNote, queue, extWidgets, composerDraft, commands, clearQueue, navigating, updateInstallLock } from "../lib/stores";
   import { buildPromptMessage, type ComposerAttachment } from "../lib/prompt-message";
-  import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { FileText, Paperclip, Send, Square } from "@lucide/svelte";
-  import { readFileBase64 } from "../lib/api";
+  import { pickAttachments, type PickedAttachment } from "../lib/api";
 
   interface Attachment {
     name: string;
@@ -42,25 +41,20 @@
 
   async function addFiles() {
     if ($updateInstallLock) return;
-    const picked = await openFileDialog({
-      multiple: true,
-      title: "Attach files",
-      filters: [
-        { name: "Images & text", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "txt", "md", "json", "ts", "js", "py", "rs", "toml", "yaml", "yml", "csv", "log"] },
-        { name: "All files", extensions: ["*"] },
-      ],
-    });
-    if (!picked) return;
-    const paths = Array.isArray(picked) ? picked : [picked];
-    for (const p of paths) {
-      try {
-        const b64 = await readFileBase64(p);
-        const name = p.split(/[\\/]/).pop() ?? p;
-        const isImage = IMAGE_TYPES.has(ext(name));
-        $draftState.attachments = [...$draftState.attachments, { name, mimeType: isImage ? mimeFor(name) : "text/plain", data: b64, isImage }];
-      } catch (e) {
-        transientNote(`Couldn't attach ${p}: ${e}`);
+    let picked: PickedAttachment[];
+    try {
+      picked = await pickAttachments();
+    } catch (e) {
+      transientNote(`Couldn't open the attach dialog: ${e}`);
+      return;
+    }
+    for (const f of picked) {
+      if (!f.data) {
+        transientNote(`Couldn't attach ${f.name || f.path}: ${f.error}`);
+        continue;
       }
+      const isImage = IMAGE_TYPES.has(ext(f.name));
+      $draftState.attachments = [...$draftState.attachments, { name: f.name, mimeType: isImage ? mimeFor(f.name) : "text/plain", data: f.data, isImage }];
     }
   }
 

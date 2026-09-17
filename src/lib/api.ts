@@ -74,8 +74,27 @@ export function cancelUpdateShutdown(): Promise<void> {
   return invoke("cancel_update_shutdown");
 }
 
-export function readFileBase64(path: string): Promise<string> {
-  return invoke("read_file_base64", { path });
+/** One file the user picked in the native attach dialog. `data` is absent
+ * when the read failed (see error), so one oversized file doesn't lose the
+ * rest of the selection. */
+export interface PickedAttachment {
+  name: string;
+  path: string;
+  data?: string;
+  error?: string;
+}
+
+/** Native attach dialog + reads in one operation: the webview has no
+ * path→bytes command, so only user-picked files are ever readable. */
+export function pickAttachments(): Promise<PickedAttachment[]> {
+  return invoke("pick_and_read_files");
+}
+
+/** Open a local path in the OS default app — native containment (project,
+ * agent, and app-data dirs) plus an executable-extension denylist. Web URLs
+ * keep going through the opener plugin directly. */
+export function openPathLocal(path: string): Promise<void> {
+  return invoke("open_path", { path });
 }
 
 export interface ArtifactFile {

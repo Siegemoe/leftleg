@@ -1,9 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync } from "svelte";
-vi.mock("../lib/api", () => ({ piRequest: vi.fn(), listSessions: vi.fn().mockResolvedValue([]) }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openPath: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("../lib/api", () => ({ piRequest: vi.fn(), listSessions: vi.fn().mockResolvedValue([]), openPathLocal: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@tauri-apps/api/path", () => ({ resolve: vi.fn().mockResolvedValue("/work/src/file.ts") }));
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPathLocal } from "../lib/api";
 import { resolve } from "@tauri-apps/api/path";
 import Chat from "./Chat.svelte";
 import ToolCard from "./ToolCard.svelte";
@@ -42,7 +41,7 @@ it("resolves a tool's relative file path against the active project", async () =
   } } })); flushSync();
   document.querySelector<HTMLButtonElement>(".head")!.click(); flushSync();
   document.querySelector<HTMLButtonElement>(".actions button")!.click();
-  await vi.waitFor(() => expect(openPath).toHaveBeenCalledWith("/work/src/file.ts"));
+  await vi.waitFor(() => expect(openPathLocal).toHaveBeenCalledWith("/work/src/file.ts"));
   expect(resolve).toHaveBeenCalledWith("/work", "src/file.ts");
 });
 it("renders malformed tool arguments without crashing the chat", () => {

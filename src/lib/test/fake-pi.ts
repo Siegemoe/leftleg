@@ -140,8 +140,6 @@ export class FakePi {
     this.gui = JSON.parse(JSON.stringify(state));
   };
 
-  readFileBase64 = async (_path: string): Promise<string> => "";
-
   getAgentDir = async (): Promise<string> => "/home/test/.pi/agent";
 
   // ---- process lifecycle ----

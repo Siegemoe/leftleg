@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { ToolItem } from "../lib/types";
-  import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
   import { resolve as resolvePath } from "@tauri-apps/api/path";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { projectDir, statusNote, transientNote } from "../lib/stores";
+  import { openPathLocal } from "../lib/api";
   import { formatDuration } from "../lib/time-format";
 
   let { item }: { item: ToolItem } = $props();
@@ -63,7 +63,7 @@
     } catch { return ""; }
   });
   async function openFile() {
-    try { await openInDefaultApp(await resolvePath($projectDir, filePath)); }
+    try { await openPathLocal(await resolvePath($projectDir, filePath)); }
     catch (e) { transientNote(`Couldn't open file: ${e}`); }
   }
 
@@ -132,7 +132,7 @@
   );
 
   async function openImage(path: string) {
-    try { await openInDefaultApp(path); }
+    try { await openPathLocal(path); }
     catch (e) { transientNote(`Couldn't open image: ${e}`); }
   }
 

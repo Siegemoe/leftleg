@@ -6,8 +6,7 @@
   // caps; failed loads degrade to click-to-open chips. Rendered as a card
   // inside the right panel (panel open + artifacts tab).
   import { projectDir, rightPanelOpen, rightPanelTab, transientNote, items } from "../lib/stores";
-  import { listArtifacts, deleteArtifact, type ArtifactFile } from "../lib/api";
-  import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
+  import { listArtifacts, deleteArtifact, openPathLocal, type ArtifactFile } from "../lib/api";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { ExternalLink, Copy, Trash2, RefreshCw } from "@lucide/svelte";
 
@@ -85,7 +84,7 @@
   });
 
   async function openFile(path: string) {
-    try { await openInDefaultApp(path); }
+    try { await openPathLocal(path); }
     catch (e) { transientNote(`Couldn't open: ${e}`); }
   }
 

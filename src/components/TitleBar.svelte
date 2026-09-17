@@ -6,13 +6,14 @@
   import { PanelLeft, Images, ListTodo, Minus, Square, X, GitCompare, Globe, Terminal, FolderOpen } from "@lucide/svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { appDataDir } from "@tauri-apps/api/path";
-  import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import {
     sidebarOpen, settingsOpen, settingsProject, theme, extDialog,
     chooseProject, newSession, applyTheme, transientNote,
     openRightPanel, rightPanelOpen, rightPanelTab,
   } from "../lib/stores";
   import { checkForUpdates } from "../lib/updater";
+  import { openPathLocal } from "../lib/api";
   import mark from "../assets/leftleg-mark.png";
 
   const win = getCurrentWindow();
@@ -90,7 +91,7 @@
   // ---------- Help ----------
   async function openLogsFolder() {
     try {
-      await openPath(await appDataDir() + "/logs");
+      await openPathLocal(await appDataDir() + "/logs");
     } catch (e) {
       transientNote(`Couldn't open logs folder: ${e}`);
     }

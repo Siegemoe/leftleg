@@ -30,7 +30,6 @@ vi.mock("./api", () => {
     listSessions: () => t().listSessions(),
     readGuiState: () => t().readGuiState(),
     writeGuiState: (state: Record<string, unknown>) => t().writeGuiState(state),
-    readFileBase64: (path: string) => t().readFileBase64(path),
     getAgentDir: () => t().getAgentDir(),
   };
 });
@@ -66,7 +65,6 @@ type ApiShape = {
   listSessions: () => Promise<SessionInfo[]>;
   readGuiState: () => Promise<Record<string, unknown>>;
   writeGuiState: (state: Record<string, unknown>) => Promise<void>;
-  readFileBase64: (path: string) => Promise<string>;
   getAgentDir: () => Promise<string>;
 };
 
@@ -103,7 +101,6 @@ function wire(h: FakePiHub) {
     listSessions: () => h.listSessions(),
     readGuiState: () => h.readGuiState(),
     writeGuiState: (state: Record<string, unknown>) => h.writeGuiState(state),
-    readFileBase64: (path: string) => h.readFileBase64(path),
     getAgentDir: () => h.getAgentDir(),
   } satisfies ApiShape;
   h.onEvent = (project, pid, evt) => {

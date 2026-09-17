@@ -37,7 +37,9 @@ fn session_display_name(path: &std::path::Path) -> Option<String> {
     let reader = std::io::BufReader::new(file);
     let mut name = None;
     for line in reader.lines() {
-        let line = line.ok()?;
+        // One bad line (invalid UTF-8, transient read error) must not lose the
+        // name found in the rest of the file.
+        let Ok(line) = line else { continue };
         if !line.contains("session_info") {
             continue;
         }
@@ -117,12 +119,24 @@ pub async fn list_sessions() -> Result<Vec<SessionInfo>, String> {
     tauri::async_runtime::spawn_blocking(scan_sessions).await.map_err(|e| e.to_string())?
 }
 
+/// Cache of fully-parsed session files keyed by path, validated against
+/// (mtime, size). list_sessions runs on every sidebar refresh and would
+/// otherwise re-read every jsonl in the agent dir each time; entries whose
+/// stamp changed (or vanished files) are re-parsed, so renames and appends
+/// stay fresh. Held per process — the GUI is the only writer of sessions.
+static SESSION_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, (u64, u64, SessionInfo)>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
 fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
     let root = agent_dir().join("sessions");
     if !root.exists() {
         return Ok(vec![]);
     }
+    let mut cache = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let mut out: Vec<SessionInfo> = Vec::new();
+    let mut fresh: std::collections::HashMap<PathBuf, (u64, u64, SessionInfo)> =
+        std::collections::HashMap::new();
     let project_dirs = fs::read_dir(&root).map_err(|e| e.to_string())?;
     for pd in project_dirs.flatten() {
         if !pd.path().is_dir() {
@@ -138,6 +152,24 @@ fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
             if !ext_ok {
                 continue;
             }
+            let meta = match f.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t: SystemTime| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let size = meta.len();
+            if let Some((cm, cs, info)) = cache.get(&path) {
+                if *cm == modified && *cs == size {
+                    fresh.insert(path.clone(), (*cm, *cs, info.clone()));
+                    out.push(info.clone());
+                    continue;
+                }
+            }
             // Parse the header line: {"type":"session","version":..,"id":..,"timestamp":..,"cwd":..}
             let Ok(content) = fs::File::open(&path) else { continue };
             let mut reader = std::io::BufReader::new(content);
@@ -148,14 +180,7 @@ fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
             let Some((cwd, timestamp, session_id)) = parse_session_header(&header) else {
                 continue;
             };
-            let modified = f
-                .metadata()
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t: SystemTime| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            out.push(SessionInfo {
+            let info = SessionInfo {
                 name: session_display_name(&path),
                 path: path.to_string_lossy().into_owned(),
                 cwd,
@@ -163,9 +188,12 @@ fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
                 file_modified: modified,
                 session_id,
                 first_message: first_user_text(&path),
-            });
+            };
+            fresh.insert(path.clone(), (modified, size, info.clone()));
+            out.push(info);
         }
     }
+    *cache = fresh;
     out.sort_by_key(|s| std::cmp::Reverse(s.file_modified));
     Ok(out)
 }
@@ -217,10 +245,61 @@ fn atomic_write(file: &std::path::Path, text: &str) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
-/// Read a local file as base64 (for attaching images to prompts).
+#[derive(Serialize, Clone)]
+pub struct PickedFile {
+    pub name: String,
+    pub path: String,
+    /// Base64 payload when the read succeeded; absent when it failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    /// Per-file failure (oversized, unreadable); absent on success.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Open the OS attach dialog and read the picked files in one native
+/// operation. The webview has no path→bytes command, so a compromised
+/// renderer can only read what the user just picked in the dialog. Per-file
+/// failures ride along as `error` so one oversized file doesn't lose the rest.
 #[tauri::command]
-pub async fn read_file_base64(path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || read_attachment(&path)).await.map_err(|e| e.to_string())?
+pub async fn pick_and_read_files(app: tauri::AppHandle) -> Result<Vec<PickedFile>, String> {
+    tauri::async_runtime::spawn_blocking(move || pick_and_read_files_impl(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn pick_and_read_files_impl(app: &tauri::AppHandle) -> Result<Vec<PickedFile>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Attach files")
+        .add_filter(
+            "Images & text",
+            &["png", "jpg", "jpeg", "gif", "webp", "bmp", "txt", "md", "json", "ts", "js", "py", "rs", "toml", "yaml", "yml", "csv", "log"],
+        )
+        .add_filter("All files", &["*"])
+        .blocking_pick_files();
+    let Some(paths) = picked else {
+        return Ok(Vec::new()); // cancelled — not an error
+    };
+    let mut out = Vec::with_capacity(paths.len());
+    for picked in paths {
+        let path = match picked.into_path() {
+            Ok(p) => p,
+            Err(e) => {
+                out.push(PickedFile { name: String::new(), path: String::new(), data: None, error: Some(e.to_string()) });
+                continue;
+            }
+        };
+        let shown = path.to_string_lossy().into_owned();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        match read_attachment(&shown) {
+            Ok(data) => out.push(PickedFile { name, path: shown, data: Some(data), error: None }),
+            Err(e) => out.push(PickedFile { name, path: shown, data: None, error: Some(e) }),
+        }
+    }
+    Ok(out)
 }
 
 fn read_attachment(path: &str) -> Result<String, String> {
@@ -232,6 +311,105 @@ fn read_attachment(path: &str) -> Result<String, String> {
     f.take(LIMIT + 1).read_to_end(&mut buf).map_err(|e| e.to_string())?;
     if buf.len() as u64 > LIMIT { return Err("Attachment exceeds 20 MiB limit".into()); }
     Ok(base64_encode(&buf))
+}
+
+// ---------- guarded local open ----------
+
+/// Extensions the OS would execute rather than render when "opened". Tool
+/// cards and artifact rows only ever offer data files; anything on this list
+/// is refused instead of handed to the OS. Case-insensitive, and the rfind
+/// makes double extensions count (report.tar.bat is denied).
+const OPEN_DENY_EXTENSIONS: &[&str] = &[
+    "exe", "bat", "cmd", "com", "scr", "pif", "msi", "msp", "mst", "cpl",
+    "ps1", "psm1", "vbs", "vbe", "ws", "wsf", "wsc", "hta", "jar", "lnk",
+    "dll", "reg", "sh", "bash", "applescript",
+];
+
+fn is_denied_executable(path: &std::path::Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return false };
+    let lower = name.to_ascii_lowercase();
+    let Some(dot) = lower.rfind('.') else { return false };
+    OPEN_DENY_EXTENSIONS.contains(&&lower[dot + 1..])
+}
+
+/// Canonical path for containment checks: the resolved path when it exists,
+/// otherwise the canonical parent + file name (so a not-yet-created file
+/// under a real directory still checks against the right root).
+fn canonical_ancestor(path: &std::path::Path) -> Option<PathBuf> {
+    if let Ok(c) = fs::canonicalize(path) {
+        return Some(c);
+    }
+    let parent = path.parent()?;
+    let canon_parent = fs::canonicalize(parent).ok()?;
+    Some(canon_parent.join(path.file_name()?))
+}
+
+/// Open a local path with the OS default handler. Guarded three ways: the
+/// path must resolve inside a live project directory, the pi agent dir, or
+/// Leftleg's app-data dir; executables are refused outright (an "open" on
+/// those is a run, not a view); and check+open both run natively so a
+/// compromised webview has no arbitrary-open primitive. Web URLs keep using
+/// the opener plugin from the webview (its default permission allows
+/// http/https only).
+#[tauri::command]
+pub async fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || open_path_checked(&app, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Validate an open request against the containment roots. Split from
+/// `open_path_checked` so tests can exercise the boundary without opening
+/// anything. Returns the resolved path to hand to the OS. Generic over the
+/// runtime so the mock-runtime test can drive it.
+pub fn open_path_allowed<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    path: &str,
+) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    let target = std::path::Path::new(path);
+    if !target.is_absolute() {
+        return Err("open path must be absolute".into());
+    }
+    if is_denied_executable(target) {
+        let name = target.file_name().and_then(|n| n.to_str()).unwrap_or(path);
+        return Err(format!("refusing to open executable file: {name}"));
+    }
+    let resolved = canonical_ancestor(target).ok_or_else(|| "open path not found".to_string())?;
+    // Containment probe: the canonical file when it exists, else its canonical
+    // parent. All sides go through canonicalize so verbatim (\\?\) forms and
+    // symlinks compare consistently.
+    let probe = if resolved.exists() {
+        fs::canonicalize(&resolved).unwrap_or_else(|_| resolved.clone())
+    } else {
+        resolved.parent().map(PathBuf::from).unwrap_or_else(|| resolved.clone())
+    };
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(c) = fs::canonicalize(agent_dir()) {
+        roots.push(c);
+    }
+    for project in app.state::<crate::PiState>().project_dirs() {
+        if let Ok(c) = fs::canonicalize(&project) {
+            roots.push(c);
+        }
+    }
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        if let Ok(c) = fs::canonicalize(&data_dir) {
+            roots.push(c);
+        }
+    }
+    if !roots.iter().any(|root| probe.starts_with(root)) {
+        return Err("open path is outside the allowed directories".into());
+    }
+    Ok(resolved)
+}
+
+fn open_path_checked(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let resolved = open_path_allowed(app, path)?;
+    app.opener()
+        .open_path(resolved.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 /// Minimal standard base64 encoder (no external deps).
