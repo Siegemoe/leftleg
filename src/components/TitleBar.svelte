@@ -13,7 +13,7 @@
     openRightPanel, rightPanelOpen, rightPanelTab,
   } from "../lib/stores";
   import { checkForUpdates } from "../lib/updater";
-  import { openPathLocal } from "../lib/api";
+  import { openPathLocal, quitApp } from "../lib/api";
   import mark from "../assets/leftleg-mark.png";
 
   const win = getCurrentWindow();
@@ -123,7 +123,7 @@
           <div class="sep"></div>
           <button onclick={() => run(() => { settingsProject.set(null); settingsOpen.set(true); })}>Settings…</button>
           <div class="sep"></div>
-          <button onclick={() => run(() => win.close())}>Exit</button>
+          <button onclick={() => run(() => quitApp())}>Exit</button>
         </div>
       {/if}
     </div>

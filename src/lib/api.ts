@@ -74,6 +74,12 @@ export function cancelUpdateShutdown(): Promise<void> {
   return invoke("cancel_update_shutdown");
 }
 
+/** Real exit (File → Exit): `win.close()` parks to the tray now, so the
+ * menu needs an app-level exit that reaches the Rust-side pi cleanup. */
+export function quitApp(): Promise<void> {
+  return invoke("quit_app");
+}
+
 /** One file the user picked in the native attach dialog. `data` is absent
  * when the read failed (see error), so one oversized file doesn't lose the
  * rest of the selection. */

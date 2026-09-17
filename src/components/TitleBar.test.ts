@@ -7,14 +7,16 @@ const mocks = vi.hoisted(() => ({
   applyUpdate: vi.fn(),
   openPathLocal: vi.fn(),
   openUrl: vi.fn(),
+  quitApp: vi.fn(),
+  win: { minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn() },
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn() }),
+  getCurrentWindow: () => mocks.win,
 }));
 vi.mock("@tauri-apps/api/path", () => ({ appDataDir: vi.fn().mockResolvedValue("/app") }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: mocks.openUrl }));
-vi.mock("../lib/api", () => ({ openPathLocal: mocks.openPathLocal }));
+vi.mock("../lib/api", () => ({ openPathLocal: mocks.openPathLocal, quitApp: mocks.quitApp }));
 vi.mock("../lib/updater", () => ({
   checkForUpdates: mocks.checkForUpdates,
   applyUpdate: mocks.applyUpdate,
@@ -60,6 +62,24 @@ describe("title bar", () => {
     let scope: string | null | undefined;
     settingsProject.subscribe((value) => { scope = value; })();
     expect(scope).toBeNull();
+  });
+
+  it("File → Exit quits the app; the X button parks via win.close()", () => {
+    mocks.quitApp.mockClear();
+    mocks.win.close.mockClear();
+    instance = mount(TitleBar, { target: document.body });
+    flushSync();
+
+    [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "File")!.click();
+    flushSync();
+    [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Exit")!.click();
+    flushSync();
+    expect(mocks.quitApp).toHaveBeenCalledTimes(1);
+    expect(mocks.win.close).not.toHaveBeenCalled();
+
+    document.body.querySelector<HTMLButtonElement>("button.win-btn.close")!.click();
+    flushSync();
+    expect(mocks.win.close).toHaveBeenCalledTimes(1);
   });
 });
 

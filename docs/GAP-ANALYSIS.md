@@ -73,6 +73,10 @@ extension_error, notify, set_editor_text, auto_retry_start, auto_retry_end.
     pi.rs/pimgr.rs need POSIX twins (killpg, PATH resolution, node entry
     discovery), NSIS→deb/AppImage in the release pipeline, GTK stack audit
     (see AUDIT-2026-09-17.md: glib RUSTSEC alert is blocked on upstream).
+    Tray caveats: the GTK tray backend never emits `TrayIconEvent`, so the
+    left-click toggle is Windows/macOS-only there (left-click opens the
+    menu); CI compiles Rust on Windows only, so the `tray-icon` feature's
+    Linux deps are unexercised.
 
 ## Process items to discuss (not unilateral)
 

@@ -483,6 +483,18 @@ mod tests {
     }
 }
 
+/// Focus/tray-click bookkeeping for the toggle. Clicking the tray defocuses
+/// the foreground window at mousedown (tauri-apps/tauri#8869), so by
+/// click-up `is_focused()` is always false — the timestamp tells "was just
+/// using it" (fresh defocus → hide) apart from "parked a while ago → raise
+/// it". `last_toggle_click` debounces Windows double-clicks, where both
+/// clicks of a pair fire `Click(Up)` (two toggles would net a no-op).
+#[derive(Default)]
+struct TrayToggleState {
+    focus_lost: std::sync::Mutex<Option<std::time::Instant>>,
+    last_toggle_click: std::sync::Mutex<Option<std::time::Instant>>,
+}
+
 /// Raise the main window (unminimize, show, focus). Used by the tray menu
 /// and by single-instance relaunches.
 fn show_main(app: &tauri::AppHandle) {
@@ -493,17 +505,54 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
-/// Tray left-click: hide when visible+focused, otherwise raise. Closing the
-/// window hides it too — background pi projects keep streaming while the
-/// window is gone; the tray's Quit is the real exit.
+/// Tray left-click: hide the window the user was just using, raise one
+/// parked a while ago, show a hidden one. Closing the window hides it too —
+/// background pi projects keep streaming while the window is gone; the
+/// tray's Quit is the real exit.
 fn toggle_main(app: &tauri::AppHandle) {
+    use std::time::{Duration, Instant};
     if let Some(w) = app.get_webview_window("main") {
-        if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
+        let (debounced, just_defocused) = app
+            .try_state::<TrayToggleState>()
+            .and_then(|s| {
+                let debounced = {
+                    let mut g = s.last_toggle_click.lock().ok()?;
+                    let hit = g
+                        .map(|t| t.elapsed() < Duration::from_millis(450))
+                        .unwrap_or(false);
+                    *g = Some(Instant::now());
+                    hit
+                };
+                let just_defocused = s
+                    .focus_lost
+                    .lock()
+                    .ok()
+                    .and_then(|g| *g)
+                    .map(|t| t.elapsed() < Duration::from_millis(500))
+                    .unwrap_or(false);
+                Some((debounced, just_defocused))
+            })
+            .unwrap_or((false, false));
+        if debounced {
+            return;
+        }
+        if !w.is_visible().unwrap_or(false) {
+            show_main(app);
+            return;
+        }
+        if w.is_focused().unwrap_or(false) || just_defocused {
             let _ = w.hide();
         } else {
             show_main(app);
         }
     }
+}
+
+/// Real exit for File → Exit: `win.close()` parks to the tray now, so the
+/// menu needs an app-level exit that reaches RunEvent::Exit (pi cleanup).
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -530,12 +579,14 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PiState::new())
+        .manage(TrayToggleState::default())
         .invoke_handler(tauri::generate_handler![
             pi_start,
             pi_stop,
             pi_status,
             prepare_for_update,
             cancel_update_shutdown,
+            quit_app,
             pi_request,
             pi_send,
             sessions::list_sessions,
@@ -584,20 +635,39 @@ pub fn run() {
                 .build(app)?;
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
                 // The tray is the exit; the X parks the app (background pi
-                // projects keep running). Tray → Quit reaches RunEvent::Exit.
+                // projects keep running). Tray → Quit and the quit_app
+                // command reach RunEvent::Exit.
                 api.prevent_close();
                 let _ = window.hide();
             }
+            tauri::WindowEvent::Focused(false) => {
+                // Tray clicks defocus at mousedown — record when, so the
+                // toggle can tell "was just using it" from "parked a while".
+                if let Some(s) = window.app_handle().try_state::<TrayToggleState>() {
+                    if let Ok(mut g) = s.focus_lost.lock() {
+                        *g = Some(std::time::Instant::now());
+                    }
+                }
+            }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 let state = app.state::<PiState>();
-                for proc in state.processes.lock().unwrap().values() { proc.kill(); }
+                // Collect outside the lock, kill in parallel: close-to-tray
+                // makes many-background-process quits the common path, and
+                // each kill blocks on a taskkill spawn (~100-300 ms).
+                let procs: Vec<_> = state.processes.lock().unwrap().values().cloned().collect();
+                std::thread::scope(|s| {
+                    for proc in procs {
+                        s.spawn(move || proc.kill());
+                    }
+                });
             }
         });
 }
