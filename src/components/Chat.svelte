@@ -44,7 +44,7 @@
       {/if}
     </div>
   {:else}
-    {#each $items as item, i (i)}
+    {#each $items as item (item.id)}
       <MessageView {item} />
     {/each}
   {/if}

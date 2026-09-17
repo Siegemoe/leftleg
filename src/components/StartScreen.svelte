@@ -5,7 +5,7 @@
   // already typed a message, sends it as the first prompt.
   import { fade } from "svelte/transition";
   import { Folder, ArrowRight } from "@lucide/svelte";
-  import { projectMeta, projectDir, activeSessionPath, sessions, statusNote, switchToProject, sendPrompt, lastSessionFor } from "../lib/stores";
+  import { projectMeta, projectDir, activeSessionPath, sessions, statusNote, transientNote, switchToProject, sendPrompt, lastSessionFor } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { projectIconStyle } from "../lib/project-icons";
   import ProjectIcon from "./ProjectIcon.svelte";
@@ -58,7 +58,7 @@
       if (!opened || $projectDir !== dir) return;
       await sendFirstPrompt(text);
     } catch (e) {
-      statusNote.set(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
+      transientNote(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       busy = false;
     }
@@ -73,7 +73,7 @@
       if (!opened || $projectDir !== opened) return;
       await sendFirstPrompt(text);
     } catch (e) {
-      statusNote.set(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
+      transientNote(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       busy = false;
     }
@@ -111,7 +111,7 @@
         onkeydown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            statusNote.set("Pick a project card above to send this message.");
+            transientNote("Pick a project card above to send this message.");
           }
         }}
       ></textarea>

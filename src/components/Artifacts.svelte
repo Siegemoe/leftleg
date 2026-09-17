@@ -5,8 +5,7 @@
   // project's images dir by list_artifacts) — no base64 inflation, no size
   // caps; failed loads degrade to click-to-open chips. Rendered as a card
   // inside the right panel (panel open + artifacts tab).
-  import { projectDir, rightPanelOpen, rightPanelTab, statusNote, items } from "../lib/stores";
-  import { get } from "svelte/store";
+  import { projectDir, rightPanelOpen, rightPanelTab, transientNote, items } from "../lib/stores";
   import { listArtifacts, deleteArtifact, type ArtifactFile } from "../lib/api";
   import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
   import { convertFileSrc } from "@tauri-apps/api/core";
@@ -19,6 +18,10 @@
   let docs = $state<ArtifactFile[]>([]);
   let loadedProject = $state("");
   let refreshRevision = 0;
+  // Last directory the visibility effect scheduled a load for — plain (not
+  // $state) so reading it inside the effect doesn't create a dependency; it
+  // exists only to detect owner changes, like the revision counter.
+  let lastSeenDir = "";
   // Files whose asset-protocol load failed (moved/deleted/scope gap) degrade
   // to click-to-open chips instead of broken <img> elements.
   let thumbFailed = $state<Record<string, string>>({});
@@ -28,6 +31,7 @@
     if (!dir) {
       images = [];
       docs = [];
+      thumbFailed = {};
       loadedProject = "";
       loading = false;
       loadError = "";
@@ -45,6 +49,12 @@
       thumbFailed = {};
     } catch (e) {
       if (revision !== refreshRevision || dir !== $projectDir) return;
+      // A failed load must never leave another project's artifacts under this
+      // project's header — show the error over an empty list.
+      images = [];
+      docs = [];
+      thumbFailed = {};
+      loadedProject = "";
       loadError = e instanceof Error ? e.message : String(e);
     } finally {
       if (revision === refreshRevision) loading = false;
@@ -60,22 +70,31 @@
     const dir = $projectDir; // tracked: project switch while open refreshes the list
     completedGenerations; // tracked: new outputs appear while the gallery stays open
     if (!$rightPanelOpen || $rightPanelTab !== "artifacts") return;
+    // Owner-scoped reset (StatusCard pattern): when the owning project
+    // changes, drop the previous project's artifacts BEFORE the new load —
+    // a slow or failed refresh then shows an empty list, never another
+    // project's files under this project's header.
+    if (lastSeenDir !== dir) {
+      images = [];
+      docs = [];
+      thumbFailed = {};
+      loadedProject = "";
+      lastSeenDir = dir;
+    }
     void refresh(dir);
   });
 
   async function openFile(path: string) {
     try { await openInDefaultApp(path); }
-    catch (e) { statusNote.set(`Couldn't open: ${e}`); }
+    catch (e) { transientNote(`Couldn't open: ${e}`); }
   }
 
   async function copyPath(path: string) {
-    const note = "Path copied";
     try {
       await navigator.clipboard.writeText(path);
-      statusNote.set(note);
-      setTimeout(() => { if (get(statusNote) === note) statusNote.set(""); }, 3000);
+      transientNote("Path copied", 3000);
     } catch (e) {
-      statusNote.set(`Couldn't copy: ${e}`);
+      transientNote(`Couldn't copy: ${e}`);
     }
   }
 
@@ -87,7 +106,7 @@
       await deleteArtifact(owner, file.path);
       if ($projectDir === owner) await refresh(owner);
     } catch (e) {
-      statusNote.set(`Couldn't delete: ${e instanceof Error ? e.message : String(e)}`);
+      transientNote(`Couldn't delete: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

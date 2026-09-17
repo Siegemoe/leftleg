@@ -84,6 +84,15 @@
     return scopeChoices.filter(([dir]) => projectDisplayName(dir, $projectMeta[dir]?.name).toLowerCase().includes(q));
   });
 
+  // Close the project-scope popover on outside clicks or Escape, wherever
+  // focus sits (same window-level pattern as the status bar's model picker).
+  function onScopePointerDown(e: PointerEvent) {
+    if (scopeOpen && !(e.target as Element | null)?.closest(".scope")) scopeOpen = false;
+  }
+  function onScopeWindowKeydown(e: KeyboardEvent) {
+    if (scopeOpen && e.key === "Escape" && !e.defaultPrevented) scopeOpen = false;
+  }
+
   const searching = $derived($sessionQuery.trim().length > 0);
 
   /** Unified history: every project's settled sessions in one list. */
@@ -207,19 +216,30 @@
 
   // ---- width resize (T3 threadSidebarWidth semantics: 208px min, capped by viewport) ----
 
-  function startResize(e: MouseEvent) {
+  function startResize(e: PointerEvent) {
+    // setPointerCapture keeps move/up events flowing to the handle even when
+    // the cursor leaves the window, and pointercancel covers alt-tab / touch
+    // interruption. The listeners live on the handle itself and die with it,
+    // so a mid-drag unmount can no longer leak a live handler that kept
+    // resizing on hover (the old window mousemove/mouseup pair did).
     e.preventDefault();
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const startWidth = $sidebarWidth;
-    const onMove = (ev: MouseEvent) => {
+    const onMove = (ev: PointerEvent) => {
+      // Sidebar sits on the left: dragging the handle right widens it.
       const max = Math.max(208, window.innerWidth - 640);
       sidebarWidth.set(Math.min(max, Math.max(208, startWidth + ev.clientX - startX)));
     };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
+    const stop = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp, { once: true });
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
   }
 
   /** Focus action (replaces autofocus; avoids the a11y warning). */
@@ -257,6 +277,8 @@
   }
 
 </script>
+
+<svelte:window onpointerdown={onScopePointerDown} onkeydown={onScopeWindowKeydown} />
 
 <aside style="width: {$sidebarWidth}px">
   <div class="header">
@@ -297,7 +319,6 @@
               placeholder="Search projects…"
               bind:value={scopeQuery}
               use:focusNow
-              onkeydown={(e) => { if (e.key === "Escape") { scopeOpen = false; } }}
             />
             <button
               class="scope-item"
@@ -546,7 +567,7 @@
     {/if}
   </div>
 
-  <button type="button" class="resize-handle" onmousedown={startResize} aria-label="Resize sidebar"></button>
+  <button type="button" class="resize-handle" onpointerdown={startResize} aria-label="Resize sidebar"></button>
 
   <div class="footer">
     <div class="footer-row">

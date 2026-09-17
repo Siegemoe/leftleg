@@ -99,6 +99,8 @@ export type ToolStatus = "running" | "done" | "error";
 
 export interface ToolItem {
   kind: "tool";
+  /** Stable per-item id — keyed rendering must not shift when items are removed. */
+  id: string;
   toolCallId: string;
   name: string;
   args: string;
@@ -129,7 +131,8 @@ export interface UserItem {
    * Items rebuilt from history have no status (accepted by definition).
    */
   status?: "sending" | "accepted" | "failed";
-  id?: string; // client-side id for retry targeting (only on optimistic bubbles)
+  /** Stable per-item id (retry targeting; keyed rendering). */
+  id: string;
   error?: string;
   /** Receipt/creation time for day grouping. */
   timestamp?: number;
@@ -137,6 +140,8 @@ export interface UserItem {
 
 export interface AssistantItem {
   kind: "assistant";
+  /** Stable per-item id — keyed rendering must not shift when items are removed. */
+  id: string;
   blocks: Block[];
   usage?: Usage;
   stopReason?: string;
@@ -150,6 +155,8 @@ export interface AssistantItem {
 
 export interface BashItem {
   kind: "bash";
+  /** Stable per-item id — keyed rendering must not shift when items are removed. */
+  id: string;
   command: string;
   output: string;
   exitCode: number;
@@ -189,6 +196,14 @@ export interface ExtCommand {
   name: string;
   description?: string;
   source?: string;
+  /** Canonical provenance (pi docs: never infer ownership from names). */
+  sourceInfo?: {
+    path?: string;
+    source?: string;
+    scope?: string;
+    origin?: string;
+    baseDir?: string;
+  };
 }
 
 export interface AssistantDeltaEvent {

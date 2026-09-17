@@ -18,28 +18,34 @@
     files: "Files",
   };
 
-  let startX = 0;
-  let startWidth = 0;
-
-  function startResize(e: MouseEvent) {
-    startX = e.clientX;
-    startWidth = $rightPanelWidth;
-    const onMove = (ev: MouseEvent) => {
+  function startResize(e: PointerEvent) {
+    // setPointerCapture keeps move/up events flowing to the handle even when
+    // the cursor leaves the window, and pointercancel covers alt-tab / touch
+    // interruption. The listeners live on the handle itself and die with it,
+    // so a mid-drag unmount can no longer leak a live handler that kept
+    // resizing on hover (the old window mousemove/mouseup pair did).
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startWidth = $rightPanelWidth;
+    const onMove = (ev: PointerEvent) => {
       // Panel sits on the right: dragging the handle left widens it.
       const max = Math.max(320, window.innerWidth - 640);
       rightPanelWidth.set(Math.min(max, Math.max(320, startWidth - (ev.clientX - startX))));
     };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+    const stop = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
   }
 </script>
 
 <aside style="width: {$rightPanelWidth}px">
-  <button type="button" class="resize-handle" onmousedown={startResize} aria-label="Resize right panel"></button>
+  <button type="button" class="resize-handle" onpointerdown={startResize} aria-label="Resize right panel"></button>
   <div class="panel-head">
     <span class="panel-title">{TAB_LABELS[$rightPanelTab]}</span>
     <span class="spacer"></span>

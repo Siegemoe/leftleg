@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { rpcState, stats, streaming, queue, statusNote, extStatuses, models, setModel, pinnedModels } from "../lib/stores";
+  import { rpcState, stats, streaming, queue, statusNote, transientNote, extStatuses, models, setModel, pinnedModels } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
   import { ChevronDown } from "@lucide/svelte";
   import { updateCheck, checkForUpdates, applyUpdate, updateAvailable, updateStatus } from "../lib/updater";
@@ -72,12 +72,14 @@
 
   // ---------- model dropdown ----------
   let modelOpen = $state(false);
+  let modelHl = $state(0);
+  let modelMenuEl: HTMLDivElement | null = $state(null);
   async function pickModel(m: ModelInfo) {
     modelOpen = false;
     try {
       await setModel(m.provider, m.id);
     } catch (e) {
-      statusNote.set(`Couldn't switch model: ${e instanceof Error ? e.message : String(e)}`);
+      transientNote(`Couldn't switch model: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   const modelKey = (m: ModelInfo) => `${m.provider}/${m.id}`;
@@ -98,6 +100,30 @@
     const rest = filteredModels.filter((m) => !pinnedSet.has(modelKey(m)));
     return { pinned, rest };
   });
+  let flatModels = $derived([...groupedModels.pinned, ...groupedModels.rest]);
+
+  // Keep the keyboard-highlighted model in view — ArrowUp/ArrowDown must be
+  // able to peruse the full list without a mouse (as in the composer's
+  // slash-command palette).
+  $effect(() => {
+    const idx = modelHl;
+    if (!modelOpen || !modelMenuEl || flatModels.length === 0) return;
+    modelMenuEl.querySelectorAll<HTMLElement>(".modelitem")[Math.min(idx, flatModels.length - 1)]?.scrollIntoView({ block: "nearest" });
+  });
+
+  function onStatusbarKeydown(e: KeyboardEvent) {
+    if (!modelOpen || e.defaultPrevented) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      modelOpen = false;
+      modelHl = 0;
+      return;
+    }
+    if (flatModels.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); modelHl = (modelHl + 1) % flatModels.length; return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); modelHl = (modelHl - 1 + flatModels.length) % flatModels.length; return; }
+    if (e.key === "Enter") { e.preventDefault(); void pickModel(flatModels[Math.min(modelHl, flatModels.length - 1)]); }
+  }
 
   // ---------- extension status chips ----------
   // setStatus payloads may be plain strings or JSON objects (e.g. the quality
@@ -142,7 +168,7 @@
   }
 </script>
 
-<svelte:window onpointerdown={onStatusbarPointerDown} />
+<svelte:window onpointerdown={onStatusbarPointerDown} onkeydown={onStatusbarKeydown} />
 
 <footer>
   {#if $statusNote}
@@ -156,19 +182,19 @@
 
   {#if $rpcState?.model}
     <div class="modelwrap">
-      <button class="pill as-btn" title="Switch model — {$rpcState.model.provider} / {$rpcState.model.id}" onclick={() => { modelOpen = !modelOpen; if (modelOpen) modelQuery = ""; }}>
+      <button class="pill as-btn" title="Switch model — {$rpcState.model.provider} / {$rpcState.model.id}" onclick={() => { modelOpen = !modelOpen; if (modelOpen) { modelQuery = ""; modelHl = 0; } }}>
         {$rpcState.model.name}
         <ChevronDown size={11} />
       </button>
       {#if modelOpen}
-        <div class="modelmenu">
+        <div class="modelmenu" bind:this={modelMenuEl}>
           <div class="msearch">
-            <input placeholder="Search models…" bind:value={modelQuery} spellcheck="false" />
+            <input placeholder="Search models…" bind:value={modelQuery} spellcheck="false" oninput={() => (modelHl = 0)} />
           </div>
           {#if groupedModels.pinned.length > 0}
             <div class="msection">Pinned</div>
-            {#each groupedModels.pinned as m (m.provider + "/" + m.id)}
-              <div class="modelitem" class:active={$rpcState.model?.provider === m.provider && $rpcState.model?.id === m.id} role="button" tabindex="0" onclick={() => void pickModel(m)} onkeydown={(e) => { if (e.key === "Enter") void pickModel(m); }}>
+            {#each groupedModels.pinned as m, i (m.provider + "/" + m.id)}
+              <div class="modelitem" class:active={$rpcState.model?.provider === m.provider && $rpcState.model?.id === m.id} class:hl={modelHl === i} role="button" tabindex="0" onclick={() => void pickModel(m)} onkeydown={(e) => { if (e.key === "Enter") void pickModel(m); }}>
                 <button class="star" class:on={pinnedSet.has(modelKey(m))} title={pinnedSet.has(modelKey(m)) ? "Unpin" : "Pin to top"} onclick={(e) => { e.stopPropagation(); togglePinModel(m); }}>{pinnedSet.has(modelKey(m)) ? "★" : "☆"}</button>
                 <span class="mn">{m.name}</span>
                 <span class="mi mono">{m.provider}/{m.id}</span>
@@ -177,8 +203,8 @@
           {/if}
           {#if groupedModels.rest.length > 0}
             {#if groupedModels.pinned.length > 0}<div class="msection">All models</div>{/if}
-            {#each groupedModels.rest as m (m.provider + "/" + m.id)}
-              <div class="modelitem" class:active={$rpcState.model?.provider === m.provider && $rpcState.model?.id === m.id} role="button" tabindex="0" onclick={() => void pickModel(m)} onkeydown={(e) => { if (e.key === "Enter") void pickModel(m); }}>
+            {#each groupedModels.rest as m, i (m.provider + "/" + m.id)}
+              <div class="modelitem" class:active={$rpcState.model?.provider === m.provider && $rpcState.model?.id === m.id} class:hl={modelHl === groupedModels.pinned.length + i} role="button" tabindex="0" onclick={() => void pickModel(m)} onkeydown={(e) => { if (e.key === "Enter") void pickModel(m); }}>
                 <button class="star" class:on={pinnedSet.has(modelKey(m))} title={pinnedSet.has(modelKey(m)) ? "Unpin" : "Pin to top"} onclick={(e) => { e.stopPropagation(); togglePinModel(m); }}>{pinnedSet.has(modelKey(m)) ? "★" : "☆"}</button>
                 <span class="mn">{m.name}</span>
                 <span class="mi mono">{m.provider}/{m.id}</span>
@@ -346,7 +372,7 @@
     cursor: pointer;
     text-align: left;
   }
-  .modelitem:hover { background: var(--bg-surface-2); color: var(--text); }
+  .modelitem:hover, .modelitem.hl { background: var(--bg-surface-2); color: var(--text); }
   .modelitem.active { color: var(--accent); }
   .modelitem.dim { color: var(--text-3); cursor: default; }
   .mn { font-weight: 600; }

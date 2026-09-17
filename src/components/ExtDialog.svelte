@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Action } from "svelte/action";
   import { extDialog, respondToExtDialog } from "../lib/stores";
 
   let d = $derived($extDialog!);
@@ -19,15 +20,41 @@
     respondToExtDialog({ cancelled: true });
   }
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter") { e.preventDefault(); submitValue(); }
-    else if (e.key === "Escape") { cancel(); }
+    if (e.defaultPrevented) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      cancel();
+      return;
+    }
+    if (e.key !== "Enter" || e.shiftKey) return;
+    // A focused button handles its own Enter (native activation); the dialog
+    // shortcut only applies when focus sits on a text field or the page.
+    if ((e.target as HTMLElement | null)?.closest("button")) return;
+    if (d.method === "editor") return; // Enter stays a newline in the editor
+    e.preventDefault();
+    // Enter answers with each method's primary action.
+    if (d.method === "confirm") confirm(true);
+    else if (d.method === "select") {
+      if (d.options?.length) respondToExtDialog({ value: d.options[0] });
+    } else if (d.method === "input") {
+      submitValue();
+    }
   }
+
+  /** Focus the first control when the dialog opens; hand focus back on close. */
+  const focusFirst: Action<HTMLElement> = (node) => {
+    const prior = document.activeElement as HTMLElement | null;
+    node.querySelector<HTMLElement>("input, textarea, button")?.focus();
+    return { destroy() { prior?.focus(); } };
+  };
 </script>
 
+<svelte:window onkeydown={onKeydown} />
+
 <div class="overlay">
-  <div class="card">
+  <div class="card" use:focusFirst>
     <h3>{d.title || "Extension request"}</h3>
-    {#if d.method === "confirm" && d.message}
+    {#if d.message}
       <p class="msg">{d.message}</p>
     {/if}
 
@@ -47,7 +74,6 @@
         type="text"
         bind:value={inputValue}
         placeholder={d.placeholder ?? ""}
-        onkeydown={onKeydown}
       />
       <div class="options">
         <button class="primary" onclick={submitValue}>OK</button>

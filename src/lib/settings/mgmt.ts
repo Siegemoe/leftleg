@@ -7,22 +7,27 @@
 // stores.handleEvent hands them here BEFORE any toast is shown.
 //
 // Safety rules enforced here:
-// - Availability gate: the command must be present in pi's `get_commands` for
-//   the CURRENT process generation, re-checked immediately before send. An
-//   absent companion therefore can never fall through to an ordinary model prompt.
+// - Availability gate: pi's `get_commands` entry must be an extension command
+//   whose source path lives in the agent's extensions dir (pi returns prompt
+//   templates under the same list; a repo could otherwise ship a template
+//   named `settings-mgmt` and have management JSON expanded as a model
+//   prompt). pi's docs: use sourceInfo as canonical provenance, never names.
 // - Generation binding: if the pi process is replaced between send and reply
 //   (restart), pending requests are rejected rather than resolved with stale data.
+// - Reply identity: request ids are random UUIDs and replies from a different
+//   project/process are ignored, so notify noise from other extensions cannot
+//   resolve or kill a pending request (they cannot guess the id).
 // - Timeouts: every request is bounded; nothing waits forever on a dead companion.
 
 import { get } from "svelte/store";
 import { commands, lastProcByProject, projectDir, navigating, updateInstallLock } from "../stores";
-import { piRequest } from "../api";
+import { getAgentDir, piRequest } from "../api";
+import type { ExtCommand } from "../types";
 
 export const MGMT_COMMAND = "settings-mgmt";
 export const MGMT_MARKER = "LeftlegMgmt:";
 const MGMT_TIMEOUT_MS = 15_000;
 
-let seq = 0;
 interface Pending {
   project: string;
   proc: number;
@@ -32,13 +37,35 @@ interface Pending {
 }
 const pending = new Map<string, Pending>();
 
+let agentDirCache: string | undefined;
+let agentDirFetched = false;
+function ensureAgentDir(): void {
+  if (agentDirFetched) return;
+  agentDirFetched = true;
+  void getAgentDir()
+    .then((d) => (agentDirCache = d))
+    .catch(() => (agentDirCache = ""));
+}
+
+/** Provenance check: an extension command installed in the agent's extensions dir. */
+function isCompanionCommand(c: ExtCommand): boolean {
+  if (c.source !== "extension") return false;
+  // Until get_agent_dir resolves (or if it fails), the source check alone
+  // stands — prompt templates carry source "prompt", so the fallthrough they
+  // enable is already blocked.
+  if (!agentDirCache) return true;
+  const path = (c.sourceInfo?.path ?? "").replace(/\\/g, "/").toLowerCase();
+  return path.includes("/extensions/leftleg-settings/");
+}
+
 /** Synchronous lifecycle signal used immediately before installing an update. */
 export function pendingManagementCount(): number {
   return pending.size;
 }
 
 export function companionAvailable(): boolean {
-  return !get(navigating) && !get(updateInstallLock) && get(commands).some((c) => c.name === MGMT_COMMAND);
+  ensureAgentDir();
+  return !get(navigating) && !get(updateInstallLock) && get(commands).some(isCompanionCommand);
 }
 
 function currentGeneration(): number | undefined {
@@ -51,12 +78,10 @@ export function handleMgmtNotify(message: string, origin?: { project: string; pr
   try {
     const reply = JSON.parse(message.slice(MGMT_MARKER.length)) as { id?: string; ok?: boolean; error?: unknown };
     const p = reply.id ? pending.get(reply.id) : undefined;
-    if (p && origin && reply.id && (p.project !== origin.project || p.proc !== origin.proc)) {
-      // A reply from the wrong process/project must not silently strand the
-      // caller until timeout — reject it immediately with the real reason.
-      clearTimeout(p.timer);
-      pending.delete(reply.id);
-      p.reject(new Error("management reply came from a different project or process"));
+    if (p && origin && (p.project !== origin.project || p.proc !== origin.proc)) {
+      // Wrong-origin noise (another extension in the same pi process spoofing
+      // the marker): ignore it — the real request stays pending for its true
+      // reply or its timeout.
       return true;
     }
     if (p && reply.id) {
@@ -117,8 +142,10 @@ export async function mgmtRequest<T = Record<string, unknown>>(
   const project = get(projectDir);
   if (gen === undefined) throw new Error("no active pi process");
 
-  const id = `mgmt-${Date.now()}-${++seq}`;
-  const payload = JSON.stringify({ v: 1, id, op, ...params });
+  // Unguessable: a spoofed reply must not be able to name a pending id.
+  const id = crypto.randomUUID();
+  // Envelope keys last so caller params can never shadow id/op/v.
+  const payload = JSON.stringify({ ...params, v: 1, id, op });
 
   const promise = new Promise<Record<string, unknown>>((resolve, reject) => {
     const timer = setTimeout(() => {

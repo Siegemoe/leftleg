@@ -8,8 +8,8 @@
   import { appDataDir } from "@tauri-apps/api/path";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
   import {
-    sidebarOpen, settingsOpen, settingsProject, statusNote, theme,
-    chooseProject, newSession, applyTheme,
+    sidebarOpen, settingsOpen, settingsProject, theme, extDialog,
+    chooseProject, newSession, applyTheme, transientNote,
     openRightPanel, rightPanelOpen, rightPanelTab,
   } from "../lib/stores";
   import { checkForUpdates } from "../lib/updater";
@@ -42,13 +42,29 @@
     if (e.key === "Escape") {
       openMenu = null;
       aboutOpen = false;
+      return;
+    }
+    // The accelerators advertised on the File/View menu items. Both keys are
+    // free in this webview, so they work while typing too; step aside when a
+    // modal owns the keyboard.
+    if (e.defaultPrevented || $settingsOpen || $extDialog) return;
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    const key = e.key.toLowerCase();
+    if (key === "n") {
+      e.preventDefault();
+      openMenu = null;
+      void newSession();
+    } else if (key === "b") {
+      e.preventDefault();
+      openMenu = null;
+      sidebarOpen.update((v) => !v);
     }
   }
 
   // ---------- Edit (best-effort webview editing) ----------
   function copySelection() {
     const ok = document.execCommand("copy");
-    if (!ok) statusNote.set("Nothing selected to copy");
+    if (!ok) transientNote("Nothing selected to copy");
   }
   function selectAll() {
     document.execCommand("selectAll");
@@ -64,10 +80,10 @@
         el.selectionStart = el.selectionEnd = start + text.length;
         el.dispatchEvent(new Event("input", { bubbles: true }));
       } else {
-        statusNote.set("Click an input first, then Edit → Paste");
+        transientNote("Click an input first, then Edit → Paste");
       }
     } catch {
-      statusNote.set("Clipboard read blocked here — use Ctrl+V");
+      transientNote("Clipboard read blocked here — use Ctrl+V");
     }
   }
 
@@ -76,7 +92,7 @@
     try {
       await openPath(await appDataDir() + "/logs");
     } catch (e) {
-      statusNote.set(`Couldn't open logs folder: ${e}`);
+      transientNote(`Couldn't open logs folder: ${e}`);
     }
   }
 

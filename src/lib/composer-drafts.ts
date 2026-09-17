@@ -13,6 +13,22 @@ export function composerDraftFor(key: string) {
   return draft;
 }
 
+/** Drop this project's per-session drafts that hold nothing. Pure GC —
+ * composerDraftFor recreates entries on demand — run it when a session's
+ * key can no longer be revisited (project switch, process exit) so the map
+ * doesn't accumulate one entry per session ever visited. Never touches the
+ * shared fallback / "startup project" drafts, and never drops a draft that
+ * still has text, attachments, or an in-flight send. */
+export function pruneEmptyComposerDrafts(projectDir: string) {
+  if (!projectDir) return;
+  const prefix = `${projectDir}:`;
+  for (const [key, store] of drafts) {
+    if (!key.startsWith(prefix)) continue;
+    const d = get(store);
+    if (!d.sending && !d.text.trim() && d.attachments.length === 0) drafts.delete(key);
+  }
+}
+
 export interface ComposerDraftBlocker {
   key: string;
   text: boolean;

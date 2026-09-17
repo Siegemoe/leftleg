@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { fade } from "svelte/transition";
   import { listen } from "@tauri-apps/api/event";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import Sidebar from "./components/Sidebar.svelte";
   import Chat from "./components/Chat.svelte";
   import StartScreen from "./components/StartScreen.svelte";
@@ -19,6 +20,19 @@
   import { startupUpdateCheck, updateAvailable, updateStatus, updateError, applyUpdate, dismissUpdate } from "./lib/updater";
 
   let cleanup: (() => void) | null = null;
+
+  /** Anchor clicks from rendered markdown must never navigate this webview
+   * away (Tauri's default on_navigation lets it) — route them to the OS
+   * browser instead. Document-level so it covers every render site. */
+  function onDocumentClick(e: MouseEvent) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
+    const anchor = (e.target as HTMLElement | null)?.closest("a[href]");
+    if (!anchor) return;
+    const href = anchor.getAttribute("href") ?? "";
+    if (!/^https?:\/\//i.test(href)) { e.preventDefault(); return; }
+    e.preventDefault();
+    openUrl(href).catch((err) => reportError("open-link", String(err)));
+  }
 
   onMount(() => {
     let disposed = false;
@@ -44,7 +58,8 @@
     startupUpdateCheck();
     // Non-blocking pi harness/extension updater (integrity-gated, debounced).
     runStartupPiUpdate();
-    return () => { disposed = true; cleanup?.(); };
+    document.addEventListener("click", onDocumentClick, true);
+    return () => { disposed = true; cleanup?.(); document.removeEventListener("click", onDocumentClick, true); };
   });
 </script>
 

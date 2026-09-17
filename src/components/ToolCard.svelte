@@ -3,7 +3,7 @@
   import { openPath as openInDefaultApp } from "@tauri-apps/plugin-opener";
   import { resolve as resolvePath } from "@tauri-apps/api/path";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { projectDir, statusNote } from "../lib/stores";
+  import { projectDir, statusNote, transientNote } from "../lib/stores";
   import { formatDuration } from "../lib/time-format";
 
   let { item }: { item: ToolItem } = $props();
@@ -64,7 +64,7 @@
   });
   async function openFile() {
     try { await openInDefaultApp(await resolvePath($projectDir, filePath)); }
-    catch (e) { statusNote.set(`Couldn't open file: ${e}`); }
+    catch (e) { transientNote(`Couldn't open file: ${e}`); }
   }
 
   // ---------- image_generate presentation ----------
@@ -133,7 +133,7 @@
 
   async function openImage(path: string) {
     try { await openInDefaultApp(path); }
-    catch (e) { statusNote.set(`Couldn't open image: ${e}`); }
+    catch (e) { transientNote(`Couldn't open image: ${e}`); }
   }
 
   // Live elapsed timer — ticks only while this card is running with a known

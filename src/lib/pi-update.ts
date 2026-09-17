@@ -63,6 +63,11 @@ export function runStartupPiUpdate(): void {
         );
         return;
       }
+      // Re-check right before the npm pass: the integrity gate awaited, and a
+      // turn may have started or the app updater may have taken the lock in
+      // that window — rewriting the npm package under live pi is the one thing
+      // this runner must never do.
+      if (get(streaming) || get(updateInstallLock)) return;
       const res = await runPiManager(["--all"]);
       await setGuiStateValue("piUpdateLastRun", Date.now());
       const upgraded = summarizeUpdateOutput(res.stdout);

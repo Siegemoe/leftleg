@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
-vi.mock("../api", () => ({ piRequest: vi.fn(), piSend: vi.fn(), listSessions: vi.fn().mockResolvedValue([]) }));
+vi.mock("../api", () => ({ piRequest: vi.fn(), piSend: vi.fn(), listSessions: vi.fn().mockResolvedValue([]), getAgentDir: vi.fn().mockResolvedValue("C:\\agent") }));
 import * as api from "../api";
 import { commands, projectDir, lastProcByProject, handleEvent, handlePiExit, notifications, recordProcess } from "../stores";
 import { mgmtRequest, abortPendingMgmt, bindManagement } from "./mgmt";
+const COMPANION_CMD = { name: "settings-mgmt", source: "extension", sourceInfo: { path: "C:\\agent\\extensions\\leftleg-settings\\index.ts" } };
 beforeEach(() => {
   vi.useFakeTimers();
   projectDir.set("/a"); lastProcByProject.set({ "/a": 1, "/b": 2 });
-  commands.set([{ name: "settings-mgmt" }]); notifications.set([]);
+  commands.set([{ ...COMPANION_CMD }]); notifications.set([]);
   vi.mocked(api.piRequest).mockReset().mockResolvedValue({ success: true });
 });
 afterEach(() => { abortPendingMgmt("test cleanup"); vi.useRealTimers(); });
@@ -52,4 +53,42 @@ it("bound forms cannot save to a different project", async () => {
   projectDir.set("/b");
   await expect(request("write")).rejects.toThrow("Project or process changed");
   expect(api.piRequest).not.toHaveBeenCalled();
+});
+it("a prompt template named settings-mgmt does not satisfy the availability gate", async () => {
+  commands.set([{ name: "settings-mgmt", source: "prompt", sourceInfo: { path: "C:\\proj\\.pi\\prompts\\settings-mgmt.md" } }]);
+  await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
+  expect(api.piRequest).not.toHaveBeenCalled();
+});
+it("an extension command outside the agent's extensions dir fails the gate once agentDir resolves", async () => {
+  await api.getAgentDir();
+  commands.set([{ name: "settings-mgmt", source: "extension", sourceInfo: { path: "C:\\proj\\.pi\\extensions\\evil\\index.ts" } }]);
+  await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
+  expect(api.piRequest).not.toHaveBeenCalled();
+});
+it("a spoofed notify with a guessed id cannot resolve a pending request", async () => {
+  const result = expect(mgmtRequest("ping", {}, 60_000)).rejects.toThrow("timed out");
+  const sent = vi.mocked(api.piRequest).mock.calls[0][0] as { message: string };
+  const realId = JSON.parse(String(sent.message).slice("/settings-mgmt ".length)).id as string;
+  handleEvent(
+    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: realId, ok: true, data: { spoofed: true } }) },
+    { project: "/b", proc: 2 },
+  );
+  await vi.advanceTimersByTimeAsync(60_100);
+  await result;
+});
+it("wrong-origin replies are ignored, not rejected — the request survives for its true reply", async () => {
+  const pending = mgmtRequest("ping");
+  handleEvent(
+    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: "whatever", ok: false, error: "spoof" }) },
+    { project: "/b", proc: 2 },
+  );
+  await reply();
+  await expect(pending).resolves.toEqual({ answer: 42 });
+});
+it("envelope keys win over caller params (no shadowing)", () => {
+  void mgmtRequest("write", { id: "caller-id", op: "evil-op" }).catch(() => {});
+  const sent = vi.mocked(api.piRequest).mock.calls[0][0] as { message: string };
+  const payload = JSON.parse(String(sent.message).slice("/settings-mgmt ".length));
+  expect(payload.op).toBe("write");
+  expect(payload.id).not.toBe("caller-id");
 });

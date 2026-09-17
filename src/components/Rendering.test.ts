@@ -26,18 +26,18 @@ it("scrolls on store updates and respects scrolling away from the bottom", () =>
   const scroller = document.querySelector<HTMLDivElement>(".chat")!;
   Object.defineProperties(scroller, { scrollHeight: { value: 1000 }, clientHeight: { value: 200 } });
   scroller.scrollTo = vi.fn(); raf.mockClear();
-  items.set([{ kind: "user", text: "new", images: [] }]); flushSync();
+  items.set([{ kind: "user", id: "u1", text: "new", images: [] }]); flushSync();
   expect(raf).toHaveBeenCalled();
   raf.mock.calls.at(-1)![0](0);
   expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 1000 });
   scroller.scrollTop = 0; scroller.dispatchEvent(new Event("scroll")); flushSync(); raf.mockClear();
-  items.set([{ kind: "user", text: "another", images: [] }]); flushSync();
+  items.set([{ kind: "user", id: "u2", text: "another", images: [] }]); flushSync();
   expect(raf).not.toHaveBeenCalled();
 });
 it("resolves a tool's relative file path against the active project", async () => {
   projectDir.set("/work");
   instances.push(mount(ToolCard, { target: document.body, props: { item: {
-    kind: "tool", toolCallId: "1", name: "edit", args: JSON.stringify({ path: "src/file.ts" }),
+    kind: "tool", id: "t1", toolCallId: "1", name: "edit", args: JSON.stringify({ path: "src/file.ts" }),
     status: "done", output: "", outputTruncated: false, isError: false, diff: "+line",
   } } })); flushSync();
   document.querySelector<HTMLButtonElement>(".head")!.click(); flushSync();
@@ -48,7 +48,7 @@ it("resolves a tool's relative file path against the active project", async () =
 it("renders malformed tool arguments without crashing the chat", () => {
   expect(() => {
     instances.push(mount(ToolCard, { target: document.body, props: { item: {
-      kind: "tool", toolCallId: "1", name: "read", args: '{"path":42}',
+      kind: "tool", id: "t2", toolCallId: "1", name: "read", args: '{"path":42}',
       status: "error", output: "invalid path", outputTruncated: false, isError: true,
     } } })); flushSync();
   }).not.toThrow();

@@ -37,6 +37,7 @@ afterEach(async () => {
 function baseItem(overrides: Partial<ToolItem>): ToolItem {
   return {
     kind: "tool",
+    id: "img-1",
     toolCallId: "tc1",
     name: "image_generate",
     args: JSON.stringify({ prompt: "a mug", aspect_ratio: "16:9" }),
@@ -238,10 +239,11 @@ describe("Artifacts browser", () => {
   });
 
   it("deletes a visible artifact against the project that supplied it", async () => {
-    let resolveB!: (value: unknown) => void;
-    mocks.listArtifacts
-      .mockResolvedValueOnce({ images: [{ name: "a.png", path: "/a/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true }], docs: [] })
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve; }));
+    // The delete must address the owning project recorded at load time, not
+    // whatever project is focused when the call lands. A project switch now
+    // clears the list until the new load lands (cross-project leak fix), so
+    // the row is exercised within its own project's session.
+    mocks.listArtifacts.mockResolvedValueOnce({ images: [{ name: "a.png", path: "/a/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true }], docs: [] });
     vi.stubGlobal("confirm", vi.fn(() => true));
 
     projectDir.set("/a");
@@ -249,13 +251,9 @@ describe("Artifacts browser", () => {
     rightPanelOpen.set(true);
     instances.push(mount(Artifacts, { target: document.body }));
     await settle();
-    projectDir.set("/b");
-    flushSync();
-    await vi.waitFor(() => expect(mocks.listArtifacts).toHaveBeenCalledWith("/b"));
 
     document.body.querySelector<HTMLButtonElement>('button[title="Delete"]')!.click();
     await vi.waitFor(() => expect(mocks.deleteArtifact).toHaveBeenCalledWith("/a", "/a/.pi/images/a.png"));
-    resolveB({ images: [], docs: [] });
     await settle();
     vi.unstubAllGlobals();
   });

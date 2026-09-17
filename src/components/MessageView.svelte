@@ -4,9 +4,8 @@
   import { renderMarkdown, renderStreamingMarkdown } from "../lib/markdown";
   import { sanitizeThinking } from "../lib/thinking";
   import { dayHeaderLabel, formatDuration } from "../lib/time-format";
-  import { retryFailedUser, dismissFailedUser, statusNote } from "../lib/stores";
+  import { retryFailedUser, dismissFailedUser, transientNote } from "../lib/stores";
   import { Lightbulb, TriangleAlert, Copy } from "@lucide/svelte";
-  import { get } from "svelte/store";
 
   let { item }: { item: UiItem } = $props();
 
@@ -26,28 +25,11 @@
   async function copyResponse() {
     try {
       await navigator.clipboard.writeText(responseText());
-      statusNote.set("Response copied");
-      setTimeout(() => { if (get(statusNote) === "Response copied") statusNote.set(""); }, 3000);
+      transientNote("Response copied", 3000);
     } catch (e) {
-      statusNote.set(`Couldn't copy: ${e}`);
+      transientNote(`Couldn't copy: ${e}`);
     }
   }
-
-  // markdown render keyed on text length so streaming re-renders cheaply
-  let html = $derived(
-    item.kind === "user"
-      ? ""
-      : item.kind === "assistant"
-        ? item.blocks.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n\n")
-        : ""
-  );
-  let rendered = $derived(
-    html
-      ? item.kind === "assistant" && item.streaming
-        ? renderStreamingMarkdown(html)
-        : renderMarkdown(html)
-      : ""
-  );
 </script>
 
 {#if item.kind === "user"}
@@ -120,6 +102,7 @@
 {:else if item.kind === "bash"}
   <ToolCard item={{
     kind: "tool",
+    id: item.id,
     toolCallId: "bash",
     name: "bash",
     args: JSON.stringify({ command: item.command }, null, 2),

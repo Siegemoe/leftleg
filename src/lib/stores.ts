@@ -6,7 +6,7 @@ import type {
 import * as api from "./api";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { handleMgmtNotify, abortPendingMgmt, pendingManagementCount } from "./settings/mgmt";
-import { composerDraftBlockers } from "./composer-drafts";
+import { composerDraftBlockers, pruneEmptyComposerDrafts } from "./composer-drafts";
 
 // ---------- stores ----------
 
@@ -56,6 +56,21 @@ export const sessionStates = writable<Record<string, { status: SessionStatus; no
 export const activeSessionByProject = writable<Record<string, string | null>>({});
 /** Spawn id per project — envelopes from older process ids are dropped. */
 export const lastProcByProject = writable<Record<string, number>>({});
+
+/** Prompts pi has accepted whose agent_start hasn't arrived yet, per project.
+ * pi flips its internal streaming state synchronously on acceptance — before
+ * agent_start fires — so prompts sent in that window must still steer, or pi
+ * rejects them as "already processing". Cleared on the agent lifecycle events
+ * and on process exit so a lost start event can't leave a stale count. */
+const awaitingAgentStart = new Map<string, number>();
+function awaitingStartAdjust(project: string, delta: 1 | -1) {
+  const next = (awaitingAgentStart.get(project) ?? 0) + delta;
+  if (next <= 0) awaitingAgentStart.delete(project);
+  else awaitingAgentStart.set(project, next);
+}
+function awaitingStartCount(project: string): number {
+  return awaitingAgentStart.get(project) ?? 0;
+}
 
 export function recordProcess(project: string, pid: number | undefined | null) {
   if (typeof pid !== "number") return;
@@ -314,6 +329,7 @@ function restoreSurface(dir: string, proc: number) {
   statusNote.set(get(surface.statusNote));
   mainSurface.assistant = surface.assistant;
   mainSurface.dialogs = surface.dialogs;
+  mainSurface.turnStartTs = surface.turnStartTs;
 }
 
 function removeDialog(owner: { project?: string; proc?: number }, id: string) {
@@ -371,7 +387,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
           }
           return { name: a.fileName ?? "image", dataUrl: `data:${a.mimeType ?? "image/png"};base64,${data}` };
         });
-      out.push({ kind: "user", text: contentText(m.content as never), images, timestamp: m.timestamp });
+      out.push({ kind: "user", id: newId(), text: contentText(m.content as never), images, timestamp: m.timestamp });
     } else if (m.role === "assistant") {
       const blocks: Block[] = [];
       const content = m.content ?? [];
@@ -385,7 +401,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         }
       }
       const item: AssistantItem = {
-        kind: "assistant", blocks,
+        kind: "assistant", id: newId(), blocks,
         usage: m.usage, stopReason: m.stopReason,
         errorMessage: m.stopReason === "error" ? m.errorMessage : undefined,
         streaming: false,
@@ -397,7 +413,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         if (c.type === "toolCall") {
           const tc = c as { id: string; name: string; arguments: Record<string, unknown> };
           const tool: ToolItem = {
-            kind: "tool", toolCallId: tc.id, name: tc.name,
+            kind: "tool", id: newId(), toolCallId: tc.id, name: tc.name,
             args: JSON.stringify(tc.arguments ?? {}, null, 2),
             status: "running", output: "", outputTruncated: false, isError: false,
             startedAt: m.timestamp,
@@ -426,7 +442,7 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
       }
     } else if (m.role === "bashExecution") {
       out.push({
-        kind: "bash", command: (m as { command?: string }).command ?? "",
+        kind: "bash", id: newId(), command: (m as { command?: string }).command ?? "",
         output: (m as { output?: string }).output ?? "",
         exitCode: (m as { exitCode?: number }).exitCode ?? 0,
         isError: ((m as { exitCode?: number }).exitCode ?? 0) !== 0,
@@ -454,6 +470,12 @@ function currentTextBlock(item: AssistantItem, contentIndex: number | undefined)
   return item.blocks[contentIndex] ?? null;
 }
 
+/** Slot-fill holes below `index` so `blocks` can never be sparse: a sparse
+ * array renders hole entries in keyed each-blocks and `block.type` throws. */
+function fillBlockHoles(item: AssistantItem, index: number): void {
+  while (item.blocks.length < index) item.blocks.push({ type: "text", text: "", done: false });
+}
+
 /** Close out a dangling streaming assistant item (agent done, or the process died). */
 function finalizeStreaming(surface = mainSurface) {
   let changed = false;
@@ -469,7 +491,7 @@ function finalizeStreaming(surface = mainSurface) {
   }
   if (surface.assistant) {
     surface.assistant.streaming = false;
-    for (const b of surface.assistant.blocks) if (b.type !== "toolcall") b.done = true;
+    for (const b of surface.assistant.blocks) if (b && b.type !== "toolcall") b.done = true;
     surface.assistant = null;
     changed = true;
   }
@@ -485,7 +507,7 @@ function newId(): string {
 }
 
 /** Set a visible note that clears itself — unless something else replaced it first. */
-function transientNote(note: string, ms = 8000) {
+export function transientNote(note: string, ms = 8000) {
   if (note.includes("View changed while the request was pending")) return;
   statusNote.set(note);
   setTimeout(() => {
@@ -514,11 +536,13 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
   switch (evt.type) {
     case "agent_start":
       if (surface.turnStartTs === null) surface.turnStartTs = Date.now();
+      awaitingAgentStart.delete(owner.project);
       streaming.set(true);
       setSessionStatus(get(activeSessionPath), "active", "working");
       break;
     case "agent_end":
     case "agent_settled": {
+      awaitingAgentStart.delete(owner.project);
       const continuing = evt.type === "agent_end" && (evt.willRetry === true || get(queue).steering.length + get(queue).followUp.length > 0);
       streaming.set(continuing);
       // Don't clobber an "attention" mark (e.g. an errored response that just
@@ -533,7 +557,7 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     case "message_start": {
       const m = typeof evt.message === "object" ? evt.message : undefined;
       if (m?.role === "assistant") {
-        const item: AssistantItem = { kind: "assistant", blocks: [], streaming: true, timestamp: Date.now() };
+        const item: AssistantItem = { kind: "assistant", id: newId(), blocks: [], streaming: true, timestamp: Date.now() };
         surface.assistant = item;
         items.update((a) => [...a, item]);
       }
@@ -549,7 +573,9 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
       if (!d || !surface.assistant) break;
       const item = surface.assistant;
       if (d.type === "text_start") {
-        item.blocks[d.contentIndex ?? item.blocks.length] = { type: "text", text: "", done: false };
+        const i = d.contentIndex ?? item.blocks.length;
+        fillBlockHoles(item, i);
+        item.blocks[i] = { type: "text", text: "", done: false };
       } else if (d.type === "text_delta") {
         const b = currentTextBlock(item, d.contentIndex);
         if (b && b.type === "text") b.text += d.delta ?? "";
@@ -557,7 +583,9 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         const b = currentTextBlock(item, d.contentIndex);
         if (b && b.type === "text") { b.text = (d as { content?: string }).content ?? b.text; b.done = true; }
       } else if (d.type === "thinking_start") {
-        item.blocks[d.contentIndex ?? item.blocks.length] = { type: "thinking", text: "", done: false, startedAt: Date.now() };
+        const i = d.contentIndex ?? item.blocks.length;
+        fillBlockHoles(item, i);
+        item.blocks[i] = { type: "thinking", text: "", done: false, startedAt: Date.now() };
       } else if (d.type === "thinking_delta") {
         const b = currentTextBlock(item, d.contentIndex);
         if (b && b.type === "thinking") b.text += d.delta ?? "";
@@ -573,11 +601,13 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
       } else if (d.type === "toolcall_start") {
         // Pi's contentIndex counts tool calls as well as text/thinking. Keep
         // that slot occupied so later deltas cannot create sparse blocks.
-        item.blocks[d.contentIndex ?? item.blocks.length] = {
+        const i = d.contentIndex ?? item.blocks.length;
+        fillBlockHoles(item, i);
+        item.blocks[i] = {
           type: "toolcall", toolCallId: d.id ?? "", name: d.toolName ?? "tool", args: "",
         };
         const tool: ToolItem = {
-          kind: "tool", toolCallId: d.id ?? "", name: d.toolName ?? "tool",
+          kind: "tool", id: newId(), toolCallId: d.id ?? "", name: d.toolName ?? "tool",
           args: "", status: "running", output: "", outputTruncated: false, isError: false,
         };
         items.update((a) => [...a, tool]);
@@ -638,7 +668,7 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
       items.update((a) => {
         let t = a.find((x) => x.kind === "tool" && x.toolCallId === evt.toolCallId) as ToolItem | undefined;
         if (!t) {
-          t = { kind: "tool", toolCallId: evt.toolCallId ?? "", name: evt.toolName ?? "", args: JSON.stringify(evt.args ?? {}, null, 2), status: "running", output: "", outputTruncated: false, isError: false };
+          t = { kind: "tool", id: newId(), toolCallId: evt.toolCallId ?? "", name: evt.toolName ?? "", args: JSON.stringify(evt.args ?? {}, null, 2), status: "running", output: "", outputTruncated: false, isError: false };
           a.push(t);
         }
         t.args = JSON.stringify(evt.args ?? {}, null, 2);
@@ -684,17 +714,32 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     case "compaction_start":
       statusNote.set("Compacting context…");
       break;
-    case "compaction_end":
-      statusNote.set(evt.result ? `Compacted: ${(evt.result as { tokensBefore?: number })?.tokensBefore ?? "?"} → ${(evt.result as { estimatedTokensAfter?: number })?.estimatedTokensAfter ?? "?"} tokens` : "Compaction failed/aborted");
-      setTimeout(() => statusNote.set(""), 6000);
+    case "compaction_end": {
+      const note = evt.result
+        ? `Compacted: ${(evt.result as { tokensBefore?: number })?.tokensBefore ?? "?"} → ${(evt.result as { estimatedTokensAfter?: number })?.estimatedTokensAfter ?? "?"} tokens`
+        : "Compaction failed/aborted";
+      statusNote.set(note);
+      // Clear only our own note — an unguarded wipe would eat a newer note
+      // (e.g. a "Prompt not delivered" error) set while the timer ran.
+      setTimeout(() => { if (get(statusNote) === note) statusNote.set(""); }, 6000);
       if (foreground) void refreshStats();
       break;
+    }
     case "auto_retry_start":
       statusNote.set(`Retrying (attempt ${evt.attempt}/${evt.maxAttempts})…`);
       break;
-    case "auto_retry_end":
-      statusNote.set("");
+    case "auto_retry_end": {
+      if (evt.success === false) {
+        // Exhausted retries can end with no errored assistant message — without
+        // this the turn just quietly goes idle.
+        const detail = typeof evt.finalError === "string" && evt.finalError ? evt.finalError : "unknown error";
+        if (foreground) transientNote(`Retries failed: ${detail}`);
+        setSessionStatus(get(activeSessionPath), "attention", "retries failed");
+      } else if (get(statusNote).startsWith("Retrying")) {
+        statusNote.set("");
+      }
       break;
+    }
     case "extension_error":
       setSessionStatus(get(activeSessionPath), "attention", "extension error");
       break;
@@ -867,7 +912,9 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
   const originProject = get(projectDir);
   const originProc = get(lastProcByProject)[originProject];
   const originRevision = viewRevision;
-  const isStreaming = get(streaming);
+  // "Streaming" includes prompts pi accepted but whose agent_start hasn't
+  // arrived yet — pi already considers itself busy and rejects unsteered prompts.
+  const isStreaming = get(streaming) || awaitingStartCount(originProject) > 0;
   const cmd: Record<string, unknown> = { type: "prompt", message: trimmed };
   if (images.length > 0) {
     cmd.images = images.map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType }));
@@ -888,6 +935,7 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
   try {
     const res = await api.piRequest<{ success: boolean; error?: string }>(cmd, 600, originProject, originProc);
     if (res.success) {
+      awaitingStartAdjust(originProject, 1);
       delivery({ status: "accepted" });
       // Unrelated failed attempts are NOT removed here: they were never
       // delivered, so their Retry affordance stays until retried or dismissed.
@@ -950,10 +998,13 @@ async function newSessionImpl() {
     }
     finalizeStreaming();
     streaming.set(false);
+    awaitingAgentStart.delete(get(projectDir));
     queue.set({ steering: [], followUp: [] });
     items.set([]);
     activeSessionPath.set(null);
     composerDraft.set(null);
+    // The old session's draft key is left behind — GC its empty drafts.
+    pruneEmptyComposerDrafts(get(projectDir));
     await refreshRpcState();
     // Fresh sessions otherwise inherit pi's fallback model (often Opus) — pin
     // the project's default (GUI preference), or the stack default (rule 7).
@@ -1001,6 +1052,9 @@ async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<b
     }
     recordProcess(dir, pid);
     saveSurface();
+    // Leaving the old project: GC its empty per-session drafts (non-empty
+    // ones survive for when the user switches back).
+    pruneEmptyComposerDrafts(get(projectDir));
     projectDir.set(dir);
     restoreSurface(dir, pid);
     commands.set([]);
@@ -1222,7 +1276,11 @@ export async function respondToExtDialog(response: Record<string, unknown>) {
   try {
     await api.piSend({ type: "extension_ui_response", id: d.id, ...response }, d.project ?? get(projectDir), d.proc);
   } catch (e) {
+    // Send failed: keep the dialog open (the extension is still waiting) and
+    // release the one-shot guard so the answer can be retried.
+    answeringDialogId = null;
     transientNote(`Couldn't answer extension request: ${e}`);
+    return;
   }
   answeringDialogId = null;
   removeDialog(d, d.id);
@@ -1278,7 +1336,9 @@ export function handlePiExit(project: string, pid: number, expected: boolean, er
   const known = get(lastProcByProject)[project];
   if (known !== undefined && known !== pid) return; // replaced process — ignore
   deadProcesses.set(project, pid);
+  awaitingAgentStart.delete(project);
   backgroundSurfaces.delete(project);
+  pruneEmptyComposerDrafts(project);
   lastProcByProject.update((m) => {
     const next = { ...m };
     delete next[project];

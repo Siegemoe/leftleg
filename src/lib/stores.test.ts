@@ -443,7 +443,7 @@ describe("newSession", () => {
     [{ success: false, error: "session creation failed" }, "session creation failed"],
     [{ success: true, data: { cancelled: true } }, "cancelled"],
   ])("preserves the session and model when new_session does not proceed: %j", async (response, note) => {
-    const history = [{ kind: "user" as const, text: "Keep this conversation", images: [] }];
+    const history = [{ kind: "user" as const, id: "keep-1", text: "Keep this conversation", images: [] }];
     items.set(history);
     activeSessionPath.set("/existing.jsonl");
     vi.mocked(api.piRequest).mockResolvedValueOnce(response);

@@ -23,10 +23,10 @@
  * aborted generations are not billed.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -34,6 +34,15 @@ const IMAGES_API_URL = "https://openrouter.ai/api/v1/images";
 const DEFAULT_MODEL = "google/gemini-3.1-flash-image";
 const MAX_REFERENCES = 4;
 const MAX_REFERENCE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGES = 16;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+// Base64 inflates 4/3 (+ padding slack) — a char bound rejects oversized
+// entries before any decode-time allocation.
+const MAX_IMAGE_B64_CHARS = Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 4;
+const BASE64_RECHECK_LIMIT = 1024 * 1024;
+const MAX_RESPONSE_MB = 100;
+const MAX_RESPONSE_BYTES = MAX_RESPONSE_MB * 1024 * 1024;
+const REQUEST_TIMEOUT_MS = 180_000; // generation typically runs 10-90s
 
 interface ImageGenParams {
   prompt: string;
@@ -109,12 +118,51 @@ function writeFileAtomic(file: string, data: Buffer): void {
   }
 }
 
+// Reads the response body through a hard byte ceiling: chunks are counted as
+// they arrive and the stream is cancelled once the cap is exceeded, so a
+// compromised route cannot OOM the agent with an oversized body. The text()
+// fallback only applies when the fetch impl supplies no stream at all (null
+// bodies are client-decided) — not something a server can influence.
+async function readCappedBody(res: Response): Promise<string> {
+  if (!res.body) return res.text();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) {
+        throw new Error(`OpenRouter response body exceeded ${MAX_RESPONSE_MB} MiB — refusing to buffer it.`);
+      }
+      chunks.push(value);
+    }
+  } catch (e) {
+    try {
+      await reader.cancel();
+    } catch { /* reader already tearing down */ }
+    throw e;
+  }
+  const body = Buffer.concat(chunks).toString("utf8");
+  return body.charCodeAt(0) === 0xfeff ? body.slice(1) : body;
+}
+
 function readReference(path: string, cwd: string): string {
-  const abs = resolve(cwd, path);
-  if (statSync(abs).size > MAX_REFERENCE_BYTES) {
+  // Canonical containment, same shape as delete_artifact_checked: resolve
+  // symlinks on both sides, then require the target to stay inside the
+  // project. Reference bytes are base64-embedded into the request, so an
+  // absolute path or .. escape would be a one-shot file exfiltration.
+  const base = realpathSync(cwd);
+  const target = realpathSync(resolve(cwd, path));
+  const rel = relative(base, target);
+  if (rel === "" || isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) {
+    throw new Error(`${path}: reference image must stay inside the project directory`);
+  }
+  if (statSync(target).size > MAX_REFERENCE_BYTES) {
     throw new Error(`${path}: reference image exceeds 10 MiB limit`);
   }
-  const buf = readFileSync(abs);
+  const buf = readFileSync(target);
   if (buf.length > MAX_REFERENCE_BYTES) {
     throw new Error(`${path}: reference image exceeds 10 MiB limit`);
   }
@@ -126,17 +174,33 @@ function readReference(path: string, cwd: string): string {
 }
 
 function decodeImage(item: { b64_json?: string; media_type?: string }) {
-  const encoded = typeof item?.b64_json === "string" ? item.b64_json.replace(/\s/g, "") : "";
+  const raw = typeof item?.b64_json === "string" ? item.b64_json : "";
+  // Reject oversized entries before any copy — base64 inflates 4/3, so the
+  // char bound caps the transient allocation regardless of the claimed size.
+  if (raw.length > MAX_IMAGE_B64_CHARS) {
+    throw new Error("OpenRouter returned an image exceeding the 20 MiB per-image limit.");
+  }
+  const encoded = raw.replace(/\s/g, "");
   if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
     throw new Error("OpenRouter returned invalid base64 image data.");
   }
   const bytes = Buffer.from(encoded, "base64");
-  if (bytes.toString("base64").replace(/=+$/, "") !== encoded.replace(/=+$/, "")) {
+  if (bytes.length > MAX_IMAGE_BYTES) {
+    throw new Error("OpenRouter returned an image exceeding the 20 MiB per-image limit.");
+  }
+  // The canonical-base64 re-encode check costs a full extra string round-trip;
+  // only worth it on small buffers — large ones are gated by signature sniffing.
+  if (bytes.length <= BASE64_RECHECK_LIMIT && bytes.toString("base64").replace(/=+$/, "") !== encoded.replace(/=+$/, "")) {
     throw new Error("OpenRouter returned invalid base64 image data.");
   }
   // media_type is optional. Prefer raster signatures so JPEG/WebP responses
-  // without that field are not silently mislabeled as PNG.
-  const mime = sniffMime(bytes) ?? (item.media_type === "image/svg+xml" && /<svg[\s/>]/i.test(bytes.toString("utf8")) ? "image/svg+xml" : null);
+  // without that field are not silently mislabeled as PNG. A self-declared
+  // SVG is only accepted when the payload starts as one — optional leading
+  // whitespace/BOM, then `<?xml ` or `<svg` at byte 0, case-insensitive. An
+  // HTML wrapper embedding an <svg> must not land as .svg: a click opens it
+  // in the OS browser, where embedded script executes.
+  const text = item.media_type === "image/svg+xml" ? bytes.toString("utf8") : "";
+  const mime = sniffMime(bytes) ?? (/^\s*(?:<\?xml\s|<svg[\s/>])/i.test(text) ? "image/svg+xml" : null);
   if (!mime) throw new Error("OpenRouter returned unsupported or invalid image data.");
   return { bytes, mime };
 }
@@ -214,13 +278,26 @@ export default function (pi: ExtensionAPI) {
 
       onUpdate?.({ content: [{ type: "text", text: `Rendering with ${model}… (typically 10-90s)` }] });
 
-      const res = await fetch(IMAGES_API_URL, {
-        method: "POST",
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal,
-      });
-      const text = await res.text();
+      // Bounded request: hard timeout plus a streamed body read with a byte
+      // ceiling — pi's signal only covers user cancel, and a compromised or
+      // hung route must not OOM the agent or pin the turn open.
+      const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      let res: Response;
+      let text: string;
+      try {
+        res = await fetch(IMAGES_API_URL, {
+          method: "POST",
+          headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify(body),
+          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+        });
+        text = await readCappedBody(res);
+      } catch (e) {
+        if (timeout.aborted) {
+          throw new Error(`OpenRouter images request exceeded ${REQUEST_TIMEOUT_MS / 1000}s and was aborted.`);
+        }
+        throw e;
+      }
       signal?.throwIfAborted();
       if (!res.ok) {
         let message = text.slice(0, 500);
@@ -234,6 +311,9 @@ export default function (pi: ExtensionAPI) {
       const parsed = JSON.parse(text) as ImageApiResponse;
       if (!Array.isArray(parsed?.data) || parsed.data.length === 0) {
         throw new Error("OpenRouter returned no images for this request.");
+      }
+      if (parsed.data.length > MAX_IMAGES) {
+        throw new Error(`OpenRouter returned ${parsed.data.length} images — refusing to process more than ${MAX_IMAGES}.`);
       }
       // Validate the entire response before creating files; a bad later entry
       // must not leave a partial batch while reporting total failure.

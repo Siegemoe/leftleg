@@ -6,11 +6,31 @@ marked.setOptions({
   breaks: true,
 });
 
+// Model-authored forms (fake credential prompts) and embedded frames have no
+// legitimate use in a chat transcript — strip them at the sanitizer.
+const FORBID_TAGS = ["form", "input", "button", "textarea", "select", "option", "iframe", "object", "embed"];
+
 export function renderMarkdown(src: string): string {
   const html = marked.parse(src, { async: false });
-  return DOMPurify.sanitize(html, {
+  const clean = DOMPurify.sanitize(html, {
     ADD_ATTR: ["target"],
+    FORBID_TAGS,
   });
+  return safeLinks(clean);
+}
+
+/**
+ * Post-sanitize link hygiene. Clicks on rendered anchors are intercepted by
+ * the delegated handler in App.svelte and routed to the OS browser — these
+ * adjustments make a missed interception non-catastrophic: in-page jump
+ * targets are neutralized (they would rewrite the webview URL), and every
+ * anchor carries rel="noopener noreferrer" so no target page reaches
+ * window.opener.
+ */
+function safeLinks(html: string): string {
+  return html
+    .replace(/<a\b([^>]*?)\shref="#[^"]*"/gi, '<a$1 href="about:blank#blocked"')
+    .replace(/<a\b((?![^>]*\srel=)[^>]*)>/gi, '<a$1 rel="noopener noreferrer">');
 }
 
 /**

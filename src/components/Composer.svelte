@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { sendPrompt, abort, streaming, statusNote, queue, extWidgets, composerDraft, commands, clearQueue, navigating, updateInstallLock } from "../lib/stores";
+  import { sendPrompt, abort, streaming, statusNote, transientNote, queue, extWidgets, composerDraft, commands, clearQueue, navigating, updateInstallLock } from "../lib/stores";
   import { buildPromptMessage, type ComposerAttachment } from "../lib/prompt-message";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { FileText, Paperclip, Send, Square } from "@lucide/svelte";
@@ -59,7 +59,7 @@
         const isImage = IMAGE_TYPES.has(ext(name));
         $draftState.attachments = [...$draftState.attachments, { name, mimeType: isImage ? mimeFor(name) : "text/plain", data: b64, isImage }];
       } catch (e) {
-        statusNote.set(`Couldn't attach ${p}: ${e}`);
+        transientNote(`Couldn't attach ${p}: ${e}`);
       }
     }
   }
@@ -195,7 +195,7 @@
     if (files.length === 0) return;
     e.preventDefault();
     for (const f of files) {
-      if (f.size > 20 * 1024 * 1024) { statusNote.set("Pasted image exceeds 20 MiB limit"); continue; }
+      if (f.size > 20 * 1024 * 1024) { transientNote("Pasted image exceeds 20 MiB limit"); continue; }
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result as string);

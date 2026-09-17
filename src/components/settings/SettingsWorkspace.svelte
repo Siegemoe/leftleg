@@ -9,14 +9,20 @@
     setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, abortRetry,
     exportSessionHtml, cloneSession, projectMeta, sessions, updateProjectMeta,
     forgetProject, restoreProject, chooseProject, autoRetry, refreshCommands,
-    statusNote,
+    statusNote, navigating, updateInstallLock,
   } from "../../lib/stores";
-  import { companionAvailable, bindManagement } from "../../lib/settings/mgmt";
+  import { companionAvailable, bindManagement, MGMT_COMMAND } from "../../lib/settings/mgmt";
   import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle, projectIconLabel } from "../../lib/project-icons";
   import ProjectIcon from "../ProjectIcon.svelte";
   import { checkForUpdates, applyUpdate, updateAvailable, updateCheck, updateStatus } from "../../lib/updater";
   import { onDestroy, untrack } from "svelte";
   const mgmtRequest = bindManagement();
+  // Template mirror of mgmt.companionAvailable() — the function reads the
+  // stores through get(), which is untracked, so calling it from markup
+  // rendered stale availability. Keep the function for imperative callers.
+  const companionReady = $derived(
+    !$navigating && !$updateInstallLock && $commands.some((c) => c.name === MGMT_COMMAND),
+  );
   import {
     getPath, setPath, cloneJson, sourceOf, effectiveValue, defaultValue,
     isUnsafeConfigKey, preparePatch,
@@ -216,6 +222,34 @@
     return texts.some((t) => t && t.toLowerCase().includes(q));
   }
 
+  // ---- multi-line list textareas ----
+  // The draft holds these as filtered string arrays, so binding the join()
+  // directly rewrites the textarea the moment you press Enter (the trailing
+  // empty line is filtered out of the draft) — the newline is deleted, the
+  // cursor resets, and the next word glues onto the previous line. Mirror the
+  // raw text locally, parse into the draft on change (blur), and resync from
+  // the draft only when the mirror no longer parses to the same list, so
+  // loads / scope switches / project switches (resetDraft reassigns `draft`)
+  // stay fresh while uncommitted typing is never clobbered — change always
+  // commits on blur before any other field can touch the draft.
+  let enabledModelsText = $state("");
+  let npmCommandText = $state("");
+  function parseLines(text: string): string[] {
+    return text.split("\n").map((s) => s.trim()).filter(Boolean);
+  }
+  function linesToDraft(path: "enabledModels" | "npmCommand", text: string) {
+    setPath(draft, path, parseLines(text));
+    draft = { ...draft };
+  }
+  $effect(() => {
+    const canonical = ((getPath(draft, "enabledModels") ?? []) as string[]).join("\n");
+    if (untrack(() => parseLines(enabledModelsText).join("\n")) !== canonical) enabledModelsText = canonical;
+  });
+  $effect(() => {
+    const canonical = ((getPath(draft, "npmCommand") ?? []) as string[]).join("\n");
+    if (untrack(() => parseLines(npmCommandText).join("\n")) !== canonical) npmCommandText = canonical;
+  });
+
   // ---- companion / resources ----
   let resInfo = $state<{ packages?: unknown[]; extensionDirs?: string[]; skillDirs?: string[]; agentDir?: string; filesPresent?: Record<string, boolean>; packageVersions?: { name: string; version: string }[] } | null>(null);
   let installing = $state(false);
@@ -367,10 +401,20 @@
     if (renameTimer) clearTimeout(renameTimer);
     const name = sessionName;
     const path = $rpcState?.sessionFile;
-    renameTimer = setTimeout(() => void renameSession(name, path), 700);
+    renameTimer = setTimeout(() => {
+      renameTimer = null;
+      void renameSession(name, path);
+    }, 700);
   }
   onDestroy(() => { if (renameTimer) clearTimeout(renameTimer); });
   $effect(() => {
+    // refreshRpcState re-fires this store after every RPC (sendPrompt,
+    // setModel, rename ack, session switch). While a rename debounce is
+    // pending the user is mid-typing — adopting pi's canonical name here
+    // would wipe it, so hold off. The timer clears itself when it fires, so
+    // the next store change (the rename ack itself, or a session switch)
+    // resyncs the field normally.
+    if (renameTimer) return;
     sessionName = $rpcState?.sessionName ?? "";
   });
 
@@ -414,7 +458,7 @@
       {/each}
     </nav>
     <div class="rail-foot mono">
-      <span class:ok={companionAvailable()} class:bad={!companionAvailable()}>companion {companionAvailable() ? "ready" : "not installed"}</span>
+      <span class:ok={companionReady} class:bad={!companionReady}>companion {companionReady ? "ready" : "not installed"}</span>
     </div>
   </aside>
 
@@ -591,7 +635,7 @@
       <div class="rows">
         <div class="row" class:filtered={!matchesSearch("enabled models cycling patterns", "enabledModels")}>
           <label for="m-cyc" class="with-chip">enabledModels (Ctrl+P cycling; one pattern per line) <span class="chip src">{sourceChip("enabledModels")}</span></label>
-          <textarea id="m-cyc" class="mono" rows={3} value={((getPath(draft, "enabledModels") ?? []) as string[]).join("\n")} oninput={(e) => setPath(draft, "enabledModels", e.currentTarget.value.split("\n").map((s) => s.trim()).filter(Boolean))}></textarea>
+          <textarea id="m-cyc" class="mono" rows={3} value={enabledModelsText} oninput={(e) => (enabledModelsText = e.currentTarget.value)} onchange={() => linesToDraft("enabledModels", enabledModelsText)}></textarea>
         </div>
         <div class="row">
           <label for="m-filter">Model registry ({$models.length} configured — full list, searchable)</label>
@@ -688,7 +732,7 @@
           <div class="inline">
             <input class="grow" value={fieldStr("shellCommandPrefix")} oninput={(e) => setFieldStr("shellCommandPrefix", e.currentTarget.value)} placeholder="shellCommandPrefix (prefix for every bash command)" />
           </div>
-          <textarea class="mono" rows={2} value={((getPath(draft, "npmCommand") ?? []) as string[]).join("\n")} oninput={(e) => setPath(draft, "npmCommand", e.currentTarget.value.split("\n").map((s) => s.trim()).filter(Boolean))} placeholder="npmCommand argv — one token per line (e.g. mise / exec / node@20 / -- / npm)"></textarea>
+          <textarea class="mono" rows={2} value={npmCommandText} oninput={(e) => (npmCommandText = e.currentTarget.value)} onchange={() => linesToDraft("npmCommand", npmCommandText)} placeholder="npmCommand argv — one token per line (e.g. mise / exec / node@20 / -- / npm)"></textarea>
         </div>
         <div class="row" class:filtered={!matchesSearch("session dir", "sessionDir")}>
           <span class="with-chip">sessionDir <span class="chip">configuration only — sessions themselves are not managed here</span></span>
@@ -857,8 +901,8 @@
         <div class="row">
           <span class="row-label">Settings companion (management channel)</span>
           <div class="inline">
-            <span class="chip" class:ok={companionAvailable()} class:bad={!companionAvailable()}>{companionAvailable() ? "installed & loaded" : "not installed"}</span>
-            <button class="primary" disabled={installing} onclick={() => void installCompanion()}>{installing ? "Installing…" : companionAvailable() ? "Reinstall" : "Install companion"}</button>
+            <span class="chip" class:ok={companionReady} class:bad={!companionReady}>{companionReady ? "installed & loaded" : "not installed"}</span>
+            <button class="primary" disabled={installing} onclick={() => void installCompanion()}>{installing ? "Installing…" : companionReady ? "Reinstall" : "Install companion"}</button>
           </div>
           {#if installMsg}<p class="hint">{installMsg}</p>{/if}
           <p class="hint">Reserved command <span class="mono">/settings-mgmt</span>; versioned JSON requests; structured replies; availability-gated so a request can never fall through to an LLM prompt. Installing also ships the <span class="mono">leftleg-media</span> companion (the <span class="mono">image_generate</span> tool — OpenRouter Image API, auth resolved inside pi). Agent dir: <span class="mono">{agentDir || "~/.pi/agent"}</span></p>
