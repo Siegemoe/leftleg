@@ -1,0 +1,15 @@
+# cargo-audit config (CI: `cargo audit --file src-tauri/Cargo.lock` from the
+# repo root; cargo-audit looks for `.cargo/audit.toml` relative to cwd).
+# Warnings (unmaintained/unsound) are reported but do not fail the job — only
+# vulnerabilities deny. Entries here record accepted risks in-tool.
+[advisories]
+ignore = [
+    # glib 0.18.5: unsound VariantStrIter iterators (RUSTSEC-2024-0429).
+    # Version-locked from our side: tauri 2.11.5 → muda 0.19/tao → gtk 0.18 →
+    # glib 0.18; gtk-rs minors are version-locked and muda 0.20 still needs
+    # gtk ^0.18. The affected type is not on tauri/muda menu paths, and the
+    # crate only compiles into Linux builds (Windows target doesn't pull
+    # gtk). Revisit when tauri/wry migrate gtk-rs. See
+    # docs/AUDIT-2026-09-17.md.
+    "RUSTSEC-2024-0429",
+]

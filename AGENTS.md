@@ -34,6 +34,23 @@ The Rust layer (`src-tauri/`) spawns `pi --mode rpc` as a subprocess rooted at t
 - Release + installer: `npm run tauri build` → NSIS installer in `src-tauri/target/release/bundle/nsis/`
 - Rust toolchain: stable-msvc. MSVC Build Tools are installed. Rust is at `~/.cargo/bin` (add to PATH in fresh shells).
 
+## Versioning — `MAJOR.FEATURE.FIX`
+
+- **FIX (patch)** — bug fixes, hardening, small UI adjustments. Bump the third
+  number: 0.4.0 → 0.4.1 → 0.4.2.
+- **FEATURE (minor)** — a new user-facing capability or view. Bump the middle
+  number; the patch keeps stacking (only majors reset it): 0.4.2 → 0.5.2.
+- **MAJOR** — reserved for breaking restructuring (the foundation sweep:
+  multi-harness, multi-routing, Linux); resets minor + patch: 0.x.y → 1.0.0.
+- Mechanics: one bump commit touching all four manifests together —
+  `src-tauri/tauri.conf.json` (canonical build identity), `package.json`,
+  `package-lock.json` (both `version` fields), `src-tauri/Cargo.toml` (run
+  `cargo check` to sync `Cargo.lock`) — plus the `CHANGELOG.md` entry.
+- Release = push tag `vX.Y.Z` → `.github/workflows/release.yml` validates
+  tag == manifest versions, builds the signed NSIS updater, and creates a
+  **draft** release; the draft must be published for the updater feed to
+  serve it. Full checklist: `docs/RELEASE.md`.
+
 ## Current status
 
 See `docs/ROADMAP.md`. The repo is the source of truth for what works: check `git log --oneline`.

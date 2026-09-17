@@ -2,7 +2,75 @@
 
 All notable changes to Leftleg are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versioning
-follows the version in `src-tauri/tauri.conf.json`.
+follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
+`src-tauri/tauri.conf.json`.
+
+## [0.4.0] — 2026-09-17
+
+### Added
+- Native path boundaries: scoped `open_path` (tool cards, artifacts, and the
+  logs folder route through containment + an executable-extension denylist),
+  `pick_and_read_files` dialog+read attachments (the renderer can only read
+  what the user just picked), and pi-update single-flight with a panic-safe
+  guard.
+- Brand assets, per-project icon rendering, right-panel dock placeholders,
+  thinking-card ANSI cleanup.
+- CI: quality gate (svelte-check, vitest, vite, cargo) on every push/PR and a
+  weekly security audit job (npm audit + cargo audit).
+
+### Fixed
+- Three-round fresh-eyes review loop (see `docs/AUDIT-2026-09-17.md`): null
+  CSP; non-async Tauri commands blocking the main thread; pi-update subprocess
+  bounded and killable; log rotation + line caps; streaming race (steer
+  accepted before `agent_start`); management-channel identity (companion
+  provenance anchored to the agent dir); webview navigation hijack (http(s)
+  anchors to the OS browser, non-http navigation blocked); un-timed status
+  notes; id-keyed chat items (duplicate-key crash); composer draft pruning;
+  settings textarea Enter handling; opener capability narrowed; 50 MiB
+  attachment batch budget; symlink-safe path containment; startup pi updater
+  navigation race (fires post-boot, bounded wait, no-stamp retry).
+
+### Changed
+- `opener:default` capability replaced with explicit `allow-open-url` /
+  `allow-default-urls` (unscoped reveal grant dropped).
+
+## [0.3.0] — 2026-09-15
+
+### Added
+- Startup pi harness/extension update pipeline: guarded Rust runner,
+  integrity gate, 12-hour debounce; extensions section in the status card.
+- Project icons: 40-emoji picker with user-chosen colors across the sidebar
+  and start screen.
+- Response polish: per-response day/time headers, tool/thinking/turn timers,
+  copy-response button.
+- Right panel: Status/Artifacts cards beside the chat, resizable + persisted
+  (the dropdown status card's redundant Updates section removed).
+
+### Fixed
+- Project state and media handling hardening; thinking-card cleanup
+  (`thinking_end` adopts authoritative content, render-time sanitize pass).
+
+## [0.2.3] — 2026-09-14
+
+### Changed
+- Footer layout: theme + settings on row 1, connection + branch chip on row 2.
+
+## [0.2.2] — 2026-09-14
+
+### Added
+- Custom title bar with menus, proactive update control, model dropdown.
+
+### Changed
+- Composer reset, sidebar restructure, startup scene, git chip, status card;
+  model pinning/search, status pill cleanup, filter-row swap; sidebar footer
+  cleanup, media settings under Models.
+
+## [0.2.1] — 2026-09-14
+
+### Added
+- Image generation: `image_generate` companion (OpenRouter Image API,
+  pi-registry auth), image placeholder UX, artifacts browser, asset-protocol
+  streaming with project-scoped grants.
 
 ## [0.2.0] — 2026-09-14
 
