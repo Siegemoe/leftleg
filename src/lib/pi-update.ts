@@ -18,15 +18,16 @@ function lastRunMs(): number {
 }
 
 /** Resolve once the app is no longer mid-navigation (boot, project switch).
- * The startup pass fires exactly once per launch, so it must wait out boot's
- * navigation window rather than skip on it — skipping would starve the
- * updater forever (navigating is held for the whole boot). Bounded: giving
- * up writes no debounce stamp, so the next launch retries. */
+ * The startup pass fires once per launch, after boot settles — this wait is
+ * the safety net for out-of-order callers, not the boot path itself (the
+ * production call site is already post-boot). Bounded: giving up writes no
+ * debounce stamp, so the next launch retries. */
 function navigatingSettled(timeoutMs = 60_000): Promise<boolean> {
   if (!get(navigating)) return Promise.resolve(true);
   return new Promise((resolve) => {
+    let unsub = () => {};
     const timer = setTimeout(() => { unsub(); resolve(false); }, timeoutMs);
-    const unsub = navigating.subscribe((v) => {
+    unsub = navigating.subscribe((v) => {
       if (!v) { clearTimeout(timer); unsub(); resolve(true); }
     });
   });

@@ -6,6 +6,7 @@ vi.mock("../../lib/settings/mgmt", () => ({
   bindManagement: () => mocks.request,
   handleMgmtNotify: () => false,
   abortPendingMgmt: () => {},
+  primeAgentDir: () => {},
   agentDirStore: { subscribe: (fn: (v: string | null) => void) => { fn(null); return () => {}; } },
   isCompanionCommand: () => false,
 }));

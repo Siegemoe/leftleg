@@ -43,6 +43,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  mocks.navigating.set(false); // module-level store — don't leak between tests
   vi.useRealTimers();
 });
 
@@ -165,19 +166,37 @@ describe("runStartupPiUpdate", () => {
     expect(mocks.runPiManager).not.toHaveBeenCalled();
   });
 
-  it("waits out startup navigation instead of skipping, then runs", async () => {
-    // Regression: gating on navigating skipped the pass on every launch —
-    // boot holds navigating for its whole duration and this pass fires once.
+  it("waits out an in-flight navigation instead of skipping, then runs", async () => {
+    // navigatingSettled's wait only covers out-of-order callers (the
+    // production call site fires post-boot); pin the wait mechanism anyway.
     mocks.piIntegrityReport.mockResolvedValue({ extensions: [] });
     mocks.runPiManager.mockResolvedValue({ exitCode: 0, stdout: "pi 0.85.1 → 0.86.0" });
-    mocks.navigating.set(true); // boot in flight
+    mocks.navigating.set(true); // navigation in flight at call time
     runStartupPiUpdate();
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.runPiManager).not.toHaveBeenCalled();
-    mocks.navigating.set(false); // boot settles
+    mocks.navigating.set(false); // navigation settles
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.runPiManager).toHaveBeenCalledWith(["--all"]);
     expect(mocks.setGuiStateValue).toHaveBeenCalledWith("piUpdateLastRun", expect.any(Number));
+  });
+
+  it("skips without a stamp when navigation races in mid-pass (next launch retries)", async () => {
+    // Regression for the round-2/round-3 starvation: the pass must NOT run
+    // under navigation even when it already fast-pathed the wait — but the
+    // skip leaves no debounce stamp, so the next launch retries. The
+    // production call site is post-boot precisely so this race can't repeat
+    // every launch.
+    mocks.piIntegrityReport.mockImplementation(async () => {
+      mocks.navigating.set(true); // navigation starts while the gate is in flight
+      return { extensions: [] };
+    });
+    runStartupPiUpdate();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.runPiManager).not.toHaveBeenCalled();
+    expect(mocks.setGuiStateValue).not.toHaveBeenCalled();
+    expect(mocks.pushNotification).not.toHaveBeenCalled();
   });
 });

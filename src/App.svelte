@@ -56,11 +56,14 @@
       if (disposed) { unlistenExit(); return; }
       subscriptions.push(unlistenExit);
       await boot();
+      // Must fire post-boot: pre-boot, `navigating` is still false, so the
+      // pass fast-paths the navigation wait, then skips at its re-check when
+      // boot raises `navigating` mid-flight — same race every launch, no
+      // debounce stamp, updater starved forever.
+      runStartupPiUpdate();
     })().catch((e) => { cleanup?.(); reportError("boot", String(e)); });
     // Non-blocking startup update check — banner renders only when available.
     startupUpdateCheck();
-    // Non-blocking pi harness/extension updater (integrity-gated, debounced).
-    runStartupPiUpdate();
     document.addEventListener("click", onDocumentClick, true);
     // Middle-click navigations ride auxclick, not click — same guard covers both.
     document.addEventListener("auxclick", onDocumentClick, true);
