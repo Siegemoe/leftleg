@@ -483,6 +483,29 @@ mod tests {
     }
 }
 
+/// Raise the main window (unminimize, show, focus). Used by the tray menu
+/// and by single-instance relaunches.
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// Tray left-click: hide when visible+focused, otherwise raise. Closing the
+/// window hides it too — background pi projects keep streaming while the
+/// window is gone; the tray's Quit is the real exit.
+fn toggle_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
+            let _ = w.hide();
+        } else {
+            show_main(app);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Native crash forensics: panics must leave a trace on disk.
@@ -496,6 +519,12 @@ pub fn run() {
         }
     }));
     tauri::Builder::default()
+        // Must register before other plugins (single-instance docs): a second
+        // launch focuses the existing window instead of spawning a duplicate —
+        // required once closing the window hides it to the tray.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
@@ -524,6 +553,45 @@ pub fn run() {
             append_log,
             write_agent_extension,
         ])
+        .setup(|app| {
+            use tauri::{
+                menu::{Menu, MenuItem},
+                tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+            };
+            let open = MenuItem::with_id(app, "open", "Open Leftleg", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &quit])?;
+            TrayIconBuilder::with_id("leftleg-tray")
+                .icon(app.default_window_icon().expect("bundle icon").clone())
+                .tooltip("Leftleg")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "open" => show_main(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_main(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // The tray is the exit; the X parks the app (background pi
+                // projects keep running). Tray → Quit reaches RunEvent::Exit.
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
