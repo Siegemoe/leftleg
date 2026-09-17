@@ -94,8 +94,13 @@ impl PiState {
     ) -> Result<Vec<Arc<PiProcess>>, String> {
         let mut processes = self.processes.lock().unwrap();
         // Recheck under the same lock used by begin_update_shutdown. This closes
-        // the race where a slow spawn starts just before update preparation.
+        // the race where a slow spawn starts just before update preparation —
+        // and the one where a pi update starts between pi_start's check and
+        // this insert (npm rewriting the package under the new process).
         self.ensure_available()?;
+        if pimgr::pi_update_running() {
+            return Err("pi update is running — start the project when it finishes".into());
+        }
         let displaced = processes
             .insert(project.to_string(), proc)
             .filter(|old| old.is_alive())

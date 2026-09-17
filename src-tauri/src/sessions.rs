@@ -284,6 +284,11 @@ fn pick_and_read_files_impl(app: &tauri::AppHandle) -> Result<Vec<PickedFile>, S
         return Ok(Vec::new()); // cancelled — not an error
     };
     let mut out = Vec::with_capacity(paths.len());
+    // Cumulative batch budget: one multi-select must not balloon into
+    // hundreds of MiB of base64 in webview memory. Budgeted on raw file
+    // size before reading so oversized files are never pulled into memory.
+    const BATCH_LIMIT: u64 = 50 * 1024 * 1024;
+    let mut budget = BATCH_LIMIT;
     for picked in paths {
         let path = match picked.into_path() {
             Ok(p) => p,
@@ -294,8 +299,16 @@ fn pick_and_read_files_impl(app: &tauri::AppHandle) -> Result<Vec<PickedFile>, S
         };
         let shown = path.to_string_lossy().into_owned();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if size > budget {
+            out.push(PickedFile { name, path: shown, data: None, error: Some(format!("Attachment batch exceeds the 50 MiB total limit (file is {size} bytes)")) });
+            continue;
+        }
         match read_attachment(&shown) {
-            Ok(data) => out.push(PickedFile { name, path: shown, data: Some(data), error: None }),
+            Ok(data) => {
+                budget = budget.saturating_sub(size);
+                out.push(PickedFile { name, path: shown, data: Some(data), error: None })
+            }
             Err(e) => out.push(PickedFile { name, path: shown, data: None, error: Some(e) }),
         }
     }
@@ -318,16 +331,22 @@ fn read_attachment(path: &str) -> Result<String, String> {
 /// Extensions the OS would execute rather than render when "opened". Tool
 /// cards and artifact rows only ever offer data files; anything on this list
 /// is refused instead of handed to the OS. Case-insensitive, and the rfind
-/// makes double extensions count (report.tar.bat is denied).
+/// makes double extensions count (report.tar.bat is denied). Includes the
+/// silent runners on stock Windows: .js/.jse open with WScript with no
+/// prompt, .url launches its target (defeating containment), .chm/.msc/
+/// ClickOnce/macro Office formats all execute.
 const OPEN_DENY_EXTENSIONS: &[&str] = &[
     "exe", "bat", "cmd", "com", "scr", "pif", "msi", "msp", "mst", "cpl",
-    "ps1", "psm1", "vbs", "vbe", "ws", "wsf", "wsc", "hta", "jar", "lnk",
-    "dll", "reg", "sh", "bash", "applescript",
+    "ps1", "psm1", "vbs", "vbe", "js", "jse", "ws", "wsf", "wsc", "hta",
+    "jar", "lnk", "url", "chm", "msc", "application", "settingcontent-ms",
+    "diagcab", "docm", "xlsm", "dll", "reg", "sh", "bash", "applescript",
 ];
 
 fn is_denied_executable(path: &std::path::Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return false };
-    let lower = name.to_ascii_lowercase();
+    // Trailing dots/spaces are creatable via verbatim APIs and would make an
+    // extension like "bat " miss the list; trim them before matching.
+    let lower = name.to_ascii_lowercase().trim_end_matches(['.', ' ']).to_string();
     let Some(dot) = lower.rfind('.') else { return false };
     OPEN_DENY_EXTENSIONS.contains(&&lower[dot + 1..])
 }
@@ -376,6 +395,12 @@ pub fn open_path_allowed<R: tauri::Runtime>(
         return Err(format!("refusing to open executable file: {name}"));
     }
     let resolved = canonical_ancestor(target).ok_or_else(|| "open path not found".to_string())?;
+    // The requested name may lie (a symlink named "helper" can resolve to
+    // evil.exe), so the denylist also runs on the canonical name.
+    if is_denied_executable(&resolved) {
+        let name = resolved.file_name().and_then(|n| n.to_str()).unwrap_or(path);
+        return Err(format!("refusing to open executable file: {name}"));
+    }
     // Containment probe: the canonical file when it exists, else its canonical
     // parent. All sides go through canonicalize so verbatim (\\?\) forms and
     // symlinks compare consistently.

@@ -309,7 +309,9 @@ impl PiProcess {
             pending.clear();
             let expected = proc_ref.expecting_exit.load(Ordering::SeqCst);
             if !expected {
-                let _ = crate::append_log(app_handle.clone(), format!("pi-exit [{}]: {error}", proc_ref.cwd));
+                // Sync native log: append_log became async, and dropping its
+                // future here would silently lose crash diagnostics.
+                crate::log_native(&app_handle, &format!("pi-exit [{}]: {error}", proc_ref.cwd));
             }
             let _ = app_handle.emit(
                 "pi-exit",

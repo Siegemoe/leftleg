@@ -59,6 +59,16 @@ pub fn pi_update_running() -> bool {
     PI_UPDATE_RUNNING.load(Ordering::SeqCst)
 }
 
+/// Clears PI_UPDATE_RUNNING on drop, so a panic inside `run_pi_update` (or a
+/// future early return) unwinds the single-flight flag instead of wedging it
+/// and blocking every later update and `pi_start`.
+struct PiUpdateGuard;
+impl Drop for PiUpdateGuard {
+    fn drop(&mut self) {
+        PI_UPDATE_RUNNING.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Run `pi update` with the given (pre-validated) flags, single-flight: the
 /// compare_exchange closes the gap a frontend-side lock leaves open (two
 /// webview callers, or a stale frontend that lost its in-flight flag).
@@ -69,9 +79,8 @@ pub fn run_pi_manager_impl(flags: Vec<String>) -> Result<PiManagerResult, String
     {
         return Err("pi update is already running".into());
     }
-    let result = run_pi_update(flags);
-    PI_UPDATE_RUNNING.store(false, Ordering::SeqCst);
-    result
+    let _guard = PiUpdateGuard;
+    run_pi_update(flags)
 }
 
 /// Run `pi update` with the given (pre-validated) flags: no shell, captured
@@ -216,6 +225,17 @@ pub async fn pi_integrity_report() -> Result<PiIntegrityReport, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_guard_clears_flag_on_drop() {
+        // The only test touching PI_UPDATE_RUNNING (parallel tests share the
+        // static, so mutating it elsewhere would race this one).
+        PI_UPDATE_RUNNING.store(true, Ordering::SeqCst);
+        {
+            let _guard = PiUpdateGuard;
+        }
+        assert!(!pi_update_running());
+    }
 
     #[test]
     fn allows_known_update_flags() {
