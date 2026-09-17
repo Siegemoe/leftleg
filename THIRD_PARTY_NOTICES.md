@@ -11,7 +11,7 @@
 
 Portions of Leftleg's sessions sidebar are adapted from
 [T3 Code](https://github.com/pingdotgg/t3code) by T3 Tools Inc., which is
-licensed under the MIT License (not Apache, as initially assumed). The
+licensed under the MIT License. The
 adapted functionality includes:
 
 - The sidebar list model: Pinned/Active/Settled section semantics, project
