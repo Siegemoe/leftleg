@@ -49,8 +49,11 @@
       return;
     }
     for (const f of picked) {
-      if (!f.data) {
-        transientNote(`Couldn't attach ${f.name || f.path}: ${f.error}`);
+      // Rust reports per-file failures via `error`; a present-but-empty data
+      // string is a legitimate (empty) file and attaches as one. Guard the
+      // message so an unnamed/unresolvable pick can't render "undefined".
+      if (f.error || f.data === undefined) {
+        transientNote(`Couldn't attach ${f.name || f.path || "file"}: ${f.error ?? "no content"}`);
         continue;
       }
       const isImage = IMAGE_TYPES.has(ext(f.name));

@@ -52,6 +52,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="overlay">
+  {#key d.id}
   <div class="card" use:focusFirst>
     <h3>{d.title || "Extension request"}</h3>
     {#if d.message}
@@ -87,6 +88,7 @@
       </div>
     {/if}
   </div>
+  {/key}
 </div>
 
 <style>

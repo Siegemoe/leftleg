@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync } from "svelte";
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock("../../lib/settings/mgmt", () => ({ companionAvailable: () => true, bindManagement: () => mocks.request, handleMgmtNotify: () => false, abortPendingMgmt: () => {} }));
+vi.mock("../../lib/settings/mgmt", () => ({ companionAvailable: () => true, bindManagement: () => mocks.request, handleMgmtNotify: () => false, abortPendingMgmt: () => {}, companionAgentDir: () => undefined, isCompanionCommand: () => false }));
 vi.mock("../../lib/api", () => ({ piRequest: vi.fn().mockResolvedValue({ success: true, data: {} }), listSessions: vi.fn().mockResolvedValue([]), getAgentDir: vi.fn().mockResolvedValue("/agent"), writeGuiState: vi.fn() }));
 import PackageForms from "./PackageForms.svelte";
 import SettingsWorkspace from "./SettingsWorkspace.svelte";

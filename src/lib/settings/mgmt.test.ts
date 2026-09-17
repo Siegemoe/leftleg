@@ -12,6 +12,14 @@ beforeEach(() => {
   vi.mocked(api.piRequest).mockReset().mockResolvedValue({ success: true });
 });
 afterEach(() => { abortPendingMgmt("test cleanup"); vi.useRealTimers(); });
+/** The send path awaits the agent-dir lookup before its first wire send, so
+ * callers that read the wire synchronously after mgmtRequest() must let the
+ * microtask chain (mock resolution → gate re-check → piRequest) drain. */
+async function flushMgmt(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
 function reply(ok = true, project = "/a", proc = 1) {
   const command = vi.mocked(api.piRequest).mock.calls[0][0];
   const payload = JSON.parse(String(command.message).slice("/settings-mgmt ".length));
@@ -20,6 +28,7 @@ function reply(ok = true, project = "/a", proc = 1) {
 it("routes replies after the requesting project goes into the background", async () => {
   const pending = mgmtRequest("ping");
   projectDir.set("/b");
+  await flushMgmt();
   await reply();
   await expect(pending).resolves.toEqual({ answer: 42 });
   expect(get(notifications)).toEqual([]);
@@ -27,6 +36,7 @@ it("routes replies after the requesting project goes into the background", async
 });
 it("does not abort one project's request when another process exits", async () => {
   const pending = mgmtRequest("ping");
+  await flushMgmt();
   handlePiExit("/b", 2, false);
   await reply();
   await expect(pending).resolves.toEqual({ answer: 42 });
@@ -40,11 +50,13 @@ it("times out even when the prompt acknowledgement never arrives", async () => {
 it("handles a failed notify before the prompt acknowledgement without an unhandled rejection", async () => {
   vi.mocked(api.piRequest).mockReturnValue(new Promise(() => {}));
   const result = expect(mgmtRequest("ping")).rejects.toThrow("nope");
+  await flushMgmt();
   await reply(false);
   await result;
 });
 it("rejects pending requests on process replacement", async () => {
   const result = expect(mgmtRequest("ping")).rejects.toThrow("replaced");
+  await flushMgmt();
   recordProcess("/a", 3);
   await result;
 });
@@ -65,8 +77,21 @@ it("an extension command outside the agent's extensions dir fails the gate once 
   await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
   expect(api.piRequest).not.toHaveBeenCalled();
 });
+it("a same-named project-local extension passes the substring but fails the anchored gate", async () => {
+  // A trusted repo shipping its own extensions/leftleg-settings must not be
+  // mistaken for the companion: the path check is anchored to the agent dir.
+  commands.set([{ name: "settings-mgmt", source: "extension", sourceInfo: { path: "C:\\proj\\.pi\\extensions\\leftleg-settings\\index.ts" } }]);
+  await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
+  expect(api.piRequest).not.toHaveBeenCalled();
+});
+it("an extension command with a different name fails the gate even from the companion dir", async () => {
+  commands.set([{ name: "other-command", source: "extension", sourceInfo: { path: "C:\\agent\\extensions\\leftleg-settings\\index.ts" } }]);
+  await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
+  expect(api.piRequest).not.toHaveBeenCalled();
+});
 it("a spoofed notify with a guessed id cannot resolve a pending request", async () => {
   const result = expect(mgmtRequest("ping", {}, 60_000)).rejects.toThrow("timed out");
+  await flushMgmt();
   const sent = vi.mocked(api.piRequest).mock.calls[0][0] as { message: string };
   const realId = JSON.parse(String(sent.message).slice("/settings-mgmt ".length)).id as string;
   handleEvent(
@@ -78,6 +103,7 @@ it("a spoofed notify with a guessed id cannot resolve a pending request", async 
 });
 it("wrong-origin replies are ignored, not rejected — the request survives for its true reply", async () => {
   const pending = mgmtRequest("ping");
+  await flushMgmt();
   handleEvent(
     { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: "whatever", ok: false, error: "spoof" }) },
     { project: "/b", proc: 2 },
@@ -85,8 +111,9 @@ it("wrong-origin replies are ignored, not rejected — the request survives for 
   await reply();
   await expect(pending).resolves.toEqual({ answer: 42 });
 });
-it("envelope keys win over caller params (no shadowing)", () => {
+it("envelope keys win over caller params (no shadowing)", async () => {
   void mgmtRequest("write", { id: "caller-id", op: "evil-op" }).catch(() => {});
+  await flushMgmt();
   const sent = vi.mocked(api.piRequest).mock.calls[0][0] as { message: string };
   const payload = JSON.parse(String(sent.message).slice("/settings-mgmt ".length));
   expect(payload.op).toBe("write");

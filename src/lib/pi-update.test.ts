@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   pushNotification: vi.fn(),
   setGuiStateValue: vi.fn(),
   guiStateValue: vi.fn(),
+  collectUpdateInstallBlockers: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
@@ -16,7 +17,7 @@ vi.mock("./stores", () => ({
   pushNotification: mocks.pushNotification,
   setGuiStateValue: mocks.setGuiStateValue,
   guiStateValue: mocks.guiStateValue,
-  streaming: { subscribe: (fn: (v: boolean) => void) => { fn(false); return () => {}; } },
+  collectUpdateInstallBlockers: mocks.collectUpdateInstallBlockers,
   updateInstallLock: { subscribe: (fn: (v: boolean) => void) => { fn(false); return () => {}; } },
 }));
 
@@ -25,6 +26,7 @@ import { integrityGate, runStartupPiUpdate, summarizeUpdateOutput } from "./pi-u
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.guiStateValue.mockReturnValue(0); // no debounce stamp
+  mocks.collectUpdateInstallBlockers.mockReturnValue([]); // nothing in flight
   mocks.runPiManager.mockResolvedValue({ exitCode: 0, stdout: "" });
 });
 
@@ -134,6 +136,16 @@ describe("runStartupPiUpdate", () => {
 
   it("skips entirely while the debounce window is fresh", async () => {
     mocks.guiStateValue.mockReturnValue(Date.now() - 60_000); // ran a minute ago
+    runStartupPiUpdate();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.piIntegrityReport).not.toHaveBeenCalled();
+    expect(mocks.runPiManager).not.toHaveBeenCalled();
+  });
+
+  it("skips while any project — including a background one — has activity", async () => {
+    // Regression: the old foreground-only `streaming` check missed background
+    // projects mid-turn; the npm pass must never run under live pi.
+    mocks.collectUpdateInstallBlockers.mockReturnValue(["/b has an active agent turn"]);
     runStartupPiUpdate();
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.piIntegrityReport).not.toHaveBeenCalled();

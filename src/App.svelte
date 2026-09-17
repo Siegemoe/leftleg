@@ -23,9 +23,12 @@
 
   /** Anchor clicks from rendered markdown must never navigate this webview
    * away (Tauri's default on_navigation lets it) — route them to the OS
-   * browser instead. Document-level so it covers every render site. */
+   * browser instead. Document-level so it covers every render site, and
+   * covering every button/modifier: the webview has no tabs or new windows
+   * to fall into, so ctrl/cmd/middle-click fall-through would just navigate
+   * the app UI away. */
   function onDocumentClick(e: MouseEvent) {
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
+    if (e.defaultPrevented) return;
     const anchor = (e.target as HTMLElement | null)?.closest("a[href]");
     if (!anchor) return;
     const href = anchor.getAttribute("href") ?? "";
@@ -59,7 +62,9 @@
     // Non-blocking pi harness/extension updater (integrity-gated, debounced).
     runStartupPiUpdate();
     document.addEventListener("click", onDocumentClick, true);
-    return () => { disposed = true; cleanup?.(); document.removeEventListener("click", onDocumentClick, true); };
+    // Middle-click navigations ride auxclick, not click — same guard covers both.
+    document.addEventListener("auxclick", onDocumentClick, true);
+    return () => { disposed = true; cleanup?.(); document.removeEventListener("click", onDocumentClick, true); document.removeEventListener("auxclick", onDocumentClick, true); };
   });
 </script>
 

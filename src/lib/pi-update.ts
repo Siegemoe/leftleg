@@ -4,7 +4,7 @@
 // extension sources hold the auto-update for that run and raise a warning —
 // belt-and-braces on top of the risk acceptance.
 import { get } from "svelte/store";
-import { pushNotification, setGuiStateValue, guiStateValue, streaming, updateInstallLock } from "./stores";
+import { collectUpdateInstallBlockers, pushNotification, setGuiStateValue, guiStateValue, updateInstallLock } from "./stores";
 import { piIntegrityReport, runPiManager } from "./api";
 
 /** At most one managed update attempt per 12 hours. */
@@ -49,7 +49,10 @@ export async function integrityGate(): Promise<{ ok: boolean; flagged: string[] 
 export function runStartupPiUpdate(): void {
   void (async () => {
     if (inFlight) return;
-    if (get(streaming) || get(updateInstallLock)) return;
+    // Blockers cover every surface — foreground and background projects,
+    // queued messages, dialogs, in-flight sends and writes — not just the
+    // foreground streaming flag. A background project mid-turn is live pi.
+    if (collectUpdateInstallBlockers().length > 0 || get(updateInstallLock)) return;
     if (Date.now() - lastRunMs() < UPDATE_DEBOUNCE_MS) return;
     inFlight = true;
     try {
@@ -64,10 +67,10 @@ export function runStartupPiUpdate(): void {
         return;
       }
       // Re-check right before the npm pass: the integrity gate awaited, and a
-      // turn may have started or the app updater may have taken the lock in
-      // that window — rewriting the npm package under live pi is the one thing
-      // this runner must never do.
-      if (get(streaming) || get(updateInstallLock)) return;
+      // turn may have started (in any project) or the app updater may have
+      // taken the lock in that window — rewriting the npm package under live
+      // pi is the one thing this runner must never do.
+      if (collectUpdateInstallBlockers().length > 0 || get(updateInstallLock)) return;
       const res = await runPiManager(["--all"]);
       await setGuiStateValue("piUpdateLastRun", Date.now());
       const upgraded = summarizeUpdateOutput(res.stdout);

@@ -38,24 +38,43 @@ interface Pending {
 const pending = new Map<string, Pending>();
 
 let agentDirCache: string | undefined;
-let agentDirFetched = false;
-function ensureAgentDir(): void {
-  if (agentDirFetched) return;
-  agentDirFetched = true;
-  void getAgentDir()
-    .then((d) => (agentDirCache = d))
-    .catch(() => (agentDirCache = ""));
+let agentDirPromise: Promise<string> | null = null;
+/** Kick off (once) and await the agent-dir lookup that anchors provenance. */
+function ensureAgentDir(): Promise<string> {
+  if (!agentDirPromise) {
+    agentDirPromise = getAgentDir()
+      .then((d) => (agentDirCache = d, d))
+      .catch(() => (agentDirCache = "", ""));
+  }
+  return agentDirPromise;
 }
 
-/** Provenance check: an extension command installed in the agent's extensions dir. */
-function isCompanionCommand(c: ExtCommand): boolean {
-  if (c.source !== "extension") return false;
-  // Until get_agent_dir resolves (or if it fails), the source check alone
-  // stands — prompt templates carry source "prompt", so the fallthrough they
-  // enable is already blocked.
-  if (!agentDirCache) return true;
+/** Agent dir for gate evaluation: kicks off the lookup, returns the cached
+ * value (undefined while the first lookup is still in flight). Reactive
+ * callers combine this with isCompanionCommand so the availability chip and
+ * the send gate share one predicate. */
+export function companionAgentDir(): string | undefined {
+  void ensureAgentDir();
+  return agentDirCache;
+}
+
+/**
+ * Identity + provenance gate for the management command: the pi command entry
+ * must be an extension command named `settings-mgmt` whose source path lives
+ * under <agentDir>/extensions/leftleg-settings/. Names alone never suffice (a
+ * repo can ship a prompt template with any name), and the path check is
+ * anchored to the agent dir — an unanchored substring would admit a
+ * project-local extension of the same name in a trusted repo. While the
+ * agent-dir lookup is in flight, name + source stand in (prompt templates
+ * carry source "prompt"); a lookup failure ("") denies everything.
+ */
+export function isCompanionCommand(c: ExtCommand, agentDir: string | undefined): boolean {
+  if (c.name !== MGMT_COMMAND || c.source !== "extension") return false;
+  if (agentDir === undefined) return true;
+  const dir = agentDir.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  if (dir === "") return false;
   const path = (c.sourceInfo?.path ?? "").replace(/\\/g, "/").toLowerCase();
-  return path.includes("/extensions/leftleg-settings/");
+  return path.startsWith(`${dir}/extensions/leftleg-settings/`);
 }
 
 /** Synchronous lifecycle signal used immediately before installing an update. */
@@ -64,8 +83,7 @@ export function pendingManagementCount(): number {
 }
 
 export function companionAvailable(): boolean {
-  ensureAgentDir();
-  return !get(navigating) && !get(updateInstallLock) && get(commands).some(isCompanionCommand);
+  return !get(navigating) && !get(updateInstallLock) && get(commands).some((c) => isCompanionCommand(c, companionAgentDir()));
 }
 
 function currentGeneration(): number | undefined {
@@ -142,6 +160,13 @@ export async function mgmtRequest<T = Record<string, unknown>>(
   const project = get(projectDir);
   if (gen === undefined) throw new Error("no active pi process");
 
+  // The check above ran on name + source alone while the agent-dir lookup was
+  // in flight; provenance must be anchored before the first wire send.
+  const agentDir = await ensureAgentDir();
+  if (!get(commands).some((c) => isCompanionCommand(c, agentDir))) {
+    throw new Error("Settings companion unavailable — install it in Settings → Advanced. Management requests are never sent as chat prompts.");
+  }
+
   // Unguessable: a spoofed reply must not be able to name a pending id.
   const id = crypto.randomUUID();
   // Envelope keys last so caller params can never shadow id/op/v.
@@ -155,14 +180,23 @@ export async function mgmtRequest<T = Record<string, unknown>>(
     pending.set(id, { project, proc: gen, resolve, reject, timer });
   });
 
-  // Re-check availability + generation immediately before sending.
-  if (!companionAvailable() || currentGeneration() !== gen) {
+  // Re-check availability + generation with the request registered, so a
+  // process replacement (or companion loss) in the window above cannot
+  // strand it. Generation is keyed to the request's own project — the
+  // request rides that project's pi process, so a switch of the foreground
+  // project does not invalidate it (replies are project-routed below). The
+  // agent dir is resolved now, so companionAvailable() here is the fully
+  // anchored gate.
+  const requestProc = get(lastProcByProject)[project];
+  if (!companionAvailable() || requestProc !== gen) {
     const p = pending.get(id);
     if (p) {
       clearTimeout(p.timer);
       pending.delete(id);
     }
-    throw new Error("settings companion became unavailable (process changed)");
+    throw new Error(requestProc !== gen
+      ? "settings companion became unavailable (process changed)"
+      : "Settings companion unavailable — install it in Settings → Advanced. Management requests are never sent as chat prompts.");
   }
 
   // Observe both promises immediately: notify can reject before the prompt

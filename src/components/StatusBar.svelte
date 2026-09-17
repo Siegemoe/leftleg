@@ -73,6 +73,11 @@
   // ---------- model dropdown ----------
   let modelOpen = $state(false);
   let modelHl = $state(0);
+  // True once arrow keys have engaged the highlight since the menu opened.
+  // Distinguishes a keyboard user's Enter (pick the highlighted model) from
+  // an Enter on the pill after a mouse-open, which must keep native
+  // activation (toggle) instead of silently switching to the first model.
+  let modelKbd = false;
   let modelMenuEl: HTMLDivElement | null = $state(null);
   async function pickModel(m: ModelInfo) {
     modelOpen = false;
@@ -117,12 +122,18 @@
       e.preventDefault();
       modelOpen = false;
       modelHl = 0;
+      modelKbd = false;
       return;
     }
     if (flatModels.length === 0) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); modelHl = (modelHl + 1) % flatModels.length; return; }
-    if (e.key === "ArrowUp") { e.preventDefault(); modelHl = (modelHl - 1 + flatModels.length) % flatModels.length; return; }
-    if (e.key === "Enter") { e.preventDefault(); void pickModel(flatModels[Math.min(modelHl, flatModels.length - 1)]); }
+    if (e.key === "ArrowDown") { e.preventDefault(); modelHl = (modelHl + 1) % flatModels.length; modelKbd = true; return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); modelHl = (modelHl - 1 + flatModels.length) % flatModels.length; modelKbd = true; return; }
+    if (e.key === "Enter") {
+      if (!modelKbd) return;
+      e.preventDefault();
+      modelKbd = false;
+      void pickModel(flatModels[Math.min(modelHl, flatModels.length - 1)]);
+    }
   }
 
   // ---------- extension status chips ----------
@@ -182,7 +193,7 @@
 
   {#if $rpcState?.model}
     <div class="modelwrap">
-      <button class="pill as-btn" title="Switch model — {$rpcState.model.provider} / {$rpcState.model.id}" onclick={() => { modelOpen = !modelOpen; if (modelOpen) { modelQuery = ""; modelHl = 0; } }}>
+      <button class="pill as-btn" title="Switch model — {$rpcState.model.provider} / {$rpcState.model.id}" onclick={() => { modelOpen = !modelOpen; if (modelOpen) { modelQuery = ""; modelHl = 0; modelKbd = false; } }}>
         {$rpcState.model.name}
         <ChevronDown size={11} />
       </button>
