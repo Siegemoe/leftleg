@@ -14,8 +14,8 @@ export const theme = writable<"light" | "dark" | "system">("system");
 export const projectDir = writable<string>("");
 export const sidebarOpen = writable<boolean>(true);
 export const settingsOpen = writable<boolean>(false);
-/** Right panel (Status / Artifacts / … cards beside the chat). */
-export type RightPanelTab = "status" | "artifacts";
+/** Right panel (Status / Artifacts / placeholder docks beside the chat). */
+export type RightPanelTab = "status" | "artifacts" | "diff" | "browser" | "terminal" | "files";
 export const rightPanelOpen = writable<boolean>(false);
 export const rightPanelTab = writable<RightPanelTab>("status");
 export const rightPanelWidth = writable<number>(420);

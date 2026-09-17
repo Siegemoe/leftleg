@@ -8,6 +8,7 @@
   import { projectMeta, projectDir, activeSessionPath, sessions, statusNote, switchToProject, sendPrompt, lastSessionFor } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { projectIconStyle } from "../lib/project-icons";
+  import ProjectIcon from "./ProjectIcon.svelte";
   import { chooseProject } from "../lib/stores";
   import { composerDraftFor } from "../lib/composer-drafts";
   import { untrack } from "svelte";
@@ -88,7 +89,7 @@
     <div class="cards">
       {#each projects as [dir] (dir)}
         <button class="card" onclick={() => void open(dir)} disabled={busy} title={dir}>
-          <span class="icon" style={projectIconStyle($projectMeta[dir]?.color)}>{$projectMeta[dir]?.icon ?? "📁"}</span>
+          <span class="icon" style={projectIconStyle($projectMeta[dir]?.color)}><ProjectIcon icon={$projectMeta[dir]?.icon} size={15} /></span>
           <span class="name">{projectDisplayName(dir, $projectMeta[dir]?.name)}</span>
           <span class="go"><ArrowRight size={14} /></span>
         </button>

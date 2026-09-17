@@ -12,7 +12,8 @@
     statusNote,
   } from "../../lib/stores";
   import { companionAvailable, bindManagement } from "../../lib/settings/mgmt";
-  import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle } from "../../lib/project-icons";
+  import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle, projectIconLabel } from "../../lib/project-icons";
+  import ProjectIcon from "../ProjectIcon.svelte";
   import { checkForUpdates, applyUpdate, updateAvailable, updateCheck, updateStatus } from "../../lib/updater";
   import { onDestroy, untrack } from "svelte";
   const mgmtRequest = bindManagement();
@@ -826,7 +827,7 @@
             </div>
             <div class="inline">
               {#each PROJECT_ICON_CHOICES as icon (icon)}
-                <button class="ghost icon-pick" class:active={meta.icon === icon} title={icon} onclick={() => updateProjectMeta(dir, { icon: icon === meta.icon ? undefined : icon })}>{icon}</button>
+                <button class="ghost icon-pick" class:active={meta.icon === icon} title={projectIconLabel(icon)} onclick={() => updateProjectMeta(dir, { icon: icon === meta.icon ? undefined : icon })}><ProjectIcon icon={icon} size={15} /></button>
               {/each}
             </div>
             <div class="inline">

@@ -1,11 +1,22 @@
 <script lang="ts">
-  // Right panel: a resizable column beside the chat hosting tool cards
-  // (Status, Artifacts — terminal later). Mirrors the left sidebar's
-  // drag-to-resize handle with the drag direction flipped.
-  import { Images, ListTodo, X } from "@lucide/svelte";
-  import { rightPanelOpen, rightPanelTab, rightPanelWidth } from "../lib/stores";
+  // Right panel: a resizable, floating card beside the chat hosting tool
+  // cards (Status, Artifacts — plus placeholder docks: Diff, Browser,
+  // Terminal, Files). Tab switching lives in the title bar; the card just
+  // shows the active view, its own scrollbar, and a close button. Mirrors
+  // the left sidebar's drag-to-resize handle with the direction flipped.
+  import { X } from "@lucide/svelte";
+  import { rightPanelOpen, rightPanelTab, rightPanelWidth, type RightPanelTab } from "../lib/stores";
   import StatusCard from "./StatusCard.svelte";
   import Artifacts from "./Artifacts.svelte";
+
+  const TAB_LABELS: Record<RightPanelTab, string> = {
+    status: "Status",
+    artifacts: "Artifacts",
+    diff: "Diff",
+    browser: "Browser",
+    terminal: "Terminal",
+    files: "Files",
+  };
 
   let startX = 0;
   let startWidth = 0;
@@ -30,12 +41,7 @@
 <aside style="width: {$rightPanelWidth}px">
   <button type="button" class="resize-handle" onmousedown={startResize} aria-label="Resize right panel"></button>
   <div class="panel-head">
-    <button class="ptab" class:active={$rightPanelTab === "status"} onclick={() => rightPanelTab.set("status")}>
-      <ListTodo size={13} strokeWidth={2} /> Status
-    </button>
-    <button class="ptab" class:active={$rightPanelTab === "artifacts"} onclick={() => rightPanelTab.set("artifacts")}>
-      <Images size={13} strokeWidth={2} /> Artifacts
-    </button>
+    <span class="panel-title">{TAB_LABELS[$rightPanelTab]}</span>
     <span class="spacer"></span>
     <button class="ghost icon" title="Close panel" onclick={() => rightPanelOpen.set(false)}>
       <X size={14} strokeWidth={2} />
@@ -44,8 +50,13 @@
   <div class="panel-body">
     {#if $rightPanelTab === "status"}
       <StatusCard />
-    {:else}
+    {:else if $rightPanelTab === "artifacts"}
       <Artifacts />
+    {:else}
+      <div class="placeholder">
+        <span class="ph-title">{TAB_LABELS[$rightPanelTab]} view</span>
+        <span class="ph-hint">Coming soon — this dock will grow into a live view.</span>
+      </div>
     {/if}
   </div>
 </aside>
@@ -56,9 +67,13 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-left: 1px solid var(--border);
-    background: var(--bg-surface);
     min-width: 320px;
+    margin: 10px 10px 10px 4px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-surface);
+    box-shadow: var(--shadow);
+    overflow: hidden;
   }
   .resize-handle {
     position: absolute;
@@ -77,24 +92,16 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 8px 10px 0;
+    padding: 7px 10px 7px 14px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .ptab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+  .panel-title {
     font-size: 12px;
+    font-weight: 600;
     color: var(--text-2);
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
+    letter-spacing: 0.2px;
   }
-  .ptab:hover { color: var(--text); }
-  .ptab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
   .spacer { flex: 1; }
   .ghost.icon {
     display: inline-flex;
@@ -108,5 +115,28 @@
     cursor: pointer;
   }
   .ghost.icon:hover { background: var(--bg-surface-2); }
-  .panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .panel-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .placeholder {
+    margin: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 24px;
+    text-align: center;
+    color: var(--text-3);
+  }
+  .ph-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  .ph-hint { font-size: 12px; }
 </style>

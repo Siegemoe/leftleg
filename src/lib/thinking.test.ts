@@ -29,6 +29,16 @@ describe("sanitizeThinking", () => {
     expect(sanitizeThinking(`a\r\nb${"\u200b"}c${"\u00ad"}d${"\ufeff"}`)).toBe("a\nbcd");
   });
 
+  it("strips ANSI escape sequences (truecolor SGR, reset, etc.)", () => {
+    expect(
+      sanitizeThinking("\x1b[38;2;138;190;183mThinking:\x1b[39m \x1b[90mI have all the CSS context.\x1b[0m"),
+    ).toBe("Thinking: I have all the CSS context.");
+  });
+
+  it("strips bracket SGR codes that lost their escape byte", () => {
+    expect(sanitizeThinking("[38;2;128;128;128mThinking:[39m note")).toBe("Thinking: note");
+  });
+
   it("passes plain text through unchanged", () => {
     const t = "Step 1: read the file\nStep 2: edit it";
     expect(sanitizeThinking(t)).toBe(t);

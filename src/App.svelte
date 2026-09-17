@@ -50,6 +50,7 @@
 
 <TitleBar />
 <div class="shell">
+  <div class="content">
   {#if $sidebarOpen}
     <Sidebar />
   {/if}
@@ -86,11 +87,14 @@
       <div class="chatwrap" in:fade={{ duration: 140 }}>
         <Chat />
       </div>
-      <StatusBar />
     {/if}
   </main>
   {#if $rightPanelOpen}
     <RightPanel />
+  {/if}
+  </div>
+  {#if $projectDir !== ""}
+    <StatusBar />
   {/if}
 </div>
 
@@ -108,8 +112,14 @@
 <style>
   .shell {
     display: flex;
+    flex-direction: column;
     height: calc(100vh - var(--topbar-h));
     background: var(--bg);
+  }
+  .content {
+    flex: 1;
+    display: flex;
+    min-height: 0;
   }
   main {
     flex: 1;

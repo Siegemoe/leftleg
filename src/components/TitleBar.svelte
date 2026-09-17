@@ -3,7 +3,7 @@
   // app title, menu bar (File / Edit / View / Help), Artifacts, and window
   // controls. The bar itself is the drag region; interactive children are
   // regular elements, so clicks on them never start a window drag.
-  import { PanelLeft, Images, ListTodo, Minus, Square, X } from "@lucide/svelte";
+  import { PanelLeft, Images, ListTodo, Minus, Square, X, GitCompare, Globe, Terminal, FolderOpen } from "@lucide/svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { appDataDir } from "@tauri-apps/api/path";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
@@ -13,6 +13,7 @@
     openRightPanel, rightPanelOpen, rightPanelTab,
   } from "../lib/stores";
   import { checkForUpdates } from "../lib/updater";
+  import mark from "../assets/leftleg-mark.png";
 
   const win = getCurrentWindow();
 
@@ -93,6 +94,7 @@
     <PanelLeft size={15} strokeWidth={2} />
   </button>
   <span class="app-title" data-tauri-drag-region>Leftleg</span>
+  <img class="app-mark" src={mark} alt="" draggable="false" />
 
   <nav class="menubar">
     <div class="menu">
@@ -170,6 +172,44 @@
     <span>Status</span>
   </button>
 
+  <!-- Placeholder docks: views arrive over time; buttons keep them visible. -->
+  <button
+    class="tb-btn soon"
+    class:open={$rightPanelOpen && $rightPanelTab === "diff"}
+    title="Diff view — coming soon"
+    onclick={() => openRightPanel("diff")}
+  >
+    <GitCompare size={14} strokeWidth={2} />
+    <span>Diff</span>
+  </button>
+  <button
+    class="tb-btn soon"
+    class:open={$rightPanelOpen && $rightPanelTab === "browser"}
+    title="Browser view — coming soon"
+    onclick={() => openRightPanel("browser")}
+  >
+    <Globe size={14} strokeWidth={2} />
+    <span>Browser</span>
+  </button>
+  <button
+    class="tb-btn soon"
+    class:open={$rightPanelOpen && $rightPanelTab === "terminal"}
+    title="Terminal view — coming soon"
+    onclick={() => openRightPanel("terminal")}
+  >
+    <Terminal size={14} strokeWidth={2} />
+    <span>Terminal</span>
+  </button>
+  <button
+    class="tb-btn soon"
+    class:open={$rightPanelOpen && $rightPanelTab === "files"}
+    title="Files view — coming soon"
+    onclick={() => openRightPanel("files")}
+  >
+    <FolderOpen size={14} strokeWidth={2} />
+    <span>Files</span>
+  </button>
+
   <div class="win-controls">
     <button class="win-btn" title="Minimize" onclick={() => void win.minimize()}><Minus size={14} /></button>
     <button class="win-btn" title="Maximize / restore" onclick={() => void win.toggleMaximize()}><Square size={11} /></button>
@@ -180,6 +220,7 @@
 {#if aboutOpen}
   <div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) aboutOpen = false; }} role="presentation">
     <div class="about" role="dialog" aria-modal="true">
+      <img class="about-mark" src={mark} alt="" draggable="false" />
       <h3>Leftleg</h3>
       <p class="ver">v{__APP_VERSION__}</p>
       <p class="desc">A control surface for the <a href="https://github.com/earendil-works/pi-mono" target="_blank" rel="noreferrer">Pi coding agent</a>.</p>
@@ -208,6 +249,14 @@
     padding: 0 6px;
     cursor: default;
   }
+  .app-mark {
+    height: 20px;
+    width: auto;
+    flex-shrink: 0;
+    display: block;
+    margin-left: -2px;
+    pointer-events: none;
+  }
   .tb-btn {
     display: inline-flex;
     align-items: center;
@@ -221,6 +270,8 @@
     font-size: 12px;
   }
   .tb-btn:hover { background: var(--bg-surface-2); color: var(--text); }
+  .tb-btn.soon { color: var(--text-3); }
+  .tb-btn.soon:hover { color: var(--text-2); }
   .menubar { display: flex; align-items: center; gap: 2px; margin-left: 4px; }
   .menu { position: relative; }
   .menu-label {
@@ -303,6 +354,7 @@
     gap: 6px;
   }
   .about h3 { margin: 0; font-size: 18px; }
+  .about-mark { display: block; height: 52px; width: auto; margin: 0 0 4px; }
   .ver { margin: 0; color: var(--accent); font-size: 12.5px; font-weight: 600; }
   .desc { margin: 0; font-size: 12.5px; color: var(--text-2); }
   .desc a { color: var(--accent); text-decoration: none; }

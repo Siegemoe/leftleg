@@ -14,6 +14,7 @@
     resolveThreadPill, splitSections, toSidebarSessions, type SidebarSection, type SidebarSession,
   } from "../lib/sidebar-model";
   import { projectIconStyle } from "../lib/project-icons";
+  import ProjectIcon from "./ProjectIcon.svelte";
   import { ChevronRight, Folder, GitBranch, Layers, List, Monitor, Moon, Plus, Search, Settings, Sun } from "@lucide/svelte";
   import { gitRepoInfo } from "../lib/api";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
@@ -282,7 +283,7 @@
           onclick={() => { scopeOpen = !scopeOpen; scopeQuery = ""; }}
         >
           {#if $projectScope}
-            <span class="scope-icon" style={projectIconStyle($projectMeta[$projectScope]?.color)}>{$projectMeta[$projectScope]?.icon ?? "📁"}</span>
+            <span class="scope-icon" style={projectIconStyle($projectMeta[$projectScope]?.color)}><ProjectIcon icon={$projectMeta[$projectScope]?.icon} size={13} /></span>
             <span class="scope-name">{displayName($projectScope)}</span>
           {:else}
             <Folder size={13} strokeWidth={2} />
@@ -319,7 +320,7 @@
                 }}
                 title="Right-click for project settings"
               >
-                <span class="scope-icon" style={projectIconStyle($projectMeta[dir]?.color)}>{$projectMeta[dir]?.icon ?? "📁"}</span>
+                <span class="scope-icon" style={projectIconStyle($projectMeta[dir]?.color)}><ProjectIcon icon={$projectMeta[dir]?.icon} size={13} /></span>
                 <span class="scope-name">{displayName(dir)}</span>
                 {#if dir === $projectDir}<span class="scope-tag">active</span>{/if}
               </button>
@@ -377,7 +378,7 @@
       {#each groups as g (g.dir)}
         {#if $projectScope === null && groups.length > 1}
           <div class="group-header">
-            <span class="scope-icon" style={projectIconStyle($projectMeta[g.dir]?.color)}>{g.icon ?? "📁"}</span>
+            <span class="scope-icon" style={projectIconStyle($projectMeta[g.dir]?.color)}><ProjectIcon icon={g.icon} size={13} /></span>
             <span class="group-name" title={g.dir}>{g.displayName}</span>
             {#if g.pill}
               <span class="group-pill {g.pill.kind}">{g.pill.label}</span>

@@ -2,6 +2,7 @@
   import { items, streaming, rpcState, projectDir, activeSessionPath, chooseProject, disconnected } from "../lib/stores";
   import MessageView from "./MessageView.svelte";
   import Composer from "./Composer.svelte";
+  import mark from "../assets/leftleg-mark.png";
 
   let scroller: HTMLDivElement | null = $state(null);
   let stick = $state(true);
@@ -27,11 +28,7 @@
 <div class="chat" onscroll={onScroll} bind:this={scroller}>
   {#if $items.length === 0}
     <div class="hero">
-      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round">
-        <path d="M7 3v11a3 3 0 0 0 3 3h0" />
-        <path d="M7 14v7" />
-        <circle cx="10" cy="17" r="1.6" fill="var(--accent)" stroke="none" />
-      </svg>
+      <img class="hero-mark" src={mark} alt="" draggable="false" />
       <h1>Leftleg</h1>
       <p>A control surface for Pi.</p>
       {#if !$projectDir}
@@ -74,6 +71,7 @@
     color: var(--text-2);
     text-align: center;
   }
+  .hero-mark { display: block; height: 64px; width: auto; margin-bottom: 4px; }
   .hero h1 { margin: 8px 0 0; font-size: 22px; color: var(--text); }
   .hero p { margin: 0; font-size: 13.5px; }
   .lead { color: var(--text-3); max-width: 420px; }
