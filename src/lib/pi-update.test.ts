@@ -1,13 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  piIntegrityReport: vi.fn(),
-  runPiManager: vi.fn(),
-  pushNotification: vi.fn(),
-  setGuiStateValue: vi.fn(),
-  guiStateValue: vi.fn(),
-  collectUpdateInstallBlockers: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  // Minimal writable stand-in for the navigating store so tests can put the
+  // app mid-navigation and let it settle again.
+  const listeners = new Set<(v: boolean) => void>();
+  let nav = false;
+  const navigating = {
+    subscribe: (fn: (v: boolean) => void) => { listeners.add(fn); fn(nav); return () => { listeners.delete(fn); }; },
+    set: (v: boolean) => { nav = v; for (const l of listeners) l(v); },
+  };
+  return {
+    piIntegrityReport: vi.fn(),
+    runPiManager: vi.fn(),
+    pushNotification: vi.fn(),
+    setGuiStateValue: vi.fn(),
+    guiStateValue: vi.fn(),
+    collectUpdateInstallBlockers: vi.fn(),
+    navigating,
+  };
+});
 
 vi.mock("./api", () => ({
   piIntegrityReport: mocks.piIntegrityReport,
@@ -18,6 +29,7 @@ vi.mock("./stores", () => ({
   setGuiStateValue: mocks.setGuiStateValue,
   guiStateValue: mocks.guiStateValue,
   collectUpdateInstallBlockers: mocks.collectUpdateInstallBlockers,
+  navigating: mocks.navigating,
   updateInstallLock: { subscribe: (fn: (v: boolean) => void) => { fn(false); return () => {}; } },
 }));
 
@@ -148,7 +160,24 @@ describe("runStartupPiUpdate", () => {
     mocks.collectUpdateInstallBlockers.mockReturnValue(["/b has an active agent turn"]);
     runStartupPiUpdate();
     await new Promise((r) => setTimeout(r, 0));
-    expect(mocks.piIntegrityReport).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.piIntegrityReport).toHaveBeenCalled();
     expect(mocks.runPiManager).not.toHaveBeenCalled();
+  });
+
+  it("waits out startup navigation instead of skipping, then runs", async () => {
+    // Regression: gating on navigating skipped the pass on every launch —
+    // boot holds navigating for its whole duration and this pass fires once.
+    mocks.piIntegrityReport.mockResolvedValue({ extensions: [] });
+    mocks.runPiManager.mockResolvedValue({ exitCode: 0, stdout: "pi 0.85.1 → 0.86.0" });
+    mocks.navigating.set(true); // boot in flight
+    runStartupPiUpdate();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.runPiManager).not.toHaveBeenCalled();
+    mocks.navigating.set(false); // boot settles
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.runPiManager).toHaveBeenCalledWith(["--all"]);
+    expect(mocks.setGuiStateValue).toHaveBeenCalledWith("piUpdateLastRun", expect.any(Number));
   });
 });

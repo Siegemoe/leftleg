@@ -13,12 +13,13 @@ beforeEach(() => {
 });
 afterEach(() => { abortPendingMgmt("test cleanup"); vi.useRealTimers(); });
 /** The send path awaits the agent-dir lookup before its first wire send, so
- * callers that read the wire synchronously after mgmtRequest() must let the
- * microtask chain (mock resolution → gate re-check → piRequest) drain. */
-async function flushMgmt(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+ * callers that read the wire after mgmtRequest() must wait until the request
+ * is actually registered and sent — a fixed microtask count would break on
+ * every added await in mgmtRequest. Bounded so a gate-failed send can't hang. */
+async function untilSent(): Promise<void> {
+  for (let i = 0; i < 100 && vi.mocked(api.piRequest).mock.calls.length === 0; i++) {
+    await Promise.resolve();
+  }
 }
 function reply(ok = true, project = "/a", proc = 1) {
   const command = vi.mocked(api.piRequest).mock.calls[0][0];
@@ -28,7 +29,7 @@ function reply(ok = true, project = "/a", proc = 1) {
 it("routes replies after the requesting project goes into the background", async () => {
   const pending = mgmtRequest("ping");
   projectDir.set("/b");
-  await flushMgmt();
+  await untilSent();
   await reply();
   await expect(pending).resolves.toEqual({ answer: 42 });
   expect(get(notifications)).toEqual([]);
@@ -36,7 +37,7 @@ it("routes replies after the requesting project goes into the background", async
 });
 it("does not abort one project's request when another process exits", async () => {
   const pending = mgmtRequest("ping");
-  await flushMgmt();
+  await untilSent();
   handlePiExit("/b", 2, false);
   await reply();
   await expect(pending).resolves.toEqual({ answer: 42 });
@@ -50,13 +51,13 @@ it("times out even when the prompt acknowledgement never arrives", async () => {
 it("handles a failed notify before the prompt acknowledgement without an unhandled rejection", async () => {
   vi.mocked(api.piRequest).mockReturnValue(new Promise(() => {}));
   const result = expect(mgmtRequest("ping")).rejects.toThrow("nope");
-  await flushMgmt();
+  await untilSent();
   await reply(false);
   await result;
 });
 it("rejects pending requests on process replacement", async () => {
   const result = expect(mgmtRequest("ping")).rejects.toThrow("replaced");
-  await flushMgmt();
+  await untilSent();
   recordProcess("/a", 3);
   await result;
 });
@@ -89,9 +90,30 @@ it("an extension command with a different name fails the gate even from the comp
   await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
   expect(api.piRequest).not.toHaveBeenCalled();
 });
+it("a failed agent-dir lookup is retried on the next request instead of caching the failure", async () => {
+  // One transient IPC failure must not brick management until reload: the
+  // cached lookup promise resets on failure so the next request retries.
+  vi.resetModules();
+  try {
+    const { getAgentDir, piRequest } = await import("../api");
+    vi.mocked(getAgentDir).mockRejectedValue(new Error("ipc down"));
+    const stores = await import("../stores");
+    stores.commands.set([{ ...COMPANION_CMD }]);
+    stores.projectDir.set("/a");
+    stores.lastProcByProject.set({ "/a": 1 });
+    const { mgmtRequest } = await import("./mgmt");
+    await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
+    const callsAfterFirst = vi.mocked(getAgentDir).mock.calls.length;
+    await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
+    expect(vi.mocked(getAgentDir).mock.calls.length).toBeGreaterThan(callsAfterFirst);
+    expect(piRequest).not.toHaveBeenCalled();
+  } finally {
+    vi.resetModules();
+  }
+});
 it("a spoofed notify with a guessed id cannot resolve a pending request", async () => {
   const result = expect(mgmtRequest("ping", {}, 60_000)).rejects.toThrow("timed out");
-  await flushMgmt();
+  await untilSent();
   const sent = vi.mocked(api.piRequest).mock.calls[0][0] as { message: string };
   const realId = JSON.parse(String(sent.message).slice("/settings-mgmt ".length)).id as string;
   handleEvent(
@@ -103,7 +125,7 @@ it("a spoofed notify with a guessed id cannot resolve a pending request", async 
 });
 it("wrong-origin replies are ignored, not rejected — the request survives for its true reply", async () => {
   const pending = mgmtRequest("ping");
-  await flushMgmt();
+  await untilSent();
   handleEvent(
     { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: "whatever", ok: false, error: "spoof" }) },
     { project: "/b", proc: 2 },
@@ -113,7 +135,7 @@ it("wrong-origin replies are ignored, not rejected — the request survives for 
 });
 it("envelope keys win over caller params (no shadowing)", async () => {
   void mgmtRequest("write", { id: "caller-id", op: "evil-op" }).catch(() => {});
-  await flushMgmt();
+  await untilSent();
   const sent = vi.mocked(api.piRequest).mock.calls[0][0] as { message: string };
   const payload = JSON.parse(String(sent.message).slice("/settings-mgmt ".length));
   expect(payload.op).toBe("write");

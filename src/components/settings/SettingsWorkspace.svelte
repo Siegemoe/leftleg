@@ -11,7 +11,7 @@
     forgetProject, restoreProject, chooseProject, autoRetry, refreshCommands,
     statusNote, navigating, updateInstallLock,
   } from "../../lib/stores";
-  import { companionAvailable, bindManagement, companionAgentDir, isCompanionCommand } from "../../lib/settings/mgmt";
+  import { companionAvailable, bindManagement, agentDirStore, isCompanionCommand } from "../../lib/settings/mgmt";
   import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle, projectIconLabel } from "../../lib/project-icons";
   import ProjectIcon from "../ProjectIcon.svelte";
   import { checkForUpdates, applyUpdate, updateAvailable, updateCheck, updateStatus } from "../../lib/updater";
@@ -20,10 +20,11 @@
   // Template mirror of mgmt.companionAvailable() — the function reads the
   // stores through get(), which is untracked, so calling it from markup
   // rendered stale availability. The chip shares mgmt's exact predicate
-  // (name + anchored provenance), so it can no longer disagree with the
-  // send gate in either direction. Keep the function for imperative callers.
+  // (name + anchored provenance) and tracks the agent-dir store, so it
+  // re-evaluates the moment the lookup resolves and cannot disagree with
+  // the send gate in either direction. Keep the function for imperative callers.
   const companionReady = $derived(
-    !$navigating && !$updateInstallLock && $commands.some((c) => isCompanionCommand(c, companionAgentDir())),
+    !$navigating && !$updateInstallLock && $commands.some((c) => isCompanionCommand(c, $agentDirStore ?? undefined)),
   );
   import {
     getPath, setPath, cloneJson, sourceOf, effectiveValue, defaultValue,

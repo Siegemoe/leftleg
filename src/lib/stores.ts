@@ -5,7 +5,7 @@ import type {
 } from "./types";
 import * as api from "./api";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
-import { handleMgmtNotify, abortPendingMgmt, pendingManagementCount } from "./settings/mgmt";
+import { handleMgmtNotify, abortPendingMgmt, pendingManagementCount, primeAgentDir } from "./settings/mgmt";
 import { composerDraftBlockers, pruneEmptyComposerDrafts } from "./composer-drafts";
 
 // ---------- stores ----------
@@ -249,8 +249,12 @@ const backgroundSurfaces = new Map<string, { proc: number; surface: RenderSurfac
 const deadProcesses = new Map<string, number>();
 
 /** Describe every observable activity or GUI-owned input that makes an app
- * restart unsafe. The updater calls this only after taking updateInstallLock. */
-export function collectUpdateInstallBlockers(): string[] {
+ * restart unsafe. The updater calls this only after taking updateInstallLock.
+ * `ignoreNavigating` drops the "still opening" entry for callers that wait
+ * out navigation themselves instead of skipping on it (the startup pi
+ * updater, which fires exactly once per launch and would otherwise starve
+ * behind boot's navigation window). */
+export function collectUpdateInstallBlockers(opts: { ignoreNavigating?: boolean } = {}): string[] {
   const blockers: string[] = [];
   const currentProject = get(projectDir);
   const inspectSurface = (dir: string, surface: RenderSurface) => {
@@ -276,7 +280,7 @@ export function collectUpdateInstallBlockers(): string[] {
       blockers.push(`${draft.key} has ${parts.join(" and ")}`);
     }
   }
-  if (get(navigating)) blockers.push("a project or session is still opening");
+  if (!opts.ignoreNavigating && get(navigating)) blockers.push("a project or session is still opening");
   const management = pendingManagementCount();
   if (management > 0) blockers.push(`${management} settings operation${management === 1 ? " is" : "s are"} still pending`);
   const guiWrites = api.pendingGuiWriteCount();
@@ -1455,6 +1459,9 @@ async function bootImpl() {
   backgroundSurfaces.clear();
   deadProcesses.clear();
   mainSurface.dialogs = [];
+  // Anchor the settings companion's provenance early — the availability
+  // chip and the send gate share this lookup.
+  primeAgentDir();
   // 1. Load GUI state
   let gui: Record<string, unknown> = {};
   try { gui = await api.readGuiState(); } catch { /* first run */ }

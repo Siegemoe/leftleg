@@ -19,7 +19,7 @@
 //   resolve or kill a pending request (they cannot guess the id).
 // - Timeouts: every request is bounded; nothing waits forever on a dead companion.
 
-import { get } from "svelte/store";
+import { get, writable } from "svelte/store";
 import { commands, lastProcByProject, projectDir, navigating, updateInstallLock } from "../stores";
 import { getAgentDir, piRequest } from "../api";
 import type { ExtCommand } from "../types";
@@ -37,25 +37,44 @@ interface Pending {
 }
 const pending = new Map<string, Pending>();
 
-let agentDirCache: string | undefined;
+/** Resolved agent dir: null while the lookup is in flight, "" on failure. A
+ * store (not a plain cache) so the availability chip re-evaluates the moment
+ * the lookup resolves. */
+export const agentDirStore = writable<string | null>(null);
+
 let agentDirPromise: Promise<string> | null = null;
-/** Kick off (once) and await the agent-dir lookup that anchors provenance. */
+/** Kick off (once) and await the agent-dir lookup that anchors provenance. A
+ * transient lookup failure clears the cached promise so the next request
+ * retries instead of bricking management until reload. */
 function ensureAgentDir(): Promise<string> {
   if (!agentDirPromise) {
     agentDirPromise = getAgentDir()
-      .then((d) => (agentDirCache = d, d))
-      .catch(() => (agentDirCache = "", ""));
+      .then((d) => {
+        agentDirStore.set(d);
+        return d;
+      })
+      .catch(() => {
+        agentDirPromise = null;
+        agentDirStore.set("");
+        return "";
+      });
   }
   return agentDirPromise;
 }
 
-/** Agent dir for gate evaluation: kicks off the lookup, returns the cached
- * value (undefined while the first lookup is still in flight). Reactive
- * callers combine this with isCompanionCommand so the availability chip and
- * the send gate share one predicate. */
-export function companionAgentDir(): string | undefined {
+/** Kick off the agent-dir lookup without waiting for it (idempotent). Boot
+ * calls this so the availability chip's provenance anchor is resolved long
+ * before settings can render; import time is too eager — api mocks in tests
+ * and the transport wiring may not exist yet. */
+export function primeAgentDir(): void {
   void ensureAgentDir();
-  return agentDirCache;
+}
+
+/** Agent dir for gate evaluation: undefined while the first lookup is still
+ * in flight (provisional pass), "" on failure (deny). */
+function companionAgentDir(): string | undefined {
+  void ensureAgentDir();
+  return get(agentDirStore) ?? undefined;
 }
 
 /**

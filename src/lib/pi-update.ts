@@ -4,7 +4,7 @@
 // extension sources hold the auto-update for that run and raise a warning —
 // belt-and-braces on top of the risk acceptance.
 import { get } from "svelte/store";
-import { collectUpdateInstallBlockers, pushNotification, setGuiStateValue, guiStateValue, updateInstallLock } from "./stores";
+import { collectUpdateInstallBlockers, navigating, pushNotification, setGuiStateValue, guiStateValue, updateInstallLock } from "./stores";
 import { piIntegrityReport, runPiManager } from "./api";
 
 /** At most one managed update attempt per 12 hours. */
@@ -15,6 +15,21 @@ let inFlight = false;
 function lastRunMs(): number {
   const v = guiStateValue("piUpdateLastRun");
   return typeof v === "number" ? v : 0;
+}
+
+/** Resolve once the app is no longer mid-navigation (boot, project switch).
+ * The startup pass fires exactly once per launch, so it must wait out boot's
+ * navigation window rather than skip on it — skipping would starve the
+ * updater forever (navigating is held for the whole boot). Bounded: giving
+ * up writes no debounce stamp, so the next launch retries. */
+function navigatingSettled(timeoutMs = 60_000): Promise<boolean> {
+  if (!get(navigating)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { unsub(); resolve(false); }, timeoutMs);
+    const unsub = navigating.subscribe((v) => {
+      if (!v) { clearTimeout(timer); unsub(); resolve(true); }
+    });
+  });
 }
 
 /** Parse "pkg x.y.z → a.b.c" style upgrade lines out of pi's human output. */
@@ -49,13 +64,12 @@ export async function integrityGate(): Promise<{ ok: boolean; flagged: string[] 
 export function runStartupPiUpdate(): void {
   void (async () => {
     if (inFlight) return;
-    // Blockers cover every surface — foreground and background projects,
-    // queued messages, dialogs, in-flight sends and writes — not just the
-    // foreground streaming flag. A background project mid-turn is live pi.
-    if (collectUpdateInstallBlockers().length > 0 || get(updateInstallLock)) return;
+    if (get(updateInstallLock)) return;
     if (Date.now() - lastRunMs() < UPDATE_DEBOUNCE_MS) return;
     inFlight = true;
     try {
+      // Wait out boot/project-switch navigation before gating on activity.
+      if (!(await navigatingSettled())) return;
       const gate = await integrityGate();
       if (!gate.ok) {
         // Hold updates for flagged sources — but warn on every startup so the
@@ -69,8 +83,10 @@ export function runStartupPiUpdate(): void {
       // Re-check right before the npm pass: the integrity gate awaited, and a
       // turn may have started (in any project) or the app updater may have
       // taken the lock in that window — rewriting the npm package under live
-      // pi is the one thing this runner must never do.
-      if (collectUpdateInstallBlockers().length > 0 || get(updateInstallLock)) return;
+      // pi is the one thing this runner must never do. Blockers here exclude
+      // navigating itself (settled above); a navigation racing back in is
+      // re-tested explicitly and retried next launch.
+      if (get(navigating) || get(updateInstallLock) || collectUpdateInstallBlockers({ ignoreNavigating: true }).length > 0) return;
       const res = await runPiManager(["--all"]);
       await setGuiStateValue("piUpdateLastRun", Date.now());
       const upgraded = summarizeUpdateOutput(res.stdout);
