@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    # Weekly security re-check: new advisories surface even with no pushes.
+    - cron: "41 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    # The project's stated gate (svelte-check + vitest + vite build) and the
+    # Rust test suite, enforced on every PR and push to master.
+    if: github.event_name != 'schedule'
+    runs-on: windows-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install locked frontend dependencies
+        run: npm ci
+
+      - name: Install pinned Pi integration runtime
+        shell: pwsh
+        run: |
+          npm install --global @earendil-works/pi-coding-agent@0.85.1
+          $piVersion = pi --version
+          if ($LASTEXITCODE -ne 0 -or $piVersion.Trim() -ne "0.85.1") {
+            throw "Expected Pi 0.85.1 for integration tests; got '$piVersion'"
+          }
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: Verify frontend (svelte-check + vitest + vite build)
+        run: npm run build
+
+      - name: Verify Rust
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+  security:
+    # Dependency advisories (npm + RustSec). Runs on master pushes and weekly;
+    # PRs are covered by the quality gate. cargo-audit is compiled here, so the
+    # cheaper ubuntu runner keeps this job's cost down.
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install locked frontend dependencies
+        run: npm ci
+
+      - name: npm audit (fails on high/critical)
+        run: npm audit --audit-level=high
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: cargo audit (RustSec advisories)
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --file src-tauri/Cargo.lock

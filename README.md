@@ -27,7 +27,7 @@ Requirements:
 
 ## Development
 
-Prerequisites: Node 20+, Rust stable-msvc, MSVC Build Tools.
+Prerequisites: Node 22+ (see `.nvmrc`), Rust stable-msvc, MSVC Build Tools.
 
 ```powershell
 npm install
