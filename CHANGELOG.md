@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning
 follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 `src-tauri/tauri.conf.json`.
 
+## [0.4.1] — 2026-09-17
+
+### Fixed
+- Startup pi updater now fires after boot settles: the launch-time call raced
+  boot's navigation every start (fast-pathed the wait, then skipped at the
+  re-check with no debounce stamp), so automatic pi harness/extension updates
+  never ran. Regression-tested on the real timeline.
+- rustls 0.23.44 → 0.23.45 (RUSTSEC-2026-0285, TLS 1.3 handshake boundary
+  flaw, medium 5.3) — rustls backs the app-updater's TLS path; downloads are
+  minisign-verified, so exposure was theoretical.
+
+### Changed
+- First CI run on the repo: quality gate green; security job now actively
+  enforcing (`.cargo/audit.toml` records the accepted glib advisory in-tool;
+  unmaintained-crate warnings are reported but don't fail).
+- Versioning policy codified (`MAJOR.FEATURE.FIX`), CLAUDE.md agent entry
+  point added, changelog backfilled 0.2.1–0.4.0.
+
 ## [0.4.0] — 2026-09-17
 
 ### Added

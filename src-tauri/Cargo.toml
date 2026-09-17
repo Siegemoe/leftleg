@@ -1,6 +1,6 @@
 [package]
 name = "leftleg"
-version = "0.4.0"
+version = "0.4.1"
 description = "Leftleg — a native control surface for the Pi coding agent"
 edition = "2021"
 rust-version = "1.77.2"
