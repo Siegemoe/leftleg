@@ -4,7 +4,7 @@ A native desktop control surface for the [Pi coding agent](https://github.com/ea
 
 Leftleg owns only GUI concerns and treats pi's RPC protocol as the single integration surface: pi itself (spawned as `pi --mode rpc`, one process per project) stays authoritative for all agent state — sessions, credentials, extensions, settings.
 
-**Status:** early, pre-1.0 (v0.2.0). Windows is the supported platform.
+**Status:** early, pre-1.0. Windows is the supported platform. Release history lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## Highlights
 
@@ -48,6 +48,7 @@ The build gate is deliberate: template type errors and logic regressions fail at
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — deep dive: RPC bridge, event routing, state ownership
 - [`docs/RELEASE.md`](docs/RELEASE.md) — signing keys, updater feed, per-release checklist
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's next
+- [`CHANGELOG.md`](CHANGELOG.md) — release history
 - [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — bundled third-party work (fonts, adapted code)
 
 ## Security

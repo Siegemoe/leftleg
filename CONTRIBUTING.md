@@ -30,7 +30,7 @@ npm run tauri dev        # vite hot reload + cargo debug build
 npm run build            # the gate — run before every push
 ```
 
-Windows-only toolchain: Node 20+, Rust stable-msvc, MSVC Build Tools.
+Windows-only toolchain: Node 22+ (see `.nvmrc`), Rust stable-msvc, MSVC Build Tools.
 
 ## Pull requests
 
@@ -38,11 +38,20 @@ Windows-only toolchain: Node 20+, Rust stable-msvc, MSVC Build Tools.
 - Add or extend tests for behavior changes (vitest for frontend logic,
   `cargo test` for framing/parsing — both suites have real coverage to follow).
 - Run `npm run build` (and, for Rust changes, the cargo checks) and paste the
-  results in the PR description.
+  results in the PR description. CI runs the same gate on every PR and push to
+  master, plus a weekly security job (npm audit + cargo audit).
+- Commits use Conventional-Commits-style prefixes (`feat:`, `fix:`, `docs:`,
+  `chore:`, `ci:`); AI-assisted commits carry
+  `Co-Authored-By: Claude Code <noreply@anthropic.com>` in the body.
 - Docs that must travel with code changes: `docs/ARCHITECTURE.md` (architecture),
-  `docs/RELEASE.md` (release/update flow), `docs/ROADMAP.md` (status).
+  `docs/RELEASE.md` (release/update flow), `docs/ROADMAP.md` (status), and
+  `CHANGELOG.md` with every version bump.
 
 ## Releases
 
-Maintainers: follow [`docs/RELEASE.md`](docs/RELEASE.md) — signed artifacts,
-hand-authored `latest.json`, GitHub release with exactly three attached files.
+Maintainers: follow [`docs/RELEASE.md`](docs/RELEASE.md). Bump all four
+manifests + `CHANGELOG.md` per the `MAJOR.FEATURE.FIX` policy in
+[`AGENTS.md`](AGENTS.md), push a `vX.Y.Z` tag — CI validates version identity,
+builds the signed NSIS updater and `latest.json`, and opens a draft release;
+publishing the draft is the only manual step. The manual build path in
+RELEASE.md is recovery-only (CI unavailable).

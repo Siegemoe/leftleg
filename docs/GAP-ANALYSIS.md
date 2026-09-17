@@ -63,8 +63,9 @@ extension_error, notify, set_editor_text, auto_retry_start, auto_retry_end.
    affordance; feeds the Terminal dock placeholder in the right panel.
 6. **Thinking-level model awareness (`get_available_thinking_levels`)** —
    replaces the fixed list; keyboard cycling via `cycle_*`.
-7. **Live session refresh** — sidebar re-lists on a 30s poll and event
-   nudges; an fs-watch (or pi notification) removes the staleness window.
+7. **Live session refresh** — sidebar re-lists on `agent_settled` and session
+   actions; nothing watches for sessions created outside the app (an fs-watch
+   or pi notification closes that window).
 8. **`steer`/`follow_up` dedicated calls** — switch from prompt-piggyback to
    the documented methods once the harness layer exists (pi keeps both).
 9. **`get_last_assistant_text`** — retry/quote UX polish.

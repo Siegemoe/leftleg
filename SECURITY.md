@@ -15,6 +15,8 @@ days; fixes land in the next release and are noted in the changelog.
   update flow.
 - The settings companion (`companion/leftleg-settings/`) — file writes, merge
   semantics.
+- The media companion (`companion/leftleg-media/`) — image generation,
+  reference reads, response caps.
 - The updater chain — feed, signatures, install.
 
 ## Updater trust model
@@ -41,10 +43,16 @@ The private key lives **outside the repository** (default:
    new signatures — announce the rotation in the release notes.
 4. Consider the old artifacts burned; delete or supersede affected releases.
 
+## Supported versions
+
+Only the latest release receives fixes. Older builds should update in-app
+(Settings → Updates) or reinstall from Releases.
+
 ## Known limitations
 
 - The updater feed is a single GitHub `latest.json` — availability depends on
   GitHub Releases.
-- `docs/AUDIT-2026-09-13.md` records the last full source audit, including
-  acknowledged residual risks (e.g. the microsecond revision-check window in
-  companion writes; no cross-process file locking).
+- [`docs/AUDIT-2026-09-17.md`](docs/AUDIT-2026-09-17.md) records the last full
+  source audit, including acknowledged residual risks (e.g. the microsecond
+  revision-check window in companion writes; no cross-process file locking)
+  and the accepted glib advisory tracked in `.cargo/audit.toml`.
