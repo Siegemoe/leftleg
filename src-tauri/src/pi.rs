@@ -84,13 +84,15 @@ pub fn build_pi_args(session_path: Option<&str>) -> Vec<String> {
     args
 }
 
-fn pi_entry_from_shim(shim: &std::path::Path) -> Result<std::path::PathBuf, String> {
+pub(crate) fn pi_entry_from_shim(shim: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let root = shim.parent().ok_or("pi shim has no parent")?;
     for package in ["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"] {
         let dir = root.join("node_modules").join(package);
+        // A missing OR corrupt/odd manifest must not abort the search: the
+        // fallback package name may still be intact (e.g. mid-`pi update`).
         let Ok(raw) = std::fs::read_to_string(dir.join("package.json")) else { continue };
-        let manifest: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-        let bin = manifest["bin"]["pi"].as_str().or_else(|| manifest["bin"].as_str()).ok_or("pi package has no bin entry")?;
+        let Ok(manifest) = serde_json::from_str::<Value>(&raw) else { continue };
+        let Some(bin) = manifest["bin"]["pi"].as_str().or_else(|| manifest["bin"].as_str()) else { continue };
         let entry = std::fs::canonicalize(dir.join(bin)).map_err(|e| e.to_string())?;
         if !entry.starts_with(std::fs::canonicalize(&dir).map_err(|e| e.to_string())?) { return Err("pi bin escapes package directory".into()); }
         // canonicalize is only for containment validation. On Windows it
@@ -120,7 +122,7 @@ pub fn pi_module_info_impl() -> Result<PiModuleInfo, String> {
     for package in ["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"] {
         let dir = root.join("node_modules").join(package);
         let Ok(raw) = std::fs::read_to_string(dir.join("package.json")) else { continue };
-        let manifest: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        let Ok(manifest) = serde_json::from_str::<Value>(&raw) else { continue };
         let name = manifest.get("name").and_then(|v| v.as_str()).unwrap_or(package).to_string();
         let version = manifest.get("version").and_then(|v| v.as_str()).unwrap_or("?").to_string();
         return Ok(PiModuleInfo { name, version, path: dir.to_string_lossy().into_owned() });
@@ -281,6 +283,12 @@ impl PiProcess {
                 if !skipping_oversized {
                     line.extend_from_slice(&chunk[start..n]);
                     if line.len() > MAX_LINE_BYTES {
+                        // A drop must at least be diagnosable — the webview
+                        // never sees this line and can't explain the gap.
+                        crate::log_native(&app_handle, &format!(
+                            "dropped oversized pi line ({}, {} bytes)",
+                            proc_ref.id, line.len()
+                        ));
                         line.clear();
                         skipping_oversized = true; // discard the rest of this line
                     }
@@ -347,8 +355,13 @@ impl PiProcess {
         // Killing the child closes its pipes, which unblocks the reader thread
         // and any writer blocked on a full stdin pipe, before we take the lock.
         if let Ok(mut child) = self.child.lock() {
+            // Tree-kill first and unconditionally: when node already exited on
+            // its own, a tool grandchild can still hold the stdout/stderr write
+            // ends — skipping the tree kill would leave the reader thread
+            // waiting for EOF forever and `pi-exit` never fires. taskkill on a
+            // reaped PID fails harmlessly (output is swallowed).
             #[cfg(windows)]
-            if matches!(child.try_wait(), Ok(None)) {
+            {
                 let _ = Command::new("taskkill.exe").args(["/PID", &child.id().to_string(), "/T", "/F"])
                     .creation_flags(CREATE_NO_WINDOW).stdout(Stdio::null()).stderr(Stdio::null()).status();
             }
@@ -376,9 +389,14 @@ pub fn wait_response(
     }
 }
 
-/// Send a command and wait (bounded) for the correlated response.
+/// Send a command and wait (bounded) for the correlated response. The
+/// deadline covers the write phase too: pi that stopped reading stdin would
+/// otherwise block the send forever and the response timeout would never even
+/// start. The write runs on its own thread; if it is still blocked at expiry
+/// the pending entry is dropped and only a deliberate stop/kill (which closes
+/// the pipes) can free that pinned writer.
 pub fn request(
-    proc: &PiProcess,
+    proc: &Arc<PiProcess>,
     mut cmd: Value,
     timeout: Duration,
 ) -> Result<Value, String> {
@@ -393,12 +411,31 @@ pub fn request(
     }
     let (tx, rx) = std::sync::mpsc::channel();
     if !proc.pending.insert(id.clone(), tx) { return Err(format!("RPC id already pending: {id}")); }
-    let line = serde_json::to_string(&cmd).map_err(|e| e.to_string())?;
-    if let Err(e) = proc.send_line(&line) {
-        proc.pending.remove(&id);
-        return Err(e);
+    let line = match serde_json::to_string(&cmd) {
+        Ok(line) => line,
+        Err(e) => {
+            proc.pending.remove(&id);
+            return Err(e.to_string());
+        }
+    };
+    let deadline = std::time::Instant::now() + timeout;
+    let writer_proc = Arc::clone(proc);
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done_tx.send(writer_proc.send_line(&line));
+    });
+    match done_rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            proc.pending.remove(&id);
+            return Err(e);
+        }
+        Err(_) => {
+            proc.pending.remove(&id);
+            return Err("timed out writing to pi (process may be stalled)".into());
+        }
     }
-    match wait_response(rx, timeout) {
+    match wait_response(rx, deadline.saturating_duration_since(std::time::Instant::now())) {
         Ok(value) => Ok(value),
         Err(e) => {
             proc.pending.remove(&id);
@@ -427,7 +464,7 @@ mod tests {
 
     #[test]
     fn failed_send_does_not_leak_pending_requests() {
-        let proc = stopped_process();
+        let proc = Arc::new(stopped_process());
         let result = request(&proc, serde_json::json!({"id":"test", "type":"get_state"}), Duration::from_millis(10));
         assert!(result.unwrap_err().contains("stdin closed"));
         assert!(proc.pending.remove("test").is_none());

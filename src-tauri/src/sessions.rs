@@ -172,21 +172,25 @@ fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
 
 /// Leftleg's own GUI state (theme, project dir, last session). Stored in app data.
 #[tauri::command]
-pub fn read_gui_state(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub async fn read_gui_state(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("no app data dir: {e}"))?;
-    let file = dir.join("leftleg.json");
-    if !file.exists() {
-        return Ok(serde_json::json!({}));
-    }
-    let raw = fs::read_to_string(&file).map_err(|e| e.to_string())?;
-    serde_json::from_str(&raw).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = dir.join("leftleg.json");
+        if !file.exists() {
+            return Ok(serde_json::json!({}));
+        }
+        let raw = fs::read_to_string(&file).map_err(|e| e.to_string())?;
+        serde_json::from_str(&raw).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn write_gui_state(
+pub async fn write_gui_state(
     app: tauri::AppHandle,
     state: serde_json::Value,
 ) -> Result<(), String> {
@@ -194,9 +198,16 @@ pub fn write_gui_state(
         .path()
         .app_data_dir()
         .map_err(|e| format!("no app data dir: {e}"))?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let file = dir.join("leftleg.json");
-    atomic_write(&file, &serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?)
+    tauri::async_runtime::spawn_blocking(move || {
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let file = dir.join("leftleg.json");
+        atomic_write(
+            &file,
+            &serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn atomic_write(file: &std::path::Path, text: &str) -> Result<(), String> {

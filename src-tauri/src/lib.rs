@@ -80,14 +80,26 @@ impl PiState {
         *self.active.lock().unwrap() = Some(project.to_string());
     }
 
-    pub fn insert(&self, project: &str, proc: Arc<PiProcess>) -> Result<(), String> {
+    /// Register a freshly spawned process. Returns any displaced still-alive
+    /// process so the caller can tree-kill it off-thread — a silent overwrite
+    /// would leak a running pi (orphans hold project files and burn tokens).
+    pub fn insert(
+        &self,
+        project: &str,
+        proc: Arc<PiProcess>,
+    ) -> Result<Vec<Arc<PiProcess>>, String> {
         let mut processes = self.processes.lock().unwrap();
         // Recheck under the same lock used by begin_update_shutdown. This closes
         // the race where a slow spawn starts just before update preparation.
         self.ensure_available()?;
-        processes.insert(project.to_string(), proc);
+        let displaced = processes
+            .insert(project.to_string(), proc)
+            .filter(|old| old.is_alive())
+            .into_iter()
+            .collect();
+        drop(processes);
         self.set_active(project);
-        Ok(())
+        Ok(displaced)
     }
 
     pub fn remove(&self, project: &str) -> Option<Arc<PiProcess>> {
@@ -132,9 +144,9 @@ impl PiState {
 // (private: tauri's #[command] macro conflicts with #[macro_export] re-exports
 // when pub commands are defined at the crate root)
 #[tauri::command]
-fn pi_start(
+async fn pi_start(
     app: tauri::AppHandle,
-    state: State<PiState>,
+    state: State<'_, PiState>,
     project: String,
     session_path: Option<String>,
     force_restart: Option<bool>,
@@ -149,7 +161,9 @@ fn pi_start(
         if !force_restart.unwrap_or(false) {
             return Ok(existing.id);
         }
-        existing.kill();
+        // Tree-kill off the main thread: taskkill waits for its own process.
+        let doomed = existing.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || doomed.kill()).await;
         state.remove(&project);
     }
     if let Some(path) = &session_path {
@@ -159,24 +173,46 @@ fn pi_start(
             return Err(format!("session file not found: {path}"));
         }
     }
-    // Grant the webview asset access to this project's generated images so
-    // tool-card previews work from the first generation on.
-    sessions::allow_project_images_scope(&app, &project);
-    let proc = PiProcess::spawn(app, &project, session_path.as_deref())?;
+    // Spawn off-thread: where.exe, canonicalize, and CreateProcess are real
+    // disk/process work that antivirus can amplify into UI-visible stalls.
+    let spawn_app = app.clone();
+    let spawn_dir = project.clone();
+    let spawn_session = session_path.clone();
+    let spawned = tauri::async_runtime::spawn_blocking(move || {
+        PiProcess::spawn(spawn_app, &spawn_dir, spawn_session.as_deref())
+    })
+    .await
+    .map_err(|e| format!("pi spawn worker failed: {e}"))?;
+    let proc = spawned?;
     let id = proc.id;
-    if let Err(error) = state.insert(&project, proc.clone()) {
-        proc.kill();
-        return Err(error);
+    match state.insert(&project, proc.clone()) {
+        Ok(displaced) => {
+            // Defensive: a live process should have been removed before spawn,
+            // but if one raced in, tree-kill it so it can't leak. Detached —
+            // taskkill is independent of this request's outcome.
+            for old in displaced {
+                let _ = tauri::async_runtime::spawn_blocking(move || old.kill());
+            }
+        }
+        Err(error) => {
+            proc.kill();
+            return Err(error);
+        }
     }
+    // Grant the webview asset access to this project's generated images so
+    // tool-card previews work from the first generation on. Granted only after
+    // a successful spawn; the scope is cumulative, so failed starts must not
+    // register directories that were never opened.
+    sessions::allow_project_images_scope(&app, &project);
     Ok(id)
 }
 
 /// Kill a project's pi process (the active one when no project is given).
 #[tauri::command]
-fn pi_stop(state: State<PiState>, project: Option<String>) -> Result<(), String> {
+async fn pi_stop(state: State<'_, PiState>, project: Option<String>) -> Result<(), String> {
     let proc = state.resolve(project.as_deref())?;
     let key = proc.cwd.clone();
-    proc.kill();
+    let _ = tauri::async_runtime::spawn_blocking(move || proc.kill()).await;
     state.remove(&key);
     Ok(())
 }
@@ -231,11 +267,22 @@ async fn pi_request(
 
 /// Fire-and-forget line (used for extension_ui_response and notifications).
 #[tauri::command]
-fn pi_send(state: State<PiState>, line: Value, project: Option<String>, expected_proc: Option<u64>) -> Result<(), String> {
+async fn pi_send(
+    state: State<'_, PiState>,
+    line: Value,
+    project: Option<String>,
+    expected_proc: Option<u64>,
+) -> Result<(), String> {
     let proc = state.resolve(project.as_deref())?;
-    if expected_proc.is_some_and(|id| id != proc.id) { return Err("pi process replaced before response dispatch".into()); }
+    if expected_proc.is_some_and(|id| id != proc.id) {
+        return Err("pi process replaced before response dispatch".into());
+    }
     let text = serde_json::to_string(&line).map_err(|e| e.to_string())?;
-    proc.send_line(&text)
+    // A full pipe blocks the write until pi drains it; never hold the main
+    // thread on that.
+    tauri::async_runtime::spawn_blocking(move || proc.send_line(&text))
+        .await
+        .map_err(|e| format!("pi send worker failed: {e}"))?
 }
 
 #[tauri::command]
@@ -244,51 +291,94 @@ fn get_agent_dir() -> String {
 }
 
 /// Append a line to Leftleg's own log file (app_data/logs/leftleg.log).
+/// Rotates to `leftleg.log.1` past 5 MiB so the log can't grow unbounded, and
+/// caps single lines so one pathological entry can't dominate the file.
 #[tauri::command]
-fn append_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
-    let dir = app
-        .path()
+async fn append_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
+    const LOG_MAX_LINE_BYTES: usize = 64 * 1024;
+    let dir = native_log_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut line = line;
+        if line.len() > LOG_MAX_LINE_BYTES {
+            let mut cut = LOG_MAX_LINE_BYTES;
+            while cut > 0 && !line.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            line.truncate(cut);
+            line.push_str(" …[truncated]");
+        }
+        write_log_line(&dir, &line)
+    })
+    .await
+    .map_err(|e| format!("log worker failed: {e}"))?
+}
+
+fn native_log_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
         .app_data_dir()
-        .map_err(|e| format!("no app data dir: {e}"))?
-        .join("logs");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        .map(|d| d.join("logs"))
+        .map_err(|e| format!("no app data dir: {e}"))
+}
+
+/// Best-effort native log write for backend-side diagnostics (reader-loop
+/// drops, panic hook neighbors). Errors are swallowed by design — logging must
+/// never take the caller down.
+pub(crate) fn log_native(app: &tauri::AppHandle, line: &str) {
+    if let Ok(dir) = native_log_dir(app) {
+        let _ = write_log_line(&dir, line);
+    }
+}
+
+fn write_log_line(dir: &std::path::Path, line: &str) -> Result<(), String> {
+    const LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let file = dir.join("leftleg.log");
+    if file.metadata().map(|m| m.len()).unwrap_or(0) > LOG_MAX_BYTES {
+        let _ = fs::rename(&file, dir.join("leftleg.log.1"));
+    }
     let mut f = fs::OpenOptions::new().create(true).append(true).open(&file)
         .map_err(|e| e.to_string())?;
     use std::io::Write;
-    let _ = writeln!(f, "{}", line);
-    Ok(())
+    writeln!(f, "{line}").map_err(|e| e.to_string())
 }
 
 /// Write a GUI-provided file into the agent directory under `extensions/`.
 /// Reserved for explicitly installing the Leftleg companions (settings, media);
 /// path-traversal guarded; never arbitrary file targets.
 #[tauri::command]
-fn write_agent_extension(app: tauri::AppHandle, rel_path: String, content: String) -> Result<(), String> {
+async fn write_agent_extension(
+    app: tauri::AppHandle,
+    rel_path: String,
+    content: String,
+) -> Result<(), String> {
     let agent_dir = sessions::agent_dir();
     // Validate before creating any directories outside the allowed root.
     let rel = companion_relative_path(&rel_path)?;
-    let target = agent_dir.join("extensions").join(rel);
-    // Guard: the resolved target must stay inside <agent_dir>/extensions.
-    let canon_base = agent_dir.join("extensions");
-    let _ = fs::create_dir_all(&canon_base).map_err(|e| e.to_string())?;
-    let canon_base = fs::canonicalize(&canon_base).map_err(|e| e.to_string())?;
-    if target.components().any(|c| c.as_os_str() == "..") {
-        return Err("path traversal rejected".into());
-    }
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let canon_parent = fs::canonicalize(target.parent().ok_or("no parent")?).map_err(|e| e.to_string())?;
-    if !canon_parent.starts_with(&canon_base) {
-        return Err("path traversal rejected".into());
-    }
-    if target.exists() && !fs::canonicalize(&target).map_err(|e| e.to_string())?.starts_with(&canon_base) {
-        return Err("path traversal rejected".into());
-    }
-    fs::write(&target, content).map_err(|e| e.to_string())?;
     let _ = app; // reserved for future telemetry-free install notes
-    Ok(())
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = agent_dir.join("extensions").join(&rel);
+        // Guard: the resolved target must stay inside <agent_dir>/extensions.
+        let canon_base = agent_dir.join("extensions");
+        fs::create_dir_all(&canon_base).map_err(|e| e.to_string())?;
+        let canon_base = fs::canonicalize(&canon_base).map_err(|e| e.to_string())?;
+        if target.components().any(|c| c.as_os_str() == "..") {
+            return Err("path traversal rejected".into());
+        }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let canon_parent = fs::canonicalize(target.parent().ok_or("no parent")?).map_err(|e| e.to_string())?;
+        if !canon_parent.starts_with(&canon_base) {
+            return Err("path traversal rejected".into());
+        }
+        if target.exists() && !fs::canonicalize(&target).map_err(|e| e.to_string())?.starts_with(&canon_base) {
+            return Err("path traversal rejected".into());
+        }
+        fs::write(&target, content).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("extension writer failed: {e}"))?
 }
 
 fn companion_relative_path(rel: &str) -> Result<std::path::PathBuf, String> {

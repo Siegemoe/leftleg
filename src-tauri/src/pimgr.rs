@@ -48,31 +48,87 @@ fn resolve_pi_shim() -> Result<std::path::PathBuf, String> {
 }
 
 /// Run `pi update` with the given (pre-validated) flags: no shell, captured
-/// output, bounded runtime — a hung package manager must not pin the request.
+/// output, bounded runtime — a hung package manager must not pin the request,
+/// and a timed-out run must not leak its process tree.
+///
+/// Launches `node <pi-entry>` directly (same resolution as the RPC bridge)
+/// instead of `pi.cmd`, which would route through cmd.exe. Both stdout and
+/// stderr are drained by dedicated readers so the child can never block on a
+/// full pipe; on timeout the whole tree is killed, which closes the pipe write
+/// ends and lets the readers finish before we report.
 pub fn run_pi_manager_impl(flags: Vec<String>) -> Result<PiManagerResult, String> {
+    use std::io::Read;
     validate_update_flags(&flags)?;
     let shim = resolve_pi_shim()?;
-    let mut cmd = Command::new(&shim);
-    cmd.arg("update").args(&flags);
+    let entry = crate::pi::pi_entry_from_shim(&shim)?;
+    let sibling_node = shim.parent().ok_or("pi shim has no parent")?.join("node.exe");
+    let mut cmd = Command::new(if sibling_node.is_file() { sibling_node } else { std::path::PathBuf::from("node") });
+    cmd.arg(entry).arg("update").args(&flags);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
-    let child = cmd
+    let mut child = cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("spawning pi update: {e}"))?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let out = child.wait_with_output();
-        let _ = tx.send(out);
+    // The child holds its own process handle, so its PID cannot be reused
+    // before we reap it — taskkill by PID below is safe.
+    let pid = child.id();
+    let mut stdout_pipe = child.stdout.take().ok_or("pi update stdout unavailable")?;
+    let mut stderr_pipe = child.stderr.take().ok_or("pi update stderr unavailable")?;
+    let out_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buf);
+        buf
     });
-    let output = match rx.recv_timeout(Duration::from_secs(UPDATE_TIMEOUT_SECS)) {
-        Ok(res) => res.map_err(|e| format!("pi update: {e}"))?,
-        Err(_) => return Err(format!("pi update timed out after {UPDATE_TIMEOUT_SECS}s")),
+    let err_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(UPDATE_TIMEOUT_SECS);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    // Tree-kill first: npm grandchildren can outlive a plain
+                    // kill and would keep the pipe readers blocked forever.
+                    #[cfg(windows)]
+                    {
+                        let _ = Command::new("taskkill.exe")
+                            .args(["/PID", &pid.to_string(), "/T", "/F"])
+                            .creation_flags(CREATE_NO_WINDOW)
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .status();
+                    }
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("pi update: {e}"));
+            }
+        }
+    };
+    let out = out_reader.join().unwrap_or_default();
+    let _ = err_reader.join();
+    let status = match status {
+        Some(status) => status,
+        None => {
+            return Err(format!(
+                "pi update timed out after {UPDATE_TIMEOUT_SECS}s and was stopped"
+            ))
+        }
     };
     Ok(PiManagerResult {
-        exit_code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        exit_code: status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&out).into_owned(),
     })
 }
 
