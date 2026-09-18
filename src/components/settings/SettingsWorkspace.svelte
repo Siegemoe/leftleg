@@ -1059,7 +1059,7 @@
   .scope-name { font-size: 11.5px; color: var(--text-2); }
   .seg { display: flex; gap: 4px; }
   .seg button { padding: 3px 12px; border-radius: 99px; font-size: 11.5px; background: transparent; }
-  .seg button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .seg button.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
   .rows { display: flex; flex-direction: column; gap: 12px; }
   .row { display: flex; flex-direction: column; gap: 5px; }
   .row.filtered { display: none; }

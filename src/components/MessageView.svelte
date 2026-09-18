@@ -126,7 +126,7 @@
   }
   .user-bubble {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     border-bottom-right-radius: 5px;
   }
   .user-bubble.failed {

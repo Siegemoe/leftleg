@@ -218,7 +218,7 @@
   .update-text { font-weight: 600; color: var(--accent); }
   .update-progress { color: var(--text-3); font-style: italic; }
   .update-btn { font-size: 11.5px; padding: 3px 14px; border-radius: 99px; border: 1px solid var(--accent); color: var(--accent); background: transparent; cursor: pointer; }
-  .update-btn:hover { background: var(--accent); color: #fff; }
+  .update-btn:hover { background: var(--accent); color: var(--on-accent); }
   .update-dismiss { font-size: 14px; padding: 0 5px; color: var(--text-3); }
   .update-err { color: var(--danger); font-size: 11px; }
 </style>

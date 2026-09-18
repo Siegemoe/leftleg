@@ -43,8 +43,13 @@
   --sidebar-w: 268px;
   --topbar-h: 48px;
 
-  --accent: #6c5ce7;
-  --accent-soft: rgba(108, 92, 231, 0.14);
+  /* Monochrome accent: emphasis is near-black on light surfaces and
+   * near-white on dark ones — color is reserved for indicators (ok/danger/
+   * orange) and per-project identity, never for chrome. --on-accent is the
+   * readable text/icon color on accent fills. */
+  --accent: #23232b;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(0, 0, 0, 0.07);
   --danger: #e05561;
   --ok: #2fa96f;
 }
@@ -80,7 +85,9 @@ html[data-theme="dark"] {
   --text: #e8e8ee;
   --text-2: #a2a2b3;
   --text-3: #6f6f80;
-  --accent-soft: rgba(124, 108, 240, 0.18);
+  --accent: #f0f0f3;
+  --on-accent: #141419;
+  --accent-soft: rgba(255, 255, 255, 0.09);
   --code-bg: #23232b;
   --shadow: 0 10px 32px rgba(0, 0, 0, 0.5);
   --scroll-thumb: rgba(255, 255, 255, 0.16);
@@ -129,10 +136,10 @@ button:disabled { opacity: 0.45; cursor: default; }
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
-button.primary:hover { filter: brightness(1.08); background: var(--accent); }
+button.primary:hover { filter: brightness(0.94); background: var(--accent); }
 
 button.ghost {
   background: transparent;
