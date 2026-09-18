@@ -24,6 +24,13 @@
     const ownerProc = $lastProcByProject[ownerProject];
     const rev = ++revision;
     todos = null;
+    // The Status dock is openable at the start view; with no owner project
+    // there is no session to scan and the fetch would resolve against the
+    // backgrounded project's process — render the empty state instead.
+    if (!ownerProject) {
+      todosLoaded = true;
+      return;
+    }
     todosLoaded = false;
     void (async () => {
       try {

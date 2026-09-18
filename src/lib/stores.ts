@@ -935,6 +935,10 @@ function navigate<T>(work: () => Promise<T>): Promise<T> {
 /** An RPC response may only update the view that issued it. */
 async function requestForView<T = unknown>(command: Record<string, unknown>, timeout = 120): Promise<T> {
   const project = get(projectDir);
+  // With no open project there is no view to answer: passing `project || null`
+  // would route to Rust's active-process pointer and silently mutate a project
+  // that goHome left running in the background.
+  if (!project) throw new Error("No project is open — open a project first.");
   const proc = get(lastProcByProject)[project];
   const revision = viewRevision;
   const res = await api.piRequest<T>(command, timeout, project || null, proc);

@@ -19,8 +19,9 @@ vi.mock("./api", () => ({
 
 import * as api from "./api";
 import {
-  activeSessionPath, connected, extDialog, handleEvent, items, newSession, projectDir,
-  queue, rebuildFromMessages, rpcState, sessionStates, sendPrompt, stats, statusNote, streaming,
+  activeSessionPath, compact, connected, extDialog, goHome, handleEvent, homePanelCollapsed, items,
+  newSession, openRightPanel, projectDir, queue, rebuildFromMessages, refreshStats, rightPanelOpen,
+  rightPanelTab, rpcState, sessionStates, sendPrompt, stats, statusNote, streaming, switchToProject,
   collectUpdateInstallBlockers, handlePiExit, recordProcess, updateInstallLock,
 } from "./stores";
 import { composerDraftFor } from "./composer-drafts";
@@ -146,13 +147,16 @@ describe("handleEvent: streaming lifecycle", () => {
   });
 
   it("triggers a stats refresh when the final message carries usage", async () => {
+    // A foreground event belongs to the open project — requestForView refuses
+    // to fire without one, so the refresh must target a real project dir.
+    projectDir.set("/proj");
     await handleEvent({ type: "message_start", message: { role: "assistant" } });
     await handleEvent({
       type: "message_end",
       message: { role: "assistant", content: [], usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 3 } },
     });
     await vi.waitFor(() => {
-      expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith({ type: "get_session_stats" }, 30, null, undefined);
+      expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith({ type: "get_session_stats" }, 30, "/proj", undefined);
     });
   });
 
@@ -435,6 +439,87 @@ describe("rebuildFromMessages", () => {
     rebuildFromMessages([{ role: "bashExecution", command: "ls", output: "boom", exitCode: 1 } as never]);
     const [b] = get(items) as Array<{ kind: string; command: string; output: string; isError: boolean }>;
     expect(b).toMatchObject({ kind: "bash", command: "ls", output: "boom", isError: true });
+  });
+});
+
+describe("start view guards", () => {
+  it("goHome clears the view and switchToProject restores the panel and surface", async () => {
+    projectDir.set("C:\\work\\roundtrip");
+    recordProcess("C:\\work\\roundtrip", 11);
+    const history = [{ kind: "user" as const, id: "u1", text: "hello", images: [] }];
+    items.set(history);
+    activeSessionPath.set("C:\\work\\roundtrip\\session.jsonl");
+    homePanelCollapsed.set(false);
+    connected.set(true);
+    vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: {} } as never);
+
+    await goHome();
+
+    expect(get(projectDir)).toBe("");
+    expect(get(items)).toEqual([]);
+    expect(get(activeSessionPath)).toBe(null);
+    expect(get(homePanelCollapsed)).toBe(true);
+    expect(get(connected)).toBe(false);
+
+    // piStart refocuses the still-running background process (same pid), so
+    // the saved surface comes back and the start-view collapse clears.
+    vi.mocked(api.piStart).mockResolvedValueOnce(11);
+    await switchToProject("C:\\work\\roundtrip");
+
+    expect(get(projectDir)).toBe("C:\\work\\roundtrip");
+    expect(get(connected)).toBe(true);
+    expect(get(homePanelCollapsed)).toBe(false);
+    expect(get(items).map((i) => i.kind)).toEqual(["user"]);
+  });
+
+  it("requestForView-routed actions cannot reach the background project at home", async () => {
+    // Silent refresher: the guard rejects before any invoke, swallowed.
+    await refreshStats();
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
+    // Surfacing action: rpcAction turns the guard into a visible note.
+    await compact();
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
+    expect(get(statusNote)).toContain("No project is open");
+  });
+
+  it("openRightPanel opens the collapsed start-view panel instead of closing it", () => {
+    homePanelCollapsed.set(true);
+    rightPanelOpen.set(true);
+    rightPanelTab.set("status");
+
+    openRightPanel("status");
+
+    expect(get(rightPanelOpen)).toBe(true);
+    expect(get(rightPanelTab)).toBe("status");
+    expect(get(homePanelCollapsed)).toBe(false);
+  });
+
+  it("openRightPanel toggles closed on the same tab when the panel is visible", () => {
+    homePanelCollapsed.set(false);
+    rightPanelOpen.set(true);
+    rightPanelTab.set("artifacts");
+
+    openRightPanel("artifacts");
+
+    expect(get(rightPanelOpen)).toBe(false);
+  });
+
+  it("openRightPanel switches to a new tab at the start view", () => {
+    homePanelCollapsed.set(true);
+    rightPanelOpen.set(true);
+    rightPanelTab.set("status");
+
+    openRightPanel("files");
+
+    expect(get(rightPanelTab)).toBe("files");
+    expect(get(rightPanelOpen)).toBe(true);
+    expect(get(homePanelCollapsed)).toBe(false);
+  });
+
+  it("newSession stands down at the start view without an rpc", async () => {
+    await newSession();
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
+    expect(get(statusNote)).toContain("project");
   });
 });
 
