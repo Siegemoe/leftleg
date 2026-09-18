@@ -10,7 +10,9 @@
     exportSessionHtml, cloneSession, projectMeta, sessions, updateProjectMeta,
     forgetProject, restoreProject, chooseProject, autoRetry, refreshCommands,
     statusNote, transientNote, navigating, updateInstallLock, openNewProject,
+    keybindings, setKeybinding,
   } from "../../lib/stores";
+  import { ACTIONS, conflictingAction, effectiveBindings, parseCapture, type ActionId } from "../../lib/keybindings";
   import { companionAvailable, bindManagement, agentDirStore, isCompanionCommand } from "../../lib/settings/mgmt";
   import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle, projectIconLabel } from "../../lib/project-icons";
   import ProjectIcon from "../ProjectIcon.svelte";
@@ -39,7 +41,7 @@
 
   type SectionId =
     | "runtime" | "behavior" | "models" | "tools" | "trust"
-    | "packages" | "appearance" | "projects" | "advanced";
+    | "packages" | "appearance" | "keybindings" | "projects" | "advanced";
 
   const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
     { id: "runtime", label: "Current runtime", hint: "Live session choices (native RPC)" },
@@ -49,6 +51,7 @@
     { id: "trust", label: "Trust & privacy", hint: "Project trust, telemetry" },
     { id: "packages", label: "Extensions & packages", hint: "Installed packages, extension configs" },
     { id: "appearance", label: "Appearance (Leftleg)", hint: "Leftleg theme — not Pi's TUI" },
+    { id: "keybindings", label: "Key bindings", hint: "Leftleg shortcuts — overrides & capture" },
     { id: "projects", label: "Project presentation", hint: "Leftleg-only names, icons, defaults" },
     { id: "advanced", label: "Advanced & diagnostics", hint: "Companion, resources, build identity" },
   ];
@@ -346,6 +349,81 @@
       setTimeout(() => statusNote.set(""), 6000);
     }
   }
+
+  // ---- key bindings (Leftleg GUI state, not Pi settings.json) ----
+  const kbEffective = $derived(effectiveBindings($keybindings));
+  // One capture at a time: the window keydown listener exists only while a
+  // row is capturing, and is removed on finish/unmount.
+  let captureAction = $state<ActionId | null>(null);
+  let captureNote = $state("");
+  // Last rejected duplicate — stays visible after capture ends so the user
+  // can read which action owns the combination: warning renders on the row
+  // that was being captured, naming the action that already holds the chord.
+  let captureConflictOn = $state<ActionId | null>(null);
+  let captureConflictWith = $state<ActionId | null>(null);
+
+  function actionLabel(id: ActionId): string {
+    return ACTIONS.find((a) => a.id === id)?.label ?? id;
+  }
+
+  function startCapture(id: ActionId) {
+    captureAction = id;
+    captureNote = "";
+    captureConflictOn = null;
+    captureConflictWith = null;
+    // Capture phase on window: this runs before TitleBar's svelte:window
+    // keydown, and stopPropagation below keeps the event from reaching it
+    // (and from bubbling anywhere else in the app).
+    window.addEventListener("keydown", onCaptureKeydown, true);
+  }
+
+  function stopCapture() {
+    if (captureAction === null) return; // no capture in flight, no listener attached
+    captureAction = null;
+    captureNote = "";
+    window.removeEventListener("keydown", onCaptureKeydown, true);
+  }
+
+  function onCaptureKeydown(e: KeyboardEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      stopCapture();
+      return;
+    }
+    const action = captureAction;
+    if (!action) {
+      stopCapture();
+      return;
+    }
+    const binding = parseCapture(e);
+    if (!binding) {
+      captureNote = "Needs Ctrl (or ⌘) plus a key — bare letters, Alt chords, and lone modifiers don't qualify";
+      return;
+    }
+    // Duplicates are never applied: name the owning action on the captured
+    // row and drop out of capture mode.
+    const conflict = conflictingAction(effectiveBindings($keybindings), binding, action);
+    if (conflict) {
+      captureConflictOn = action;
+      captureConflictWith = conflict;
+      stopCapture();
+      return;
+    }
+    setKeybinding(action, binding);
+    stopCapture();
+  }
+
+  function resetAllKeybindings() {
+    stopCapture();
+    captureConflictOn = null;
+    captureConflictWith = null;
+    for (const a of ACTIONS) setKeybinding(a.id, null);
+  }
+
+  // The settings panel can unmount mid-capture (project switch re-keys the
+  // workspace, ✕ closes it) — never leave a window listener behind.
+  onDestroy(() => stopCapture());
 
   // ---- model catalog ----
   let modelFilter = $state("");
@@ -860,6 +938,36 @@
           <p class="hint">Fonts (Plus Jakarta Sans) and icon set (Lucide) are bundled app choices. These do NOT style terminal Pi — Pi's own TUI theme (<span class="mono">theme</span> in settings.json) is under Agent behavior's file scope and labeled TUI-only.</p>
         </div>
       </div>
+    {:else if section === "keybindings"}
+      <h3>Key bindings <span class="chip">Leftleg-only — persists in GUI state</span></h3>
+      <div class="rows">
+        {#each ACTIONS as a (a.id)}
+          {@const binding = kbEffective[a.id]}
+          <div class="row" class:filtered={!matchesSearch(a.label, binding ?? "unbound")}>
+            <div class="kb-row">
+              <span class="kb-name">{a.label}</span>
+              {#if captureAction === a.id}
+                <span class="kb-capture">Press a key combination… — Esc to cancel</span>
+                <button class="ghost" onclick={stopCapture}>Cancel</button>
+              {:else}
+                <span class="kb-key mono">{binding ?? "Unbound"}</span>
+                <button class="ghost" onclick={() => startCapture(a.id)}>Change</button>
+              {/if}
+            </div>
+            {#if captureAction === a.id && captureNote}<p class="hint">{captureNote}</p>{/if}
+            {#if captureConflictOn === a.id && captureConflictWith}
+              <p class="hint err">Already used by {actionLabel(captureConflictWith)} — not applied. Pick a different combination.</p>
+            {/if}
+          </div>
+        {/each}
+        <div class="row">
+          <div class="inline">
+            <button class="ghost" onclick={resetAllKeybindings} disabled={Object.keys($keybindings).length === 0}>Reset all</button>
+            <span class="hint">Clears every override — the registry defaults come back.</span>
+          </div>
+          <p class="hint">Shortcuts need Ctrl (or ⌘) plus a key; Shift matters (Ctrl+N ≠ Ctrl+Shift+N). They fire while typing but stand down when a modal owns the keyboard. Escape stays reserved for closing menus and dialogs.</p>
+        </div>
+      </div>
     {:else if section === "projects"}
       <h3>Project presentation (Leftleg-owned)</h3>
       <div class="rows">
@@ -1168,4 +1276,26 @@
   .color-pick:hover { transform: scale(1.12); }
   .color-pick.active { border-color: var(--bg-surface); box-shadow: 0 0 0 1.5px var(--text-2); }
   .color-pick.none { background: transparent; border: 1.5px dashed var(--text-3); }
+  .kb-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 6px 9px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .kb-name { flex: 1; min-width: 140px; font-size: 12.5px; color: var(--text); }
+  .kb-key {
+    min-width: 96px;
+    text-align: center;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: var(--text-2);
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .kb-capture { font-size: 11.5px; color: var(--accent); }
 </style>

@@ -7,6 +7,7 @@ import * as api from "./api";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { handleMgmtNotify, abortPendingMgmt, pendingManagementCount, primeAgentDir } from "./settings/mgmt";
 import { composerDraftBlockers, pruneEmptyComposerDrafts } from "./composer-drafts";
+import { ACTION_IDS, type ActionId } from "./keybindings";
 
 // ---------- stores ----------
 
@@ -38,6 +39,25 @@ export function openRightPanel(tab: RightPanelTab) {
     rightPanelTab.set(tab);
     rightPanelOpen.set(true);
   }
+}
+
+// ---------- key bindings ----------
+
+/** User key-binding overrides only (action registry + defaults live in
+ * src/lib/keybindings.ts). An absent key means "use the default". Hydrated
+ * from GUI state in bootImpl and persisted back through the boot
+ * subscription, like every other Leftleg preference. */
+export const keybindings = writable<Partial<Record<ActionId, string>>>({});
+
+/** Apply a captured binding for an action, or null to reset it to its
+ * default (which deletes the override). */
+export function setKeybinding(action: ActionId, binding: string | null): void {
+  keybindings.update((map) => {
+    const next = { ...map };
+    if (binding === null) delete next[action];
+    else next[action] = binding;
+    return next;
+  });
 }
 
 // ---------- code-viewer card ----------
@@ -1590,6 +1610,18 @@ async function bootImpl() {
   rightPanelOpen.set((gui.rightPanelOpen as boolean) ?? false);
   rightPanelTab.set((gui.rightPanelTab as RightPanelTab) ?? "status");
   rightPanelWidth.set((gui.rightPanelWidth as number) ?? 420);
+  // Key-binding overrides: gui state is schema-less JSON, so keep only known
+  // action ids with non-empty string values — foreign junk never reaches the
+  // registry or the menus.
+  const savedKb = gui.keybindings as Partial<Record<ActionId, string>> | undefined;
+  const kbOverrides: Partial<Record<ActionId, string>> = {};
+  if (savedKb && typeof savedKb === "object") {
+    for (const id of ACTION_IDS) {
+      const v = savedKb[id];
+      if (typeof v === "string" && v) kbOverrides[id] = v;
+    }
+  }
+  keybindings.set(kbOverrides);
   const cardRect = gui.fileCardRect as Partial<FileCardRect> | undefined;
   fileCardRect.set({
     x: cardRect?.x ?? 120,
@@ -1650,6 +1682,10 @@ async function bootImpl() {
   });
   fileCardRect.subscribe(async (v) => {
     gui.fileCardRect = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  keybindings.subscribe(async (v) => {
+    gui.keybindings = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
   delete gui.autoRetry; // agent settings are persisted only by Pi
