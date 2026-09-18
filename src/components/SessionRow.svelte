@@ -100,6 +100,12 @@
       <span class="pill-label {pill.kind}">{pill.label}</span>
     {/if}
     <span class="s-time">{timeLabel}</span>
+    {#if pill?.kind === "working"}
+      <span class="working-chip">
+        <span class="chip-dot"></span>
+        working
+      </span>
+    {/if}
     <span class="spacer"></span>
     <button
       class="ghost act pin"
@@ -192,6 +198,23 @@
   .pill-label.needs-attention { color: orange; }
   .pill-label.failed { color: var(--danger); }
   .pill-label.completed { color: var(--ok); }
+  /* Per-row "working" cue (moved from the status bar): tiny pulsing accent
+     dot + muted label, same pulse idiom as the row-top pill-dot. */
+  .working-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-3);
+    letter-spacing: 0.2px;
+  }
+  .working-chip .chip-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--accent);
+    animation: pulse 1.2s infinite;
+  }
   .spacer { flex: 1; }
   .act {
     opacity: 0;
