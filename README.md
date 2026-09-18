@@ -1,4 +1,5 @@
-**A note from the creator**
+# **A note from the creator**
+
 Hi, I’m Zack, also known as Siegemoe.
 
 I created Leftleg to satisfy my curiosity. AI agents have been an incredibly interesting development, and I’ve been fortunate enough to spend the past two years exploring their progress. I plan to continue doing so while building a deeper understanding of the software development lifecycle and the security required to protect users and their data.
@@ -18,7 +19,7 @@ Leftleg is an expanding prototype. I would not call it an alpha yet, and it has 
 
 My goal is to keep building Leftleg, pushing it to become my preferred agent surface. I've made it public so others could use it, or be inspired to create their own surface.
 
-**Leftleg is an independent project and is not affiliated with T3 Code, Pi, or any model provider.**
+##**Leftleg is an independent project and is not affiliated with T3 Code, Pi, or any model provider.**
 
 # Leftleg
 
