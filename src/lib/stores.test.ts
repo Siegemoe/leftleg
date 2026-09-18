@@ -447,6 +447,9 @@ describe("newSession", () => {
     const history = [{ kind: "user" as const, id: "keep-1", text: "Keep this conversation", images: [] }];
     items.set(history);
     activeSessionPath.set("/existing.jsonl");
+    // newSession stands down with no project open (start view) — these tests
+    // exercise the session path, so a project must be active.
+    projectDir.set("C:\\work\\front");
     vi.mocked(api.piRequest).mockResolvedValueOnce(response);
 
     await newSession();
@@ -458,6 +461,7 @@ describe("newSession", () => {
   });
 
   it("pins the default GLM model on fresh sessions", async () => {
+    projectDir.set("C:\\work\\front");
     vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: {} } as never);
 
     await newSession();
@@ -468,6 +472,7 @@ describe("newSession", () => {
   });
 
   it("skips the model switch when already on the default model", async () => {
+    projectDir.set("C:\\work\\front");
     vi.mocked(api.piRequest).mockResolvedValue({
       success: true,
       data: { model: { provider: "openrouter", id: "z-ai/glm-5.3-flash" } },

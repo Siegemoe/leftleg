@@ -2,7 +2,7 @@
   // Startup scene: shown while no project is active. The composer sits
   // centered; above it, known projects render as cards. Picking a card
   // activates that project (forcing project association) and, if the user
-  // already typed a message, sends it as the first prompt. The send arrow
+  // already typed a message, sends it as the first prompt. The send button
   // runs the same flow through the folder picker for brand-new projects.
   import { fade } from "svelte/transition";
   import { ArrowRight, FileText, Folder, Paperclip, Send } from "@lucide/svelte";
@@ -222,7 +222,7 @@
         onkeydown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            transientNote("Enter won't send here — pick a project card above, or use the send arrow.");
+            transientNote("Enter won't send here — pick a project card above, or use the send button.");
           }
         }}
         onpaste={onPaste}
@@ -240,7 +240,7 @@
           <Send size={15} strokeWidth={2.2} />
         </button>
       </div>
-      <div class="hint">Pick a project card above, or send to a new folder with the arrow.</div>
+      <div class="hint">Pick a project card above, or send to a new folder with the send button.</div>
     </div>
   </div>
 </div>

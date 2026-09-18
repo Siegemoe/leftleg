@@ -101,10 +101,7 @@
     {/if}
     <span class="s-time">{timeLabel}</span>
     {#if pill?.kind === "working"}
-      <span class="working-chip">
-        <span class="chip-dot"></span>
-        working
-      </span>
+      <span class="working-chip">Working</span>
     {/if}
     <span class="spacer"></span>
     <button
@@ -198,22 +195,13 @@
   .pill-label.needs-attention { color: orange; }
   .pill-label.failed { color: var(--danger); }
   .pill-label.completed { color: var(--ok); }
-  /* Per-row "working" cue (moved from the status bar): tiny pulsing accent
-     dot + muted label, same pulse idiom as the row-top pill-dot. */
+  /* Per-row "working" cue (moved from the status bar): muted label only —
+     the row-top pill-dot already pulses, so the chip stays text. */
   .working-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
     color: var(--text-3);
     letter-spacing: 0.2px;
-  }
-  .working-chip .chip-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: var(--accent);
-    animation: pulse 1.2s infinite;
   }
   .spacer { flex: 1; }
   .act {

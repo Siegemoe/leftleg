@@ -51,8 +51,7 @@ describe("session row working chip", () => {
 
     const chip = document.body.querySelector<HTMLElement>(".s-meta .working-chip");
     expect(chip).not.toBeNull();
-    expect(chip!.textContent).toContain("working");
-    expect(chip!.querySelector(".chip-dot")).not.toBeNull();
+    expect(chip!.textContent).toContain("Working");
     // Placement: immediately right of the timestamp, before the spacer.
     expect(chip!.previousElementSibling?.classList.contains("s-time")).toBe(true);
     expect(chip!.nextElementSibling?.classList.contains("spacer")).toBe(true);
