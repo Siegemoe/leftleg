@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   lastSessionFor: vi.fn(),
   requestComposerText: vi.fn(),
   chooseProject: vi.fn(),
+  pickAttachments: vi.fn(),
 }));
 
 vi.mock("svelte/transition", () => ({ fade: () => ({ duration: 0 }) }));
@@ -15,6 +16,11 @@ vi.mock("svelte/transition", () => ({ fade: () => ({ duration: 0 }) }));
 vi.mock("../lib/stores", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/stores")>();
   return { ...actual, ...mocks };
+});
+
+vi.mock("../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/api")>();
+  return { ...actual, pickAttachments: mocks.pickAttachments };
 });
 
 import StartScreen from "./StartScreen.svelte";
@@ -47,6 +53,7 @@ beforeEach(() => {
   mocks.sendPrompt.mockReset().mockResolvedValue({ ok: true });
   mocks.lastSessionFor.mockReset().mockReturnValue(undefined);
   mocks.requestComposerText.mockReset();
+  mocks.pickAttachments.mockReset();
   mocks.chooseProject.mockReset().mockImplementation(async () => { projectDir.set("/new-project"); return "/new-project"; });
 });
 
@@ -168,5 +175,88 @@ describe("startup project prompt", () => {
     expect(mocks.chooseProject).toHaveBeenCalledOnce();
     expect(mocks.sendPrompt).toHaveBeenCalledWith("start the project", []);
     expect(document.body.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+  });
+
+  it("sends text and attachments through the folder-picker flow via the send arrow", async () => {
+    mocks.pickAttachments.mockResolvedValue([{ name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" }]);
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    typeDraft("look at this");
+
+    document.body.querySelector<HTMLButtonElement>(".add")!.click();
+    await settle();
+    document.body.querySelector<HTMLButtonElement>(".send")!.click();
+    await settle();
+
+    expect(mocks.chooseProject).toHaveBeenCalledOnce();
+    expect(mocks.sendPrompt).toHaveBeenCalledWith("look at this", [
+      { data: "aGVsbG8=", mimeType: "image/png", name: "shot.png" },
+    ]);
+    expect(document.body.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
+  });
+
+  it("renders attachment chips with thumbnails and removes them", async () => {
+    mocks.pickAttachments.mockResolvedValue([
+      { name: "notes.txt", path: "C:/t/notes.txt", data: "aGk=" },
+      { name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" },
+    ]);
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+
+    document.body.querySelector<HTMLButtonElement>(".add")!.click();
+    await settle();
+
+    expect(document.body.querySelectorAll(".chip").length).toBe(2);
+    expect(document.body.querySelector(".chip img")).not.toBeNull();
+    expect(document.body.querySelector(".chip img")?.getAttribute("src")).toBe("data:image/png;base64,aGVsbG8=");
+
+    document.body.querySelector<HTMLButtonElement>(".chip .rm")!.click();
+    flushSync();
+
+    expect(document.body.querySelectorAll(".chip").length).toBe(1);
+    expect(document.body.textContent).toContain("shot.png");
+    expect(document.body.textContent).not.toContain("notes.txt");
+  });
+
+  it("rejects an oversized pasted image with a note", async () => {
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    const big = new File([new ArrayBuffer(21 * 1024 * 1024)], "big.png", { type: "image/png" });
+    const textarea = document.body.querySelector<HTMLTextAreaElement>("textarea")!;
+    const paste = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, "clipboardData", {
+      value: { items: [{ kind: "file", type: "image/png", getAsFile: () => big }] },
+    });
+
+    textarea.dispatchEvent(paste);
+    await settle();
+
+    expect(get(statusNote)).toBe("Pasted image exceeds 20 MiB limit");
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
+  });
+
+  it("moves attachments of a rejected first prompt into the project composer", async () => {
+    mocks.pickAttachments.mockResolvedValue([{ name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" }]);
+    mocks.sendPrompt.mockResolvedValue({ ok: false, error: "rejected" });
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    typeDraft("retry with this");
+
+    document.body.querySelector<HTMLButtonElement>(".add")!.click();
+    await settle();
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+
+    expect(mocks.sendPrompt).toHaveBeenCalledWith("retry with this", [
+      { data: "aGVsbG8=", mimeType: "image/png", name: "shot.png" },
+    ]);
+    const destination = get(composerDraftFor("/proj:/session-a"));
+    expect(destination.text).toBe("retry with this");
+    expect(destination.attachments).toEqual([
+      { name: "shot.png", mimeType: "image/png", data: "aGVsbG8=", isImage: true },
+    ]);
+    expect(get(composerDraftFor("startup project")).text).toBe("");
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
   });
 });
