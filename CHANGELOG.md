@@ -11,6 +11,16 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 - Diff and Files docks with guarded native Git summaries, a tracked-source
   browser, lazy file statistics, and a movable code-viewer card.
 - Branch-hover diff totals and a subagents dock for current agent activity.
+- T3-style session rail that rides the sidebar's edge (travels to the window
+  edge when the sidebar hides), and a capped, centered chat column (~60% of
+  the window) shared by the transcript and the composer.
+- New-project card — folder name plus a native parent picker — reachable
+  from the sidebar scope picker, the settings project manager, and
+  File → New Project… (Ctrl+Shift+N), backed by a validated
+  create-folder command that rejects reserved Windows device names.
+- File/View menu refresh: New Project…, Diff…, and Files… entries; the
+  sidebar scope picker gains a New project… row and no longer spills past
+  the window edge at its narrowest.
 
 ### Fixed
 - Prevent delayed RPC prompt delivery after a stdin write timeout by poisoning

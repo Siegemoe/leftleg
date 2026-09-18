@@ -1079,15 +1079,29 @@ pub async fn read_text_file(
 }
 
 /// Create a new project folder: one plain path component under an absolute
-/// parent the user just picked in the native folder dialog. Deliberately
-/// narrow — the webview gets no general directory-creation primitive, only
-/// this single-component create (name is validated to a safe Windows/POSIX
-/// folder name; the parent must already exist).
+/// parent the webview sends (normally the folder just picked in the native
+/// dialog). The name is validated to a safe Windows/POSIX folder name and
+/// only directories are ever created — but the parent is NOT containment-
+/// checked against the allowed roots, so this is an accepted-risk primitive:
+/// a compromised webview could create directories anywhere, one component at
+/// a time (and nest arbitrarily deep by reusing created dirs as parents). It
+/// cannot write files, run anything, or read.
 #[tauri::command]
 pub async fn create_project_dir(parent: String, name: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || create_project_dir_checked(&parent, &name))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Windows reserved device names — CON, PRN, AUX, NUL, COM1-9, LPT1-9 — are
+/// rejected as the full name or the stem before any extension ("con.txt"),
+/// mirroring how Windows resolves them regardless of extension.
+fn is_reserved_windows_name(trimmed: &str) -> bool {
+    let stem = trimmed.split('.').next().unwrap_or("").to_ascii_uppercase();
+    stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL"
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
 }
 
 fn create_project_dir_checked(parent: &str, name: &str) -> Result<String, String> {
@@ -1106,7 +1120,8 @@ fn create_project_dir_checked(parent: &str, name: &str) -> Result<String, String
         || trimmed.chars().any(|c| {
             matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') || (c as u32) < 0x20
         })
-        || trimmed.ends_with(['.', ' ']);
+        || trimmed.ends_with(['.', ' '])
+        || is_reserved_windows_name(trimmed);
     if bad {
         return Err("project name must be a plain folder name".into());
     }
@@ -1596,6 +1611,30 @@ mod tests {
                 create_project_dir_checked(parent.to_str().unwrap(), bad).is_err(),
                 "{bad:?} must be rejected",
             );
+        }
+
+        // Control characters (<0x20) and over-long names are rejected. (The
+        // 200-unit limit is pinned from the reject side plus a shorter
+        // positive control: a 200-char dir name under %TEMP% can blow past
+        // MAX_PATH and fail create_dir_all for unrelated reasons.)
+        assert!(create_project_dir_checked(parent.to_str().unwrap(), "a\nb").is_err());
+        let long = "x".repeat(201);
+        assert!(create_project_dir_checked(parent.to_str().unwrap(), &long).is_err());
+        assert!(
+            create_project_dir_checked(parent.to_str().unwrap(), &"x".repeat(150)).is_ok(),
+            "long-but-under-limit name must be accepted",
+        );
+
+        // Windows reserved device names — bare or as a stem before any
+        // extension, any case; COM0/LPT0 and similar-looking names are fine.
+        for bad in ["con", "CON", "Con.txt", "prn", "aux.zip", "nul", "com1", "COM9", "lpt4", "LPT1.txt"] {
+            assert!(
+                create_project_dir_checked(parent.to_str().unwrap(), bad).is_err(),
+                "{bad:?} must be rejected",
+            );
+        }
+        for ok in ["connect", "console", "com0", "lpt0", "com10", "nul-off"] {
+            create_project_dir_checked(parent.to_str().unwrap(), ok).unwrap_or_else(|e| panic!("{ok:?} must be accepted: {e}"));
         }
 
         // Parent must be absolute and existing.

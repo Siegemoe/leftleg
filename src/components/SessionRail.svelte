@@ -8,7 +8,7 @@
   import { Plus } from "@lucide/svelte";
   import {
     activeSessionPath, newSession, openSession, pins, projectDir,
-    projectScope, sessionStates, sessions, settled, visitedAt,
+    projectScope, sessionStates, sessions, settled, switchToProject, visitedAt,
   } from "../lib/stores";
   import {
     formatRelativeTime, resolveThreadPill, toSidebarSessions,
@@ -36,10 +36,20 @@
     }).filter((s) => s.projectDir === scope);
     return [...all].sort((a, b) => b.timestampMs - a.timestampMs).slice(0, MAX_RAIL_TICKS);
   });
+
+  /** The project the rail is scoped to. The + must create in THIS project —
+   * when the scope points at a background project, newSession() alone would
+   * target whichever project is active and no tick would appear. */
+  const railProject = $derived($projectScope ?? $projectDir);
+
+  async function railNewSession() {
+    if (railProject && railProject !== $projectDir) await switchToProject(railProject);
+    await newSession();
+  }
 </script>
 
 <aside class="rail" aria-label="Session rail">
-  <button class="rail-btn" title="New session" onclick={() => newSession()}>
+  <button class="rail-btn" title="New session" onclick={() => void railNewSession()}>
     <Plus size={13} strokeWidth={2.4} />
   </button>
   <div class="ticks">
@@ -96,9 +106,13 @@
     justify-content: safe center;
     gap: 7px;
     min-height: 0;
-    overflow: hidden;
+    /* Scrollable when the window is short; no visible scrollbar — ticks stay
+     * reachable where overflow-hidden would silently clip them. */
+    overflow-y: auto;
+    scrollbar-width: none;
     padding-top: 2px;
   }
+  .ticks::-webkit-scrollbar { display: none; }
   .tick {
     width: 14px;
     height: 3px;

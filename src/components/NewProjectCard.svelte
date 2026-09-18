@@ -5,12 +5,18 @@
   // File menu.
   import { X } from "@lucide/svelte";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-  import { newProjectOpen, createProject, settingsOpen, extDialog } from "../lib/stores";
+  import { newProjectOpen, createProject, extDialog } from "../lib/stores";
 
   let name = $state("");
   let parent = $state("");
   let error = $state("");
   let busy = $state(false);
+
+  // The component stays mounted; without this a failed attempt would still
+  // be showing its error (and prefilled parent) the next time the card opens.
+  $effect(() => {
+    if ($newProjectOpen) { name = ""; parent = ""; error = ""; }
+  });
 
   /** Focus action (replaces autofocus; avoids the a11y warning). */
   function focusNow(node: HTMLElement) {
@@ -24,7 +30,9 @@
 
   function onKeydown(e: KeyboardEvent) {
     if (!$newProjectOpen) return;
-    if (e.key === "Escape" && !$settingsOpen && !$extDialog) {
+    // The card sits ABOVE the settings modal (z-150 vs z-100), so Esc closes
+    // the card even when settings is open — only ExtDialog (z-200) outranks it.
+    if (e.key === "Escape" && !$extDialog) {
       e.preventDefault();
       close();
     }
@@ -47,14 +55,17 @@
   }
 
   // Client-side mirror of the native name gate so an obviously bad name
-  // disables Create instead of waiting for the error round-trip.
+  // disables Create instead of waiting for the error round-trip. JS strings
+  // are UTF-16, so `.length` matches the Rust 200-unit rule exactly.
   const nameValid = $derived(
     name.trim().length > 0 &&
+      name.trim().length <= 200 &&
       name.trim() !== "." &&
       name.trim() !== ".." &&
       !/[\\/:*?"<>|]/.test(name) &&
       !/[.\s]$/.test(name.trim()) &&
-      ![...name.trim()].some((c) => c.charCodeAt(0) < 0x20),
+      ![...name.trim()].some((c) => c.charCodeAt(0) < 0x20) &&
+      !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(name.trim()),
   );
   const canCreate = $derived(nameValid && parent !== "" && !busy);
 
@@ -103,7 +114,7 @@
           </button>
         </div>
         {#if parent && nameValid}
-          <p class="preview mono">{parent}\{name.trim()}</p>
+          <p class="preview mono">{parent + (parent.includes("\\") ? "\\" : "/") + name.trim()}</p>
         {/if}
         {#if error}<p class="error">{error}</p>{/if}
         <p class="hint">Leftleg creates the folder, then starts pi in it. The folder shows up in the sidebar like any other project.</p>

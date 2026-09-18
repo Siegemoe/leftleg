@@ -56,8 +56,11 @@ export function openNewProject() {
 }
 
 /** Create the folder and make it the active project. Resolves to the new
- * path; throws so the caller (the card) can show the error inline. */
+ * path; throws so the caller (the card) can show the error inline. The
+ * update-lock check comes first so a locked navigation can't leave a
+ * created-but-never-opened folder behind. */
 export async function createProject(parent: string, name: string): Promise<string> {
+  if (get(updateInstallLock)) throw new Error("update installation is preparing — try again in a moment");
   const dir = await api.createProjectDir(parent, name);
   const ok = await switchToProject(dir);
   if (!ok) throw new Error("couldn't start pi in the new folder");
