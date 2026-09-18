@@ -620,6 +620,13 @@ export function transientNote(note: string, ms = 8000) {
   }, ms);
 }
 
+/** Render a caught error inside a prefixed note template. An Error's toString
+ * already carries the "Error:" prefix, which doubles behind the note's own
+ * prefix ("Couldn't open project: Error: …") — use the bare message instead. */
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 export async function handleEvent(evt: PiEvent, origin?: { project: string; proc: number }) {
   const owner = origin ?? { project: get(projectDir), proc: get(lastProcByProject)[get(projectDir)] };
   if (origin) {
@@ -942,6 +949,11 @@ function navigate<T>(work: () => Promise<T>): Promise<T> {
  * is dead on arrival. Thrown by requestForView, ignored where staleness is
  * expected (transientNote also filters it out of the status line). */
 const VIEW_CHANGED_MSG = "View changed while the request was pending";
+/** True when a rejection is the stale-view guard's own throw, not a pi
+ * failure — callers may skip surfacing it. */
+function isViewChangedError(e: unknown): boolean {
+  return e instanceof Error && e.message === VIEW_CHANGED_MSG;
+}
 
 /** An RPC response may only update the view that issued it. */
 async function requestForView<T = unknown>(command: Record<string, unknown>, timeout = 120): Promise<T> {
@@ -1141,7 +1153,7 @@ async function newSessionImpl() {
     await refreshStats();
     void persistLastSession(get(activeSessionPath));
   } catch (e) {
-    transientNote(`Error: ${e}`);
+    transientNote(`Error: ${errorText(e)}`);
   }
 }
 
@@ -1228,7 +1240,7 @@ async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<b
     }
     return true;
   } catch (e) {
-    transientNote(`Couldn't open project: ${e}`);
+    transientNote(`Couldn't open project: ${errorText(e)}`);
     return false;
   }
 }
@@ -1301,7 +1313,7 @@ async function openSessionImpl(path: string) {
     markVisited(path);
     void persistLastSession(get(activeSessionPath));
   } catch (e) {
-    transientNote(`Error: ${e}`);
+    transientNote(`Error: ${errorText(e)}`);
   }
 }
 
@@ -1318,7 +1330,7 @@ export async function reloadMessages() {
         if (!get(streaming)) queueMicrotask(() => void reloadMessages());
       }
     }
-  } catch (e) { transientNote(`Couldn't load session history: ${e}`); }
+  } catch (e) { transientNote(`Couldn't load session history: ${errorText(e)}`); }
 }
 
 export async function renameSession(name: string, path = get(activeSessionPath) ?? undefined) {
@@ -1353,7 +1365,7 @@ async function refreshRpcStateForView() {
   try {
     await refreshRpcState();
   } catch (e) {
-    if (e instanceof Error && e.message === VIEW_CHANGED_MSG) return;
+    if (isViewChangedError(e)) return;
     throw e;
   }
 }
@@ -1421,7 +1433,7 @@ export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string;
     return { ok: true, path };
   } catch (e) {
     // The caller ignores the return value, so every failure path must surface.
-    transientNote(`Couldn't export session: ${e}`);
+    transientNote(`Couldn't export session: ${errorText(e)}`);
     return { ok: false, error: String(e) };
   }
 }
@@ -1449,7 +1461,7 @@ async function cloneSessionImpl(): Promise<{ ok: boolean; error?: string }> {
     transientNote("Session cloned", 4000);
     return { ok: true };
   } catch (e) {
-    transientNote(`Error: ${e}`);
+    transientNote(`Error: ${errorText(e)}`);
     return { ok: false, error: String(e) };
   }
 }
@@ -1475,7 +1487,7 @@ export async function respondToExtDialog(response: Record<string, unknown>) {
     // Send failed: keep the dialog open (the extension is still waiting) and
     // release the one-shot guard so the answer can be retried.
     answeringDialogId = null;
-    transientNote(`Couldn't answer extension request: ${e}`);
+    transientNote(`Couldn't answer extension request: ${errorText(e)}`);
     return;
   }
   answeringDialogId = null;
@@ -1523,17 +1535,33 @@ export async function refreshCommands() {
   }
 }
 
-/** Process death settles the owning session's pill: an expected stop behaves
- * like agent_end (idle — but an attention mark survives for the user), an
- * unexpected death demands attention. Without this a dead process would keep
- * its session "Working" until a full agent_start→agent_end cycle ran again. */
-function settleSessionOnProcessExit(session: string | null, expected: boolean) {
-  if (!expected) {
-    setSessionStatus(session, "attention", "process exited");
-    return;
+/** Process death settles the dying project's session pills: an expected stop
+ * behaves like agent_end (idle), an unexpected death demands attention.
+ * Without this a dead process would leave its sessions "Working" until a full
+ * agent_start→agent_end cycle ran again. The sweep covers every session of
+ * the project, not just the one pi had loaded at exit — the user can switch
+ * sessions mid-turn (openSession has no streaming guard), and the
+ * switched-away session would otherwise pulse "Working" forever (no future
+ * agent_end can arrive: the process is dead). Expected exits preserve
+ * non-active statuses (an attention mark survives); an unexpected exit flags
+ * the session pi had open even if it sat idle. Session → project comes from
+ * pi's session list (cwd); the project's active session covers a list that
+ * hasn't refreshed yet. Synchronous, O(sessions of that project). */
+function settleProjectSessionsOnProcessExit(project: string, expected: boolean) {
+  const paths = new Set<string>();
+  for (const s of get(sessions)) if (s.cwd === project) paths.add(s.path);
+  const owner = get(activeSessionByProject)[project];
+  if (owner) paths.add(owner);
+  const foreground = project === get(projectDir) ? get(activeSessionPath) : null;
+  if (foreground) paths.add(foreground);
+  const states = get(sessionStates);
+  for (const path of paths) {
+    if (expected) {
+      if (states[path]?.status === "active") setSessionStatus(path, "idle");
+    } else if (states[path]?.status === "active" || path === owner || path === foreground) {
+      setSessionStatus(path, "attention", "process exited");
+    }
   }
-  const cur = get(sessionStates)[session ?? ""];
-  if (cur?.status !== "attention") setSessionStatus(session, "idle");
 }
 
 /**
@@ -1553,8 +1581,11 @@ export function handlePiExit(project: string, pid: number, expected: boolean, er
     delete next[project];
     return next;
   });
+  // The dead process's sessions stop pulsing "Working": settle them like
+  // agent_end (expected) or flag them (unexpected) — the disconnect banner
+  // alone doesn't touch the sidebar chips.
+  settleProjectSessionsOnProcessExit(project, expected);
   if (project !== get(projectDir)) {
-    settleSessionOnProcessExit(get(activeSessionByProject)[project], expected);
     abortPendingMgmt("pi process exited before the management reply", project, pid);
     return;
   }
@@ -1567,10 +1598,6 @@ export function handlePiExit(project: string, pid: number, expected: boolean, er
   extWidgets.set({});
   extDialog.set(null);
   finalizeStreaming();
-  // The dead process's session stops pulsing "Working": settle it like
-  // agent_end (expected) or flag it (unexpected) — the disconnect banner
-  // alone doesn't touch the sidebar chip.
-  settleSessionOnProcessExit(get(activeSessionPath), expected);
   // The process is gone, so tool_execution_end will never arrive: close out
   // any tool cards still showing a spinner, otherwise they run forever.
   items.update((a) => {
@@ -1621,7 +1648,7 @@ async function restartPiImpl() {
       // created when the first message is persisted). The resume start is
       // then rejected by the file check — fall back visibly to a fresh start
       // and don't claim a resume that didn't happen.
-      transientNote(`Couldn't resume session (${resumeError}) — starting fresh.`);
+      transientNote(`Couldn't resume session (${errorText(resumeError)}) — starting fresh.`);
       const pid = await api.piStart(dir);
       recordProcess(dir, pid);
     }
@@ -1638,7 +1665,7 @@ async function restartPiImpl() {
   } catch (e) {
     connected.set(false);
     disconnected.set(true);
-    transientNote(`Couldn't restart pi: ${e}`);
+    transientNote(`Couldn't restart pi: ${errorText(e)}`);
   }
 }
 

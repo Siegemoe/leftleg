@@ -57,11 +57,28 @@
   }
   function onGlobalKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      openMenu = null;
-      // The About card is topmost only when no ExtDialog sits over it
-      // (ExtDialog is z-200 above the About card's z-150): with one up, Esc
-      // belongs to the ExtDialog layer and About stands down here.
-      if (!$extDialog) aboutOpen.set(false);
+      // ExtDialog (z-200) sits above everything this handler can close: with
+      // one pending, Esc belongs to that layer — the dialog's own listener
+      // (registered last, on demand) closes it and marks the event.
+      if ($extDialog) return;
+      let closed = false;
+      if (openMenu) {
+        openMenu = null;
+        closed = true;
+      }
+      // The About card (z-150) is above FileCard (z-90) and the Settings
+      // modal (z-100), so Esc closes About there and those layers stand down
+      // on e.defaultPrevented below. The same-z cards (NewProjectCard /
+      // ProjectSettingsCard, also z-150) mount after TitleBar: they paint
+      // above About and register their Esc listeners later, so stand down
+      // and let the card's own closer take the key.
+      if ($aboutOpen && !$newProjectOpen && !$projectSettingsDir) {
+        aboutOpen.set(false);
+        closed = true;
+      }
+      // Mark the event handled so lower layers' window listeners (FileCard,
+      // Settings modal, …) don't close a second layer on the same keypress.
+      if (closed) e.preventDefault();
       return;
     }
     // Registry-driven accelerators (defaults + user overrides from Settings →

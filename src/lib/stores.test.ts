@@ -30,8 +30,9 @@ import {
   activeSessionByProject, activeSessionPath, compact, connected, exportSessionHtml, extDialog,
   forgetProject, goHome, handleEvent, homePanelCollapsed, items, newSession, openRightPanel,
   projectDir, projectMeta, projectScope, queue, rebuildFromMessages, refreshStats, restartPi,
-  rightPanelOpen, rightPanelTab, rpcState, sessionStates, sendPrompt, stats, statusNote, streaming,
-  switchToProject, collectUpdateInstallBlockers, handlePiExit, recordProcess, updateInstallLock,
+  rightPanelOpen, rightPanelTab, rpcState, sessionStates, sendPrompt, sessions, stats, statusNote,
+  streaming, switchToProject, collectUpdateInstallBlockers, handlePiExit, recordProcess,
+  updateInstallLock,
 } from "./stores";
 import { composerDraftFor } from "./composer-drafts";
 
@@ -44,6 +45,7 @@ function resetStores() {
   rpcState.set(null);
   activeSessionPath.set(null);
   activeSessionByProject.set({});
+  sessions.set([]);
   statusNote.set("");
   extDialog.set(null);
   connected.set(false);
@@ -561,6 +563,61 @@ describe("handlePiExit: session chip on process death", () => {
     expect(get(sessionStates)["/bg.jsonl"]).toEqual({ status: "idle", note: "" });
   });
 
+  // Session → project mapping for the exit sweep.
+  function sessionInfo(path: string, cwd: string) {
+    return { path, cwd, timestamp: "", fileModified: 0, sessionId: path, name: null, firstMessage: null };
+  }
+
+  it("settles a session switched away from mid-turn on an expected exit, leaving the current one alone", async () => {
+    projectDir.set("C:\\work\\front");
+    recordProcess("C:\\work\\front", 1);
+    sessions.set([
+      sessionInfo("/a.jsonl", "C:\\work\\front"),
+      sessionInfo("/b.jsonl", "C:\\work\\front"),
+    ]);
+    activeSessionPath.set("/a.jsonl");
+    await handleEvent({ type: "agent_start" }); // real path: A reads active/working
+    expect(get(sessionStates)["/a.jsonl"]).toEqual({ status: "active", note: "working" });
+    activeSessionPath.set("/b.jsonl"); // user switches mid-turn; pi now owns B
+
+    handlePiExit("C:\\work\\front", 1, true);
+
+    // The process is dead — no future agent_end can settle A, which pi no
+    // longer has active; the sweep must catch it. B was never running.
+    expect(get(sessionStates)["/a.jsonl"]).toEqual({ status: "idle", note: "" });
+    expect(get(sessionStates)["/b.jsonl"]).toBeUndefined();
+  });
+
+  it("flags a session switched away from mid-turn on an unexpected exit", async () => {
+    projectDir.set("C:\\work\\front");
+    recordProcess("C:\\work\\front", 1);
+    sessions.set([
+      sessionInfo("/a.jsonl", "C:\\work\\front"),
+      sessionInfo("/b.jsonl", "C:\\work\\front"),
+    ]);
+    activeSessionPath.set("/a.jsonl");
+    await handleEvent({ type: "agent_start" });
+    activeSessionPath.set("/b.jsonl");
+
+    handlePiExit("C:\\work\\front", 1, false);
+
+    // A: the swept live turn. B: pi's open session is flagged even though it
+    // sat idle — the pre-existing unexpected-exit semantics.
+    expect(get(sessionStates)["/a.jsonl"]).toEqual({ status: "attention", note: "process exited" });
+    expect(get(sessionStates)["/b.jsonl"]).toEqual({ status: "attention", note: "process exited" });
+  });
+
+  it("an expected exit preserves a pre-existing attention mark on the settled session", () => {
+    projectDir.set("C:\\work\\front");
+    recordProcess("C:\\work\\front", 1);
+    activeSessionPath.set("/s1.jsonl");
+    sessionStates.set({ "/s1.jsonl": { status: "attention", note: "error in response" } });
+
+    handlePiExit("C:\\work\\front", 1, true);
+
+    expect(get(sessionStates)["/s1.jsonl"]).toEqual({ status: "attention", note: "error in response" });
+  });
+
   it("restartPi starts the resumed session's status clean", async () => {
     projectDir.set("C:\\work\\front");
     activeSessionPath.set("/s1.jsonl");
@@ -609,6 +666,18 @@ describe("forgetProject", () => {
     projectScope.set("/other");
     forgetProject("/proj");
     expect(get(projectScope)).toBe("/other");
+  });
+});
+
+describe("caught-error notes", () => {
+  it("renders an Error's message without doubling the Error: prefix", async () => {
+    projectDir.set("C:\\work\\front");
+    vi.mocked(api.piRequest).mockRejectedValueOnce(new Error("rpc connection lost"));
+
+    await newSession();
+
+    // Pre-fix this rendered "Error: Error: rpc connection lost".
+    expect(get(statusNote)).toBe("Error: rpc connection lost");
   });
 });
 

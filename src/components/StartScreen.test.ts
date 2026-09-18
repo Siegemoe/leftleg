@@ -62,6 +62,7 @@ afterEach(async () => {
   if (instance) await unmount(instance);
   instance = null;
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 describe("startup project prompt", () => {
@@ -329,6 +330,120 @@ describe("startup project prompt", () => {
     expect(get(composerDraftFor("startup project")).attachments).toEqual([]);
     expect(get(composerDraftFor("/proj:/session-a")).attachments).toEqual([]);
     expect(textarea.disabled).toBe(false);
+  });
+
+  it("delivers a paste that finishes reading while the project is opening", async () => {
+    // Deterministic FileReader stand-in: the read stays pending until the
+    // test releases it, pinning the "read resolves mid-open" window that a
+    // real jsdom FileReader would race through on its own schedule.
+    class HeldFileReader {
+      result: string | null = null;
+      error: unknown = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      readAsDataURL() { readers.push(this); }
+      finish(dataUrl: string) {
+        this.result = dataUrl;
+        this.onload?.();
+      }
+    }
+    const readers: HeldFileReader[] = [];
+    vi.stubGlobal("FileReader", HeldFileReader);
+
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    typeDraft("late paste");
+
+    const late = new File(["late"], "late.png", { type: "image/png" });
+    const paste = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, "clipboardData", {
+      value: { items: [{ kind: "file", type: "image/png", getAsFile: () => late }] },
+    });
+    document.body.querySelector<HTMLTextAreaElement>("textarea")!.dispatchEvent(paste);
+    await settle();
+    expect(readers.length).toBe(1);
+
+    // Open while the read is still pending: the attachment is not staged yet
+    // and the send must hold until it lands.
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
+    expect(mocks.sendPrompt).not.toHaveBeenCalled();
+
+    readers[0].finish("data:image/png;base64,bGF0ZQ==");
+    await settle();
+
+    // The paste was staged before the click, so it was delivered — and
+    // nothing resurrects in the startup draft afterwards.
+    expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.sendPrompt).toHaveBeenCalledWith("late paste", [
+      { data: "bGF0ZQ==", mimeType: "image/png", name: "late.png" },
+    ]);
+    expect(get(composerDraftFor("startup project")).attachments).toEqual([]);
+    expect(get(composerDraftFor("startup project")).text).toBe("");
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
+  });
+
+  it("delivers files picked from a still-pending attach dialog when the project is opening", async () => {
+    // Held promise over pickAttachments: the dialog stays "open" until the
+    // test resolves it, pinning the pick-resolves-mid-open window.
+    let releasePick!: (files: { name: string; path: string; data: string }[]) => void;
+    mocks.pickAttachments.mockImplementation(() => new Promise((resolve) => { releasePick = resolve; }));
+
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    typeDraft("picked late");
+
+    document.body.querySelector<HTMLButtonElement>(".add")!.click();
+    await settle();
+    expect(releasePick).toBeDefined();
+
+    // Open while the pick is still pending: nothing is staged yet and the
+    // send must hold until the dialog resolves.
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
+    expect(mocks.sendPrompt).not.toHaveBeenCalled();
+
+    releasePick([{ name: "late.png", path: "C:/t/late.png", data: "bGF0ZQ==" }]);
+    await settle();
+
+    // The pick was pending before the click, so its files were delivered —
+    // and nothing resurrects in the startup draft afterwards.
+    expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.sendPrompt).toHaveBeenCalledWith("picked late", [
+      { data: "bGF0ZQ==", mimeType: "image/png", name: "late.png" },
+    ]);
+    expect(get(composerDraftFor("startup project")).attachments).toEqual([]);
+    expect(get(composerDraftFor("startup project")).text).toBe("");
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
+  });
+
+  it("keeps opening when a pending attach dialog fails while the project is opening", async () => {
+    // A rejected pick must remove itself from the drain, not leave open()
+    // suspended forever behind a dialog that is never coming back.
+    let rejectPick!: (reason?: unknown) => void;
+    mocks.pickAttachments.mockImplementation(() => new Promise((_, reject) => { rejectPick = reject; }));
+
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    typeDraft("dialog failed");
+
+    document.body.querySelector<HTMLButtonElement>(".add")!.click();
+    await settle();
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+    expect(mocks.sendPrompt).not.toHaveBeenCalled();
+
+    rejectPick(new Error("dialog failed"));
+    await settle();
+
+    expect(get(statusNote)).toBe("Couldn't open the attach dialog: Error: dialog failed");
+    expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.sendPrompt).toHaveBeenCalledWith("dialog failed", []);
+    expect(get(composerDraftFor("startup project")).attachments).toEqual([]);
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
   });
 
   it("stands down the paperclip during the update install lock", async () => {

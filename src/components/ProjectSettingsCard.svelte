@@ -44,6 +44,12 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    // An earlier-registered closer (TitleBar: menus/About; FileCard;
+    // NewProjectCard) that handled this Esc marks it with preventDefault —
+    // stand down so exactly one layer closes per keypress. The $extDialog
+    // gate covers the reverse order: ExtDialog mounts on demand, i.e. AFTER
+    // this always-mounted listener, so its preventDefault can't be seen here.
+    if (e.defaultPrevented) return;
     if (!$projectSettingsDir) return;
     // The card sits ABOVE the settings modal (z-150 vs z-100), so Esc closes
     // the card even when settings is open — only ExtDialog (z-200) outranks it.

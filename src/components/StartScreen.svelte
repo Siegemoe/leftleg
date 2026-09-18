@@ -41,12 +41,23 @@
   }
 
   async function addFiles() {
+    if (busy) return; // a pick staged during the open window would miss `sent`
     // Same stand-down as the active composer: under the update install lock
     // the dialog would stage attachments into a dead-end interaction.
     if ($updateInstallLock) return;
+    // The dialog can stay open across a project-card click: track the pick so
+    // open()/openFolder() hold the `sent` snapshot until it lands. The
+    // removal runs on rejection too, so a failed dialog can't wedge the
+    // drain.
+    const pick = pickAttachments();
+    pendingStaging.add(pick);
+    void pick.then(
+      () => pendingStaging.delete(pick),
+      () => pendingStaging.delete(pick),
+    );
     let picked: PickedAttachment[];
     try {
-      picked = await pickAttachments();
+      picked = await pick;
     } catch (e) {
       transientNote(`Couldn't open the attach dialog: ${e}`);
       return;
@@ -77,6 +88,24 @@
     return `data:${a.mimeType};base64,${a.data}`;
   }
 
+  // Staging work currently in flight: paste reads and attach-dialog picks.
+  // open()/openFolder() drain this before snapshotting `sent`: work that
+  // settles mid-open would otherwise land after the snapshot — undelivered,
+  // and resurrected at the next goHome by the strip in sendFirstPrompt.
+  // Entries join the set the moment the async work starts and are removed on
+  // both settle paths, so a failed read or a failed/cancelled dialog can't
+  // wedge the drain. Paste reads join sequentially, so later files join as
+  // earlier ones settle and "wait until empty" covers multi-file pastes; the
+  // drain's allSettled always resumes after the work's own continuation, so
+  // everything settled has already landed in the draft.
+  const pendingStaging = new Set<Promise<unknown>>();
+
+  async function drainStaging() {
+    while (pendingStaging.size > 0) {
+      await Promise.allSettled([...pendingStaging]);
+    }
+  }
+
   // Paste images directly from the clipboard (screenshots, copied files).
   async function onPaste(e: ClipboardEvent) {
     if (busy) return; // a paste during the open window would miss `sent` entirely
@@ -93,13 +122,19 @@
     e.preventDefault();
     for (const f of files) {
       if (f.size > 20 * 1024 * 1024) { transientNote("Pasted image exceeds 20 MiB limit"); continue; }
-      const dataUrl = await new Promise<string>((resolve, reject) => {
+      const read = new Promise<string>((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result as string);
         r.onerror = () => reject(r.error ?? new Error("Could not read pasted image"));
         r.onabort = () => reject(new Error("Image paste cancelled"));
         r.readAsDataURL(f);
       });
+      pendingStaging.add(read);
+      void read.then(
+        () => pendingStaging.delete(read),
+        () => pendingStaging.delete(read),
+      );
+      const dataUrl = await read;
       const b64 = dataUrl.split(",")[1] ?? "";
       startupDraft.update((draft) => ({ ...draft, attachments: [...draft.attachments, {
         name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
@@ -158,6 +193,10 @@
     if (busy) return;
     busy = true;
     try {
+      // Anything staged just before this click — a paste still reading, an
+      // attach dialog still pending — must land before the snapshot so it is
+      // in `sent`; staging from here on hits the busy gate instead.
+      if (pendingStaging.size > 0) await drainStaging();
       const text = $startupDraft.text;
       const sent = $startupDraft.attachments;
       // Resume the project's remembered/most-recent session when it has one.
@@ -175,6 +214,9 @@
     if (busy) return;
     busy = true;
     try {
+      // Same drain as open(): in-flight paste reads and attach picks must
+      // land before the snapshot so they are delivered, not stranded.
+      if (pendingStaging.size > 0) await drainStaging();
       const text = $startupDraft.text;
       const sent = $startupDraft.attachments;
       const opened = await chooseProject();

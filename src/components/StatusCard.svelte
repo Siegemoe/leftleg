@@ -27,12 +27,15 @@
     // Pi identity and extension integrity are project-independent global
     // reads — they must keep resolving at the start view too, or those two
     // sections spin forever. (They still re-run with the effect's deps, so a
-    // project change refreshes them like before.)
+    // project change refreshes them like before; a stale response is dropped
+    // via the revision counter, like the todos fetch.)
     void (async () => {
-      try { piInfo = await piModuleInfo(); } catch { piInfo = null; }
+      try { const info = await piModuleInfo(); if (rev === revision) piInfo = info; }
+      catch { if (rev === revision) piInfo = null; }
     })();
     void (async () => {
-      try { integrity = await piIntegrityReport(); } catch { integrity = null; }
+      try { const report = await piIntegrityReport(); if (rev === revision) integrity = report; }
+      catch { if (rev === revision) integrity = null; }
     })();
     // The Status dock is openable at the start view; with no owner project
     // there is no session to scan and the fetch would resolve against the

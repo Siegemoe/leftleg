@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { rpcState, stats, queue, statusNote, transientNote, extStatuses, models, setModel, pinnedModels } from "../lib/stores";
+  import { rpcState, stats, queue, statusNote, transientNote, extStatuses, extDialog, models, setModel, pinnedModels } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
   import { ChevronDown } from "@lucide/svelte";
   import { updateCheck, checkForUpdates, applyUpdate, updateAvailable, updateStatus } from "../lib/updater";
@@ -118,6 +118,8 @@
 
   function onStatusbarKeydown(e: KeyboardEvent) {
     if (!modelOpen || e.defaultPrevented) return;
+    // The extension dialog is the topmost layer and registers later — its Esc wins.
+    if ($extDialog) return;
     if (e.key === "Escape") {
       e.preventDefault();
       modelOpen = false;

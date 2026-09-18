@@ -26,7 +26,9 @@ vi.mock("../lib/api", () => ({
 }));
 
 import SettingsModal from "./SettingsModal.svelte";
-import { extDialog, keybindings, settingsOpen, settingsProject } from "../lib/stores";
+import {
+  extDialog, keybindings, lastProcByProject, projectDir, settingsOpen, settingsProject,
+} from "../lib/stores";
 
 let host: HTMLDivElement;
 let instance: ReturnType<typeof mount> | null = null;
@@ -52,6 +54,8 @@ afterEach(async () => {
   settingsOpen.set(false);
   settingsProject.set(null);
   extDialog.set(null);
+  projectDir.set("");
+  lastProcByProject.set({});
   vi.unstubAllGlobals();
 });
 
@@ -116,5 +120,40 @@ describe("SettingsModal escape + close protection (B3)", () => {
     await settle();
     expect(get(settingsOpen)).toBe(true);
     expect(mocks.confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("SettingsModal remount key scoping", () => {
+  it("a foreground process death/restart does not re-key (discard) a scoped draft", async () => {
+    settingsProject.set("/scoped");
+    instance = mount(SettingsModal, { target: host });
+    await settle();
+    makeDirty();
+    await settle();
+    mocks.confirm.mockReturnValue(false);
+    // Unrelated foreground churn: project switch + a fresh proc generation.
+    projectDir.set("/foreground");
+    lastProcByProject.update((m) => ({ ...m, "/foreground": 3 }));
+    await settle();
+    esc();
+    await settle();
+    // The scoped draft survived the churn: closing still confirms, modal stays.
+    expect(mocks.confirm).toHaveBeenCalledWith("Discard unsaved edits for the current scope?");
+    expect(get(settingsOpen)).toBe(true);
+  });
+
+  it("an unscoped workspace still re-keys on a foreground process change (fresh draft)", async () => {
+    projectDir.set("/foreground");
+    instance = mount(SettingsModal, { target: host });
+    await settle();
+    makeDirty();
+    await settle();
+    lastProcByProject.update((m) => ({ ...m, "/foreground": 3 }));
+    await settle();
+    esc(); // the remounted workspace is clean — closes without confirmation
+    await settle();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+    expect(get(settingsOpen)).toBe(false);
+    expect(get(settingsProject)).toBe(null);
   });
 });
