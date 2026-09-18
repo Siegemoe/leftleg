@@ -19,7 +19,9 @@ Leftleg is an expanding prototype. I would not call it an alpha yet, and it has 
 
 My goal is to keep building Leftleg, pushing it to become my preferred agent surface. I've made it public so others could use it, or be inspired to create their own surface.
 
-##**Leftleg is an independent project and is not affiliated with T3 Code, Pi, or any model provider.**
+
+
+**Leftleg is an independent project and is not affiliated with T3 Code, Pi, or any model provider.**
 
 # Leftleg
 
