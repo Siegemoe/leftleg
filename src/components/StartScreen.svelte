@@ -2,33 +2,127 @@
   // Startup scene: shown while no project is active. The composer sits
   // centered; above it, known projects render as cards. Picking a card
   // activates that project (forcing project association) and, if the user
-  // already typed a message, sends it as the first prompt.
+  // already typed a message, sends it as the first prompt. The send arrow
+  // runs the same flow through the folder picker for brand-new projects.
   import { fade } from "svelte/transition";
-  import { Folder, ArrowRight } from "@lucide/svelte";
+  import { ArrowRight, FileText, Folder, Paperclip, Send } from "@lucide/svelte";
   import { projectMeta, projectDir, activeSessionPath, sessions, statusNote, transientNote, switchToProject, sendPrompt, lastSessionFor } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { projectIconStyle } from "../lib/project-icons";
   import ProjectIcon from "./ProjectIcon.svelte";
   import { chooseProject } from "../lib/stores";
   import { composerDraftFor } from "../lib/composer-drafts";
+  import { pickAttachments, type PickedAttachment } from "../lib/api";
+  import { buildPromptMessage, type ComposerAttachment } from "../lib/prompt-message";
   import { untrack } from "svelte";
 
   const startupDraft = untrack(() => composerDraftFor("startup project"));
   let busy = $state(false);
+  // Attachments stay in component state (heavy base64 blobs, no editor
+  // semantics); a rejected first prompt hands them to the destination
+  // composer draft together with the text, same as the text recovery below.
+  let attachments = $state<ComposerAttachment[]>([]);
 
-  async function sendFirstPrompt(text: string) {
-    if (!text.trim()) return;
+  const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
+
+  function ext(name: string): string {
+    return (name.split(".").pop() ?? "").toLowerCase();
+  }
+
+  function mimeFor(name: string): string {
+    const e = ext(name);
+    if (e === "png") return "image/png";
+    if (e === "jpg" || e === "jpeg") return "image/jpeg";
+    if (e === "gif") return "image/gif";
+    if (e === "webp") return "image/webp";
+    if (e === "bmp") return "image/bmp";
+    return "text/plain";
+  }
+
+  async function addFiles() {
+    let picked: PickedAttachment[];
+    try {
+      picked = await pickAttachments();
+    } catch (e) {
+      transientNote(`Couldn't open the attach dialog: ${e}`);
+      return;
+    }
+    for (const f of picked) {
+      // Rust reports per-file failures via `error`; a present-but-empty data
+      // string is a legitimate (empty) file and attaches as one. Guard the
+      // message so an unnamed/unresolvable pick can't render "undefined".
+      if (f.error || f.data === undefined) {
+        transientNote(`Couldn't attach ${f.name || f.path || "file"}: ${f.error ?? "no content"}`);
+        continue;
+      }
+      const isImage = IMAGE_TYPES.has(ext(f.name));
+      attachments = [...attachments, { name: f.name, mimeType: isImage ? mimeFor(f.name) : "text/plain", data: f.data, isImage }];
+    }
+  }
+
+  function removeAttachment(i: number) {
+    attachments = attachments.filter((_, idx) => idx !== i);
+  }
+
+  function dataUrlOf(a: ComposerAttachment): string {
+    return `data:${a.mimeType};base64,${a.data}`;
+  }
+
+  // Paste images directly from the clipboard (screenshots, copied files).
+  async function onPaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const it of items) {
+      if (it.kind === "file" && it.type.startsWith("image/")) {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length === 0) return;
+    e.preventDefault();
+    for (const f of files) {
+      if (f.size > 20 * 1024 * 1024) { transientNote("Pasted image exceeds 20 MiB limit"); continue; }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.onerror = () => reject(r.error ?? new Error("Could not read pasted image"));
+        r.onabort = () => reject(new Error("Image paste cancelled"));
+        r.readAsDataURL(f);
+      });
+      const b64 = dataUrl.split(",")[1] ?? "";
+      attachments = [...attachments, {
+        name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
+        mimeType: f.type || "image/png",
+        data: b64,
+        isImage: true,
+      }];
+    }
+  }
+
+  async function sendFirstPrompt(text: string, sent: ComposerAttachment[]) {
+    if (!text.trim() && sent.length === 0) return;
     // The startup component may unmount and the active project may change
     // before Pi replies. Recovery belongs to the composer that sent this text.
     const destination = composerDraftFor(`${$projectDir}:${$activeSessionPath ?? ""}`);
-    const result = await sendPrompt(text.trim(), []);
+    // Images travel in the images param; text files are inlined as fenced
+    // blocks so pi can see their content.
+    const { msg, images } = buildPromptMessage(text.trim(), sent);
+    const result = await sendPrompt(msg, images);
     if (!result.ok) {
-      destination.update((draft) => ({ ...draft, text: draft.text ? `${text}\n${draft.text}` : text }));
+      destination.update((draft) => ({
+        ...draft,
+        text: draft.text ? `${text}\n${draft.text}` : text,
+        attachments: sent.length > 0 ? [...draft.attachments, ...sent] : draft.attachments,
+      }));
     }
     // Consume only the submitted revision; later typing must survive.
     startupDraft.update((draft) => ({
       ...draft, text: draft.text.startsWith(text) ? draft.text.slice(text.length) : draft.text,
     }));
+    // The submitted attachments leave this composer either way: delivered on
+    // accept, recovered into the destination composer on rejection.
+    attachments = attachments.filter((a) => !sent.includes(a));
   }
 
   // Every non-forgotten project we know about: union of session history and
@@ -53,10 +147,11 @@
     busy = true;
     try {
       const text = $startupDraft.text;
+      const sent = attachments;
       // Resume the project's remembered/most-recent session when it has one.
       const opened = await switchToProject(dir, lastSessionFor(dir));
       if (!opened || $projectDir !== dir) return;
-      await sendFirstPrompt(text);
+      await sendFirstPrompt(text, sent);
     } catch (e) {
       transientNote(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -69,9 +164,10 @@
     busy = true;
     try {
       const text = $startupDraft.text;
+      const sent = attachments;
       const opened = await chooseProject();
       if (!opened || $projectDir !== opened) return;
-      await sendFirstPrompt(text);
+      await sendFirstPrompt(text, sent);
     } catch (e) {
       transientNote(`Couldn't open project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -103,6 +199,21 @@
     </div>
 
     <div class="composerbox">
+      {#if attachments.length > 0}
+        <div class="attachments">
+          {#each attachments as a, i}
+            <div class="chip">
+              {#if a.isImage}
+                <img src={dataUrlOf(a)} alt={a.name} />
+              {:else}
+                <FileText size={14} strokeWidth={2} />
+              {/if}
+              <span class="chipname" title={a.name}>{a.name}</span>
+              <button class="ghost rm" onclick={() => removeAttachment(i)} title="Remove">×</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
       <textarea
         placeholder="Type your message, then pick a project above to send it…"
         bind:value={$startupDraft.text}
@@ -111,11 +222,25 @@
         onkeydown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            transientNote("Pick a project card above to send this message.");
+            transientNote("Enter won't send here — pick a project card above, or use the send arrow.");
           }
         }}
+        onpaste={onPaste}
       ></textarea>
-      <div class="hint">Enter won't send here — project association happens first.</div>
+      <div class="actions">
+        <button class="ghost add" disabled={busy} onclick={addFiles} title="Attach images or files">
+          <Paperclip size={18} strokeWidth={2} />
+        </button>
+        <button
+          class="primary send"
+          disabled={busy || (!$startupDraft.text.trim() && attachments.length === 0)}
+          onclick={() => void openFolder()}
+          title="Send to a new folder"
+        >
+          <Send size={15} strokeWidth={2.2} />
+        </button>
+      </div>
+      <div class="hint">Pick a project card above, or send to a new folder with the arrow.</div>
     </div>
   </div>
 </div>
@@ -203,6 +328,32 @@
     flex-direction: column;
     gap: 6px;
   }
+  .attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px 4px 3px 6px;
+    font-size: 11.5px;
+    max-width: 220px;
+  }
+  .chip img {
+    width: 22px;
+    height: 22px;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+  .chip :global(svg) { flex-shrink: 0; color: var(--text-3); }
+  .chipname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+  .rm { padding: 0 4px; font-size: 13px; line-height: 1; border: none; color: var(--text-3); }
+  .rm:hover { color: var(--danger); }
   textarea {
     resize: none;
     background: var(--bg-inset);
@@ -216,6 +367,27 @@
     min-height: 84px;
   }
   textarea:focus { outline: none; border-color: var(--accent); }
+  .actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .add {
+    padding: 7px;
+    display: inline-flex;
+    color: var(--text-3);
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+  .add:hover { color: var(--accent); }
+  .send {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
   .hint {
     font-size: 11px;
     color: var(--text-3);
