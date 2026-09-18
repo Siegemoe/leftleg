@@ -15,7 +15,7 @@ The Rust layer (`src-tauri/`) spawns `pi --mode rpc` as a subprocess rooted at t
 - `src-tauri/src/lib.rs` — RPC lifecycle commands (`pi_start/stop/status/request/send`), update-shutdown gate, log append; the `invoke_handler` registration in `run()` is the full command list
 - `src/lib/stores.ts` — central state: RPC event handling, UI item assembly, all agent actions (`sendPrompt`, `openSession`, …)
 - `src/lib/api.ts` — typed `invoke` wrappers. `src/lib/types.ts` — RPC protocol mirrors
-- `src/components/` — TitleBar, Sidebar, PromptRail, Chat, MessageView, ToolCard, Composer, RightPanel (Status/Artifacts/Diff/Files docks), StatusBar, SettingsModal/SettingsWorkspace, ExtDialog, NewProjectCard
+- `src/components/` — TitleBar, Sidebar, PromptRail, Chat, MessageView, ToolCard, Composer, RightPanel (Status/Artifacts/Diff/Files docks), StatusBar, SettingsModal/SettingsWorkspace, ExtDialog, NewProjectCard, ProjectSettingsCard
 - `docs/` — `ARCHITECTURE.md` (deep dive), `ROADMAP.md` (what's next)
 
 ## Rules

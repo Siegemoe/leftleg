@@ -36,7 +36,7 @@
 - [x] System tray + close-to-tray with single-instance guard: X/Alt+F4 parks the app so background projects keep streaming; File → Exit and the tray Quit are the real exits; Start-menu relaunch focuses the hidden window
 - [x] Parallel pi kill on quit (scoped threads) — many background projects close in one taskkill span instead of N serialized ones
 
-## v0.6.2 — shipped in the repo (tag pending)
+## v0.6.2 — shipped (tagged and published 2026-09-18)
 - [x] Prompt rail replaces the session rail: one tick per user prompt in view, click jumps the chat, the active tick follows scroll (`activePromptId`); it travels to the window edge when the sidebar hides, and the "+" new-chat button shows only while it's collapsed
 - [x] Chat column owns the width: 50% of the window (min(100%, 50vw)), centered, held steady as side panels open/close — the Composer no longer self-caps
 - [x] Status bar rides the sidebar's right edge; full window width only when the sidebar is hidden
@@ -45,6 +45,14 @@
 - [x] Inline copy feedback (green check + "Copied", 2s) on assistant responses and artifact paths; turn duration beside the copy button
 - [x] Diff and Files docks (working-tree diff summary, repo file tree, branch-hover totals) + movable code-viewer card; Subagents/Browser/Terminal docks remain placeholders
 - [x] File/View menu refresh: New Project…, Diff…, Files…; scope picker left-anchored with viewport clamps and a New project… row
+
+## Unreleased — working batch (2026-09-18)
+- [x] Title-bar logo returns to the start view: the active project keeps running in the background (mid-stream turns continue); switching back restores the view
+- [x] Right panel collapses at the start view — a default, not a lock: dock buttons reopen it, entering a project restores it
+- [x] Start-view composer gains attachments (removable chips, image thumbnails, clipboard paste ≤ 20 MiB) and a send arrow running the folder-picker flow
+- [x] Per-project settings card from the project selector dropdown: gear button / right-click opens a card scoped to that project (rename, icon, color, hide/restore, open folder) without switching to it
+- [x] Dedicated Key bindings section in Settings: registry-driven shortcuts, click-to-rebind capture, duplicate chords named and refused, overrides in GUI state, Reset all; menu hint-keys reflect effective bindings
+- [x] Per-session activity cue: the status bar's global idle/working pill moved into each session row as a pulsing "working" chip, in preparation for multiple concurrent sessions across projects
 
 ## Next sweep — the foundation (MAJOR → 1.0.0 per the versioning policy)
 Multi-harness support (codex / Claude Code / DSH / cursor) behind an adapter
