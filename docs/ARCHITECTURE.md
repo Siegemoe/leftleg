@@ -1,6 +1,6 @@
 # Leftleg architecture
 
-Leftleg is a Tauri 2 / Svelte 5 desktop view of Pi. Pi owns agent sessions, model configuration, credentials, tools, extensions, and conversation persistence. Leftleg persists only GUI preferences. See `AUDIT-2026-09-13.md` for verification and remaining limits.
+Leftleg is a Tauri 2 / Svelte 5 desktop view of Pi. Pi owns agent sessions, model configuration, credentials, tools, extensions, and conversation persistence. Leftleg persists only GUI preferences. See `AUDIT-2026-09-17.md` for the latest audit — verification loop and remaining limits.
 
 ## Processes and RPC
 
@@ -21,6 +21,12 @@ Each live process has a transient rendered surface: message cards, partial assis
 Unsent composer drafts and in-flight send flags are held in memory per project/session. Successful sends clear only the submitted draft revision. Replies update the originating project's delivery state even if focus changed.
 
 Extension dialogs are queued and replies are addressed to their owning project/generation. Management replies are consumed before notification rendering, including for background projects. Event listeners are installed before boot starts Pi.
+
+## Shell and theming
+
+The shell (`App.svelte`) is a row: the `Sidebar` is a full-height child, and a `.right-col` column holds everything to its right — the working area (`PromptRail` beside `main`, with the resizable `RightPanel` card at the right edge) and the `StatusBar`, so the bar's left edge follows the sidebar's edge and spans the full window only when the sidebar is hidden. The chat column (`Chat.svelte` wraps the scroller and the `Composer` in one `.col`) is `min(100%, 50vw)`, centered with auto margins: it holds half the window as the side panels open and close, and shrinks only when panels squeeze the remaining space below that — the column owns the width, and the Composer no longer self-caps. `PromptRail.svelte` draws one tick per user prompt in the transcript in view; clicking a tick scrolls the chat to that prompt, and a scroll-spy in `Chat.svelte` publishes the active tick through the `activePromptId` store. The right panel hosts the Status and Artifacts cards plus the Diff and Files docks; Subagents, Browser, and Terminal remain placeholders.
+
+Theming is monochrome by rule: `app.css` sets `--accent` to near-black on light and near-white on dark, with `--on-accent` as the text/icon color on accent fills and `--accent-soft` tints following the theme; color is reserved for indicators (ok/danger/warning) and per-project identity, never chrome. `NewProjectCard.svelte` (modal above Settings, reachable from the sidebar scope picker, the settings project manager, and File → New Project…) is backed by the native `create_project_dir` command: one validated folder name under an absolute parent, rejecting reserved Windows device names, >200 UTF-16 units, and separators/wildcards/control chars; an existing directory opens idempotently, an existing file is refused. The parent is deliberately not containment-checked — a documented mkdir-anywhere primitive, directories only. Copy actions flip in place to a green "Copied" chip for 2s and stay silent on success; failures still surface as status notes.
 
 ## Settings
 

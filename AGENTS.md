@@ -11,11 +11,11 @@ The Rust layer (`src-tauri/`) spawns `pi --mode rpc` as a subprocess rooted at t
 ## Repo layout
 
 - `src-tauri/src/pi.rs` — RPC bridge: spawn, JSONL framing, request correlation, event forwarding
-- `src-tauri/src/sessions.rs` — session listing (parses `~/.pi/agent/sessions/**/*.jsonl` headers), GUI state persistence, base64 file reading
-- `src-tauri/src/lib.rs` — Tauri commands (`pi_start/stop/status/request/send`, `list_sessions`, `read/write_gui_state`, `append_log`)
+- `src-tauri/src/sessions.rs` — session listing (parses `~/.pi/agent/sessions/**/*.jsonl` headers), GUI state persistence, base64 file reading, artifacts/git/repo-file commands, validated project-folder creation
+- `src-tauri/src/lib.rs` — RPC lifecycle commands (`pi_start/stop/status/request/send`), update-shutdown gate, log append; the `invoke_handler` registration in `run()` is the full command list
 - `src/lib/stores.ts` — central state: RPC event handling, UI item assembly, all agent actions (`sendPrompt`, `openSession`, …)
 - `src/lib/api.ts` — typed `invoke` wrappers. `src/lib/types.ts` — RPC protocol mirrors
-- `src/components/` — Sidebar, Chat, MessageView, ToolCard, Composer, StatusBar, SettingsModal, ExtDialog
+- `src/components/` — TitleBar, Sidebar, PromptRail, Chat, MessageView, ToolCard, Composer, RightPanel (Status/Artifacts/Diff/Files docks), StatusBar, SettingsModal/SettingsWorkspace, ExtDialog, NewProjectCard
 - `docs/` — `ARCHITECTURE.md` (deep dive), `ROADMAP.md` (what's next)
 
 ## Rules
@@ -25,7 +25,7 @@ The Rust layer (`src-tauri/`) spawns `pi --mode rpc` as a subprocess rooted at t
 3. **Tauri 2 capabilities are explicit:** `src-tauri/capabilities/default.json` grants `core:default`, `dialog:default`, `opener:default`. Any new plugin needs a permission entry there or its invokes silently fail.
 4. **Commands in `lib.rs` root must be `fn`, not `pub fn`** — `#[tauri::command]` + `pub` at crate root triggers a `#[macro_export]` re-export collision (E0255).
 5. **Errors must never be silent:** `main.ts` installs a global trap that shows a visible banner and appends to `%APPDATA%/dev.leftleg.app/logs/leftleg.log`. When debugging, read that log first. Devtools are enabled in release builds (right-click → Inspect).
-6. **pi is authoritative for agent state.** GUI state lives only in `readGuiState/writeGuiState` (theme, projectDir, sidebar). Never persist messages, sessions, or model config in Leftleg.
+6. **pi is authoritative for agent state.** GUI state lives only in `readGuiState/writeGuiState` (theme, projectDir, sidebar, panel layout, pins, project meta). Never persist messages, sessions, or model config in Leftleg.
 7. **Default model for the user's stack:** `openrouter/z-ai/glm-5.3-flash` (1M ctx). GLM models are available via OpenRouter only on this machine.
 
 ## Build / run
