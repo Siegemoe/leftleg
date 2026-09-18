@@ -14,6 +14,7 @@
   import RightPanel from "./components/RightPanel.svelte";
   import FileCard from "./components/FileCard.svelte";
   import NewProjectCard from "./components/NewProjectCard.svelte";
+  import ProjectSettingsCard from "./components/ProjectSettingsCard.svelte";
   import PromptRail from "./components/PromptRail.svelte";
   import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, homePanelCollapsed, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
@@ -141,6 +142,7 @@
 <Notifications />
 <FileCard />
 <NewProjectCard />
+<ProjectSettingsCard />
 
 {#if $extDialog}
   <ExtDialog />

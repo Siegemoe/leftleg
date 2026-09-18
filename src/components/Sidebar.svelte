@@ -4,7 +4,8 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, switchToProject, applyTheme, connected, newSession, nowTick, openSession, openNewProject, pins,
+    activeSessionPath, applyTheme, connected, newSession, nowTick, openSession, openNewProject,
+    openProjectSettingsCard, pins,
     projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
     settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
@@ -133,14 +134,9 @@
         { label: "Rename…", action: () => beginRename(s) },
         { label: "Copy path", action: () => void navigator.clipboard.writeText(s.path) },
         { label: "Copy session ID", action: () => void navigator.clipboard.writeText(($sessions.find((info) => info.path === s.path)?.sessionId ?? "")) },
-        { label: "Project settings…", action: () => void openProjectSettings(s.projectDir) },
+        { label: "Project settings…", action: () => openProjectSettingsCard(s.projectDir) },
       ],
     };
-  }
-
-  async function openProjectSettings(dir: string) {
-    if ($projectDir !== dir) await switchToProject(dir);
-    if ($projectDir === dir) { settingsProject.set(dir); settingsOpen.set(true); }
   }
 
   function beginRename(s: SidebarSession) {
@@ -367,22 +363,30 @@
               <span class="scope-name">All projects</span>
             </button>
             {#each filteredScopeChoices as [dir] (dir)}
-              <button
-                class="scope-item"
-                class:selected={$projectScope === dir}
-                onclick={() => { projectScope.set(dir); scopeOpen = false; }}
-                oncontextmenu={(e) => {
-                  e.preventDefault();
-                  projectScope.set(dir);
-                  scopeOpen = false;
-                  void openProjectSettings(dir);
-                }}
-                title="Right-click for project settings"
-              >
-                <span class="scope-icon" style={projectIconStyle($projectMeta[dir]?.color)}><ProjectIcon icon={$projectMeta[dir]?.icon} size={13} /></span>
-                <span class="scope-name">{displayName(dir)}</span>
-                {#if dir === $projectDir}<span class="scope-tag">active</span>{/if}
-              </button>
+              <div class="scope-row">
+                <button
+                  class="scope-item"
+                  class:selected={$projectScope === dir}
+                  onclick={() => { projectScope.set(dir); scopeOpen = false; }}
+                  oncontextmenu={(e) => {
+                    e.preventDefault();
+                    scopeOpen = false;
+                    openProjectSettingsCard(dir);
+                  }}
+                  title="Right-click for project settings"
+                >
+                  <span class="scope-icon" style={projectIconStyle($projectMeta[dir]?.color)}><ProjectIcon icon={$projectMeta[dir]?.icon} size={13} /></span>
+                  <span class="scope-name">{displayName(dir)}</span>
+                  {#if dir === $projectDir}<span class="scope-tag">active</span>{/if}
+                </button>
+                <button
+                  class="scope-gear"
+                  title="Project settings"
+                  onclick={() => { scopeOpen = false; openProjectSettingsCard(dir); }}
+                >
+                  <Settings size={12} strokeWidth={2} />
+                </button>
+              </div>
             {:else}
               <div class="scope-empty">No matching projects.</div>
             {/each}
@@ -804,6 +808,32 @@
     width: 100%;
   }
   .scope-item:hover, .scope-item.selected { background: var(--bg-surface-2); color: var(--text); }
+  /* Project rows carry a hover-revealed settings gear (same idiom as
+   * SessionRow's pin/menu buttons): it opens the per-project settings card
+   * without switching the active project. */
+  .scope-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    border-radius: 6px;
+  }
+  .scope-row .scope-item { flex: 1; min-width: 0; padding-right: 4px; }
+  .scope-row:hover .scope-item { background: var(--bg-surface-2); color: var(--text); }
+  .scope-gear {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    color: var(--text-3);
+    cursor: pointer;
+    opacity: 0;
+  }
+  .scope-row:hover .scope-gear, .scope-gear:focus-visible { opacity: 1; }
+  .scope-gear:hover { color: var(--text); }
   .scope-icon { flex-shrink: 0; }
   .scope-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scope-sep { height: 1px; background: var(--border); margin: 4px 2px; flex-shrink: 0; }
