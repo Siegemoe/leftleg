@@ -35,10 +35,11 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 
 ### Fixed
 - Overlay ladders close topmost-only: Escape now steps aside for higher
-  layers everywhere (settings modal, both cards, the file viewer, the About
-  card), the Settings modal honors Escape and confirms before discarding
-  unsaved edits, and keyboard accelerators stand down while a modal owns
-  the screen.
+  layers everywhere — the settings modal, both cards, the file viewer, the
+  About card, and every menu/popover (the app closes exactly one layer per
+  press, verified against every co-openable pair) — the Settings modal
+  honors Escape and confirms before discarding unsaved edits, and keyboard
+  accelerators stand down while a modal owns the screen.
 - At the start view, project-scoped actions can no longer reach the project
   running in the background: new chat, runtime settings, compaction, abort,
   clone, and export stand down with a visible note (runtime controls are
