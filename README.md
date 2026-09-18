@@ -13,7 +13,7 @@ The T3 Code team deserves credit for demonstrating a practical way to bring diff
 
 Leftleg will carve out its own path as its foundations mature. There is still a mountain of work ahead before it reaches a broadly serviceable state, but I believe it will begin to shine as its own UI and workflow ideas take shape.
 
-###Current status
+##Current status
 
 Leftleg is an expanding prototype. I would not call it an alpha yet, and it has not received a comprehensive security audit. It can launch coding agents with access to your files and development environment, so use it only in projects and environments where you understand that risk. Avoid sensitive, customer, or production data.
 
