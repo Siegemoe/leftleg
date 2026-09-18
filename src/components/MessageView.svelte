@@ -198,7 +198,7 @@
     padding: 4px 8px;
   }
   .row.assistant { flex-direction: column; }
-  .stack { max-width: 860px; display: flex; flex-direction: column; gap: 2px; }
+  .stack { display: flex; flex-direction: column; gap: 2px; }
   .body { padding: 2px 0; }
   .thinking {
     border: 1px solid var(--border);

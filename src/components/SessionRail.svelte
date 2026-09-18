@@ -1,10 +1,10 @@
 <script lang="ts">
-  // T3-style collapsed-sidebar rail: when the full sidebar is hidden, this
-  // thin strip keeps the chat manager reachable — one tick per session of
-  // the scoped project (newest first), hover previews via title, click
-  // switches sessions, + starts a new one. Same data pipeline as the
-  // sidebar (toSidebarSessions / resolveThreadPill), so ticks and rows
-  // never disagree.
+  // T3-style session rail: an always-on thin strip riding the sidebar's
+  // edge (it travels to the window edge when the sidebar hides) — one tick
+  // per session of the scoped project (newest first), hover previews via
+  // title, click switches sessions, + starts a new one. Same data pipeline
+  // as the sidebar (toSidebarSessions / resolveThreadPill), so ticks and
+  // rows never disagree.
   import { Plus } from "@lucide/svelte";
   import {
     activeSessionPath, newSession, openSession, pins, projectDir,
@@ -89,9 +89,11 @@
   }
   .rail-btn:hover { border-color: var(--accent); color: var(--accent); }
   .ticks {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: safe center;
     gap: 7px;
     min-height: 0;
     overflow: hidden;

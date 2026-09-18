@@ -25,36 +25,51 @@
   });
 </script>
 
-<div class="chat" onscroll={onScroll} bind:this={scroller}>
-  {#if $items.length === 0}
-    <div class="hero">
-      <img class="hero-mark" src={mark} alt="" draggable="false" />
-      <h1>Leftleg</h1>
-      <p>A control surface for Pi.</p>
-      {#if !$projectDir}
-        <p class="lead">Leftleg drives a <span class="mono">pi --mode rpc</span> process rooted in a project folder.<br />Pick one to start.</p>
-        <button class="primary cta" onclick={chooseProject}>Choose project folder…</button>
-      {:else if $disconnected}
-        <p class="lead">Pi is offline. Use Restart &amp; resume to reconnect.</p>
-      {:else if $rpcState}
-        <p class="mono model-line">{$rpcState.model ? `${$rpcState.model.provider} / ${$rpcState.model.id}` : "no model selected"}</p>
-        <p class="lead">Ask something, or attach a file with <span class="mono">+</span>.</p>
-      {:else}
-        <p class="lead">Starting pi…</p>
-      {/if}
-    </div>
-  {:else}
-    {#each $items as item (item.id)}
-      <MessageView {item} />
-    {/each}
-  {/if}
+<div class="col">
+  <div class="chat" onscroll={onScroll} bind:this={scroller}>
+    {#if $items.length === 0}
+      <div class="hero">
+        <img class="hero-mark" src={mark} alt="" draggable="false" />
+        <h1>Leftleg</h1>
+        <p>A control surface for Pi.</p>
+        {#if !$projectDir}
+          <p class="lead">Leftleg drives a <span class="mono">pi --mode rpc</span> process rooted in a project folder.<br />Pick one to start.</p>
+          <button class="primary cta" onclick={chooseProject}>Choose project folder…</button>
+        {:else if $disconnected}
+          <p class="lead">Pi is offline. Use Restart &amp; resume to reconnect.</p>
+        {:else if $rpcState}
+          <p class="mono model-line">{$rpcState.model ? `${$rpcState.model.provider} / ${$rpcState.model.id}` : "no model selected"}</p>
+          <p class="lead">Ask something, or attach a file with <span class="mono">+</span>.</p>
+        {:else}
+          <p class="lead">Starting pi…</p>
+        {/if}
+      </div>
+    {:else}
+      {#each $items as item (item.id)}
+        <MessageView {item} />
+      {/each}
+    {/if}
+  </div>
+
+  {#key `${$projectDir}:${$activeSessionPath ?? ""}`}
+    <Composer draftKey={`${$projectDir}:${$activeSessionPath ?? ""}`} />
+  {/key}
 </div>
 
-{#key `${$projectDir}:${$activeSessionPath ?? ""}`}
-  <Composer draftKey={`${$projectDir}:${$activeSessionPath ?? ""}`} />
-{/key}
-
 <style>
+  /* One column owns the chat's width: transcript and composer share its
+   * edges, and the auto margins let it ride the space left over from the
+   * side panels (capped at ~60% of the window). */
+  .col {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
+    max-width: 60vw;
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+  }
   .chat {
     flex: 1;
     overflow-y: auto;

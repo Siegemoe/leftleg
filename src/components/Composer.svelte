@@ -359,9 +359,7 @@
     position: relative;
     flex-shrink: 0;
     padding: 0 24px 14px;
-    max-width: 908px;
     width: 100%;
-    margin: 0 auto;
   }
   .ext-widget {
     margin: 0 44px 8px;

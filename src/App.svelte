@@ -79,7 +79,8 @@
   <div class="content">
   {#if $sidebarOpen}
     <Sidebar />
-  {:else if $projectDir}
+  {/if}
+  {#if $projectDir}
     <SessionRail />
   {/if}
   <main>
