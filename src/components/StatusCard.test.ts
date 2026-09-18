@@ -4,11 +4,12 @@ import { flushSync, mount, unmount } from "svelte";
 const mocks = vi.hoisted(() => ({
   piRequest: vi.fn(),
   piModuleInfo: vi.fn().mockResolvedValue({ name: "pi", version: "1", path: "/pi" }),
+  piIntegrityReport: vi.fn().mockResolvedValue({ extensions: [{ source: "built-in", trusted: true }] }),
 }));
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
-  return { ...actual, piRequest: mocks.piRequest, piModuleInfo: mocks.piModuleInfo };
+  return { ...actual, piRequest: mocks.piRequest, piModuleInfo: mocks.piModuleInfo, piIntegrityReport: mocks.piIntegrityReport };
 });
 
 import StatusCard from "./StatusCard.svelte";
@@ -88,5 +89,27 @@ describe("status card state ownership", () => {
 
     expect(document.body.textContent).toContain("new task");
     expect(document.body.textContent).not.toContain("old task");
+  });
+});
+
+describe("status card at the start view (no owner project)", () => {
+  // Regression pin: the no-project guard used to sit above the pi-module and
+  // integrity fetches, so at home "Resolving the pi install…" and "Checking
+  // extension sources…" spun forever. Only the todos scan is project-bound.
+  it("renders the todos empty state while still resolving piInfo and integrity", async () => {
+    projectDir.set("");
+    activeSessionPath.set(null);
+    lastProcByProject.set({});
+    instance = mount(StatusCard, { target: document.body });
+    await settle();
+    await settle();
+
+    expect(document.body.textContent).toContain("No task list in this session yet.");
+    expect(mocks.piModuleInfo).toHaveBeenCalled();
+    expect(mocks.piIntegrityReport).toHaveBeenCalled();
+    expect(document.body.textContent).toContain("v1");
+    expect(document.body.textContent).toContain("all npm-registry sources");
+    // The project-bound transcript scan must not fire at home.
+    expect(mocks.piRequest).not.toHaveBeenCalled();
   });
 });

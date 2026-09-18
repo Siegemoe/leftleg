@@ -24,7 +24,7 @@ vi.mock("../lib/api", async (importOriginal) => {
 });
 
 import StartScreen from "./StartScreen.svelte";
-import { activeSessionPath, collectUpdateInstallBlockers, projectDir, projectMeta, sessions, statusNote } from "../lib/stores";
+import { activeSessionPath, collectUpdateInstallBlockers, projectDir, projectMeta, sessions, statusNote, updateInstallLock } from "../lib/stores";
 import { composerDraftFor } from "../lib/composer-drafts";
 
 let instance: ReturnType<typeof mount> | null = null;
@@ -47,6 +47,7 @@ beforeEach(() => {
   sessions.set([]);
   activeSessionPath.set("/session-a");
   statusNote.set("");
+  updateInstallLock.set(false);
   composerDraftFor("/proj:/session-a").set({ text: "", sending: false, lastExtensionNonce: 0, attachments: [] });
   composerDraftFor("startup project").set({ text: "", sending: false, lastExtensionNonce: 0, attachments: [] });
   mocks.switchToProject.mockReset().mockImplementation(async (dir: string) => { projectDir.set(dir); return true; });
@@ -257,6 +258,91 @@ describe("startup project prompt", () => {
       { name: "shot.png", mimeType: "image/png", data: "aGVsbG8=", isImage: true },
     ]);
     expect(get(composerDraftFor("startup project")).text).toBe("");
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
+  });
+
+  it("keeps staged attachments across remount and counts them as update blockers", async () => {
+    mocks.pickAttachments.mockResolvedValue([{ name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" }]);
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+
+    document.body.querySelector<HTMLButtonElement>(".add")!.click();
+    await settle();
+    expect(document.body.querySelectorAll(".chip").length).toBe(1);
+
+    // goHome → back: the chip survives because it lives in the startup draft
+    // store, not in the unmounted component.
+    await unmount(instance);
+    instance = null;
+    expect(collectUpdateInstallBlockers()).toContain("startup project has 1 attachment");
+
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+    expect(document.body.querySelectorAll(".chip").length).toBe(1);
+    expect(document.body.querySelector(".chip img")?.getAttribute("src")).toBe("data:image/png;base64,aGVsbG8=");
+  });
+
+  it("ignores paste and chip removal while a project is opening", async () => {
+    mocks.pickAttachments.mockResolvedValue([{ name: "kept.png", path: "C:/t/kept.png", data: "a2VwdA==" }]);
+    let releaseOpen!: (value: boolean) => void;
+    mocks.switchToProject.mockImplementation(() => {
+      projectDir.set("/proj");
+      return new Promise((resolve) => { releaseOpen = resolve; });
+    });
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+
+    document.body.querySelector<HTMLButtonElement>(".add")!.click();
+    await settle();
+    typeDraft("hold this");
+    document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
+    await settle();
+
+    const textarea = document.body.querySelector<HTMLTextAreaElement>("textarea")!;
+    expect(textarea.disabled).toBe(true);
+
+    // A paste during the open window must not stage anything: it would miss
+    // `sent` and silently drop on unmount.
+    const paste = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, "clipboardData", {
+      value: { items: [{ kind: "file", type: "image/png", getAsFile: () => new File(["late"], "late.png", { type: "image/png" }) }] },
+    });
+    textarea.dispatchEvent(paste);
+    await settle();
+    await settle(); // a second round: an ungated paste would finish its FileReader read here
+
+    const rm = document.body.querySelector<HTMLButtonElement>(".chip .rm")!;
+    expect(rm.disabled).toBe(true);
+    rm.click();
+    flushSync();
+
+    releaseOpen(true);
+    await settle();
+
+    // Exactly the pre-flight chip was delivered — no late paste, no removal
+    // desync, nothing resurrected or duplicated after settle.
+    expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.sendPrompt).toHaveBeenCalledWith("hold this", [
+      { data: "a2VwdA==", mimeType: "image/png", name: "kept.png" },
+    ]);
+    expect(document.body.querySelectorAll(".chip").length).toBe(0);
+    expect(get(composerDraftFor("startup project")).attachments).toEqual([]);
+    expect(get(composerDraftFor("/proj:/session-a")).attachments).toEqual([]);
+    expect(textarea.disabled).toBe(false);
+  });
+
+  it("stands down the paperclip during the update install lock", async () => {
+    updateInstallLock.set(true);
+    mocks.pickAttachments.mockResolvedValue([{ name: "late.png", path: "C:/t/late.png", data: "bGF0ZQ==" }]);
+    instance = mount(StartScreen, { target: document.body });
+    flushSync();
+
+    const add = document.body.querySelector<HTMLButtonElement>(".add")!;
+    expect(add.disabled).toBe(true);
+    add.click();
+    await settle();
+
+    expect(mocks.pickAttachments).not.toHaveBeenCalled();
     expect(document.body.querySelectorAll(".chip").length).toBe(0);
   });
 });

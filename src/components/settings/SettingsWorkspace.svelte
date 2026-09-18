@@ -13,12 +13,29 @@
     keybindings, setKeybinding,
   } from "../../lib/stores";
   import { ACTIONS, conflictingAction, effectiveBindings, parseCapture, type ActionId } from "../../lib/keybindings";
-  import { companionAvailable, bindManagement, agentDirStore, isCompanionCommand } from "../../lib/settings/mgmt";
+  import { companionAvailable, bindManagement, agentDirStore, isCompanionCommand, setManagementScope, clearManagementScope } from "../../lib/settings/mgmt";
   import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle, projectIconLabel } from "../../lib/project-icons";
   import ProjectIcon from "../ProjectIcon.svelte";
   import { checkForUpdates, applyUpdate, updateAvailable, updateCheck, updateStatus } from "../../lib/updater";
   import { onDestroy, untrack } from "svelte";
-  const mgmtRequest = bindManagement();
+  import { projectDisplayName } from "../../lib/sidebar-model";
+  let { onDirtyChange }: { onDirtyChange?: (isDirty: boolean) => void } = $props();
+  // Scoped session: ProjectSettingsCard opens this workspace for a specific
+  // project (settingsProject) and the modal remounts per target, so the target
+  // is captured once here — every file-backed read/write below rides THAT
+  // project's companion, not the foreground one. proc may be undefined (the
+  // target has no live pi yet); requests then fail closed until one starts.
+  const scopedProject: string | null = $settingsProject;
+  const scopeTarget = scopedProject
+    ? { project: scopedProject, proc: $lastProcByProject[scopedProject] }
+    : undefined;
+  // Bare binds (PackageForms) resolve through the module scope: set here,
+  // synchronously, before any child instantiates; cleared on destroy. This
+  // workspace's own bind below is explicit, so it never consults the scope —
+  // no double binding, and a scope change cannot retarget this form.
+  setManagementScope(scopeTarget);
+  onDestroy(() => clearManagementScope(scopeTarget));
+  const mgmtRequest = bindManagement(scopeTarget);
   // Template mirror of mgmt.companionAvailable() — the function reads the
   // stores through get(), which is untracked, so calling it from markup
   // rendered stale availability. The chip shares mgmt's exact predicate
@@ -93,6 +110,36 @@
     }
     return out;
   }
+
+  // Lift the draft's dirty flag to the modal shell: ✕ / overlay-click / Esc
+  // must confirm before discarding, exactly like switchScope does. Fires on
+  // mount too — a remount resets the shell's flag alongside the fresh draft.
+  $effect(() => {
+    onDirtyChange?.(dirty);
+  });
+
+  // Whose file-backed settings this workspace edits: the scoped project when
+  // opened from a per-project card, else the foreground one. The scope label
+  // names it — without this the modal looks identical while silently editing
+  // another project's .pi/settings.json.
+  function scopeProjectLabel(): string {
+    const dir = scopedProject ?? $projectDir;
+    if (!scopedProject) return (dir || "(no project)") + "/.pi/settings.json";
+    return `${projectDisplayName(dir, $projectMeta[dir]?.name)} — ${dir}/.pi/settings.json`;
+  }
+
+  // Runtime (native RPC) controls stay foreground-bound; only the mgmt
+  // transport scopes. They are dead at the start view (no project to act on —
+  // requestForView refuses), so they are disabled with a reason there, and the
+  // split is stated whenever the modal is scoped to another project.
+  const RUNTIME_CLOSED_TITLE = "Open a project to change its runtime settings";
+  const runtimeDisabled = $derived(!$projectDir);
+  const runtimeScopeNote = $derived.by(() => {
+    if (!scopedProject || scopedProject === $projectDir) return "";
+    const fg = $projectDir ? projectDisplayName($projectDir, $projectMeta[$projectDir]?.name) : "no project is open";
+    const scoped = projectDisplayName(scopedProject, $projectMeta[scopedProject]?.name);
+    return `Runtime controls act on the open project (${fg}) — the file-backed sections of this window edit ${scoped}'s saved settings only.`;
+  });
 
   async function loadAll(force = false) {
     if (loaded && !force) return;
@@ -568,10 +615,11 @@
     {#if section === "runtime"}
       <h3>Current runtime <span class="chip">changes the active session</span></h3>
       <p class="hint">Native RPC controls. Startup defaults (what a fresh session gets) live under <button class="linklike" onclick={() => (section = "behavior")}>Agent behavior</button> and <button class="linklike" onclick={() => (section = "models")}>Models</button>.</p>
+      {#if runtimeScopeNote}<p class="hint">{runtimeScopeNote}</p>{/if}
       <div class="rows">
         <div class="row">
           <label for="rt-model">Model ({$models.length} available)</label>
-          <select id="rt-model" value={$rpcState?.model ? `${$rpcState.model.provider}|${$rpcState.model.id}` : ""} onchange={(e) => { const [provider, id] = e.currentTarget.value.split("|"); void setModel(provider, id); }}>
+          <select id="rt-model" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.model ? `${$rpcState.model.provider}|${$rpcState.model.id}` : ""} onchange={(e) => { const [provider, id] = e.currentTarget.value.split("|"); void setModel(provider, id); }}>
             {#each $models as m (m.provider + "/" + m.id)}
               <option value={m.provider + "|" + m.id}>{m.provider} / {m.id}</option>
             {/each}
@@ -579,38 +627,38 @@
         </div>
         <div class="row">
           <label for="rt-think">Thinking level</label>
-          <select id="rt-think" value={$rpcState?.thinkingLevel ?? "medium"} onchange={(e) => void setThinkingLevel(e.currentTarget.value as never)}>
+          <select id="rt-think" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.thinkingLevel ?? "medium"} onchange={(e) => void setThinkingLevel(e.currentTarget.value as never)}>
             {#each THINKING_LEVELS as l}<option value={l}>{l}</option>{/each}
           </select>
         </div>
         <div class="row">
           <label for="rt-steer">Steering delivery <span class="chip">persists via SettingsManager</span></label>
-          <select id="rt-steer" value={$rpcState?.steeringMode ?? "one-at-a-time"} onchange={(e) => void setSteeringMode(e.currentTarget.value as never)}>
+          <select id="rt-steer" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.steeringMode ?? "one-at-a-time"} onchange={(e) => void setSteeringMode(e.currentTarget.value as never)}>
             <option value="all">all — after each turn</option>
             <option value="one-at-a-time">one-at-a-time</option>
           </select>
         </div>
         <div class="row">
           <label for="rt-fu">Follow-up delivery <span class="chip">persists via SettingsManager</span></label>
-          <select id="rt-fu" value={$rpcState?.followUpMode ?? "one-at-a-time"} onchange={(e) => void setFollowUpMode(e.currentTarget.value as never)}>
+          <select id="rt-fu" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.followUpMode ?? "one-at-a-time"} onchange={(e) => void setFollowUpMode(e.currentTarget.value as never)}>
             <option value="all">all — when agent finishes</option>
             <option value="one-at-a-time">one-at-a-time</option>
           </select>
         </div>
         <div class="row">
-          <label class="check"><input type="checkbox" checked={$rpcState?.autoCompactionEnabled ?? true} onchange={(e) => setAutoCompaction(e.currentTarget.checked)} /> Auto-compaction (persists)</label>
-          <button onclick={() => compact()}>Compact now</button>
+          <label class="check" title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}><input type="checkbox" checked={$rpcState?.autoCompactionEnabled ?? true} disabled={runtimeDisabled} onchange={(e) => setAutoCompaction(e.currentTarget.checked)} /> Auto-compaction (persists)</label>
+          <button onclick={() => compact()} disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Compact now</button>
         </div>
         <div class="row">
-          <label class="check"><input type="checkbox" checked={$autoRetry} onchange={(e) => { const v = e.currentTarget.checked; void setAutoRetry(v); }} /> Auto-retry (persists; Leftleg mirrors the last value set)</label>
-          <button onclick={() => void abortRetry()}>Abort running retry</button>
+          <label class="check" title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}><input type="checkbox" checked={$autoRetry} disabled={runtimeDisabled} onchange={(e) => { const v = e.currentTarget.checked; void setAutoRetry(v); }} /> Auto-retry (persists; Leftleg mirrors the last value set)</label>
+          <button onclick={() => void abortRetry()} disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Abort running retry</button>
         </div>
         <div class="row">
           <span class="row-label">Session actions (operational — not configuration)</span>
           <div class="inline">
-            <input class="grow" value={sessionName} placeholder="session name" oninput={onSessionNameInput} />
-            <button onclick={() => void exportSessionHtml()}>Export as HTML…</button>
-            <button onclick={() => void cloneSession()}>Clone</button>
+            <input class="grow" value={sessionName} placeholder="session name" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} oninput={onSessionNameInput} />
+            <button onclick={() => void exportSessionHtml()} disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Export as HTML…</button>
+            <button onclick={() => void cloneSession()} disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Clone</button>
           </div>
         </div>
         <div class="row">
@@ -624,7 +672,7 @@
     {:else if section === "behavior"}
       <h3>Agent behavior</h3>
       <div class="scope-row">
-        <span class="scope-name">Scope: {scope === "global" ? "Global" : "Project"} — {scope === "global" ? (agentDir || "~/.pi/agent") + "/settings.json" : ($projectDir || "(no project)") + "/.pi/settings.json"}</span>
+        <span class="scope-name">Scope: {scope === "global" ? "Global" : "Project"} — {scope === "global" ? (agentDir || "~/.pi/agent") + "/settings.json" : scopeProjectLabel()}</span>
         <div class="seg">
           <button class:active={scope === "global"} onclick={() => switchScope("global")}>Global</button>
           <button class:active={scope === "project"} onclick={() => switchScope("project")}>Project</button>

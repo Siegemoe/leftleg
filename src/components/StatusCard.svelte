@@ -24,6 +24,16 @@
     const ownerProc = $lastProcByProject[ownerProject];
     const rev = ++revision;
     todos = null;
+    // Pi identity and extension integrity are project-independent global
+    // reads — they must keep resolving at the start view too, or those two
+    // sections spin forever. (They still re-run with the effect's deps, so a
+    // project change refreshes them like before.)
+    void (async () => {
+      try { piInfo = await piModuleInfo(); } catch { piInfo = null; }
+    })();
+    void (async () => {
+      try { integrity = await piIntegrityReport(); } catch { integrity = null; }
+    })();
     // The Status dock is openable at the start view; with no owner project
     // there is no session to scan and the fetch would resolve against the
     // backgrounded project's process — render the empty state instead.
@@ -60,12 +70,6 @@
         if (rev === revision) todos = [];
       }
       if (rev === revision) todosLoaded = true;
-    })();
-    void (async () => {
-      try { piInfo = await piModuleInfo(); } catch { piInfo = null; }
-    })();
-    void (async () => {
-      try { integrity = await piIntegrityReport(); } catch { integrity = null; }
     })();
   });
 </script>
