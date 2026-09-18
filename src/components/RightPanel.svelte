@@ -8,9 +8,12 @@
   import { rightPanelOpen, rightPanelTab, rightPanelWidth, type RightPanelTab } from "../lib/stores";
   import StatusCard from "./StatusCard.svelte";
   import Artifacts from "./Artifacts.svelte";
+  import DiffPanel from "./DiffPanel.svelte";
+  import FilesPanel from "./FilesPanel.svelte";
 
   const TAB_LABELS: Record<RightPanelTab, string> = {
     status: "Status",
+    subagents: "Subagents",
     artifacts: "Artifacts",
     diff: "Diff",
     browser: "Browser",
@@ -58,6 +61,10 @@
       <StatusCard />
     {:else if $rightPanelTab === "artifacts"}
       <Artifacts />
+    {:else if $rightPanelTab === "diff"}
+      <DiffPanel />
+    {:else if $rightPanelTab === "files"}
+      <FilesPanel />
     {:else}
       <div class="placeholder">
         <span class="ph-title">{TAB_LABELS[$rightPanelTab]} view</span>

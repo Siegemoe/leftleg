@@ -3,7 +3,7 @@
   // app title, menu bar (File / Edit / View / Help), Artifacts, and window
   // controls. The bar itself is the drag region; interactive children are
   // regular elements, so clicks on them never start a window drag.
-  import { PanelLeft, Images, ListTodo, Minus, Square, X, GitCompare, Globe, Terminal, FolderOpen } from "@lucide/svelte";
+  import { PanelLeft, Images, ListTodo, Minus, Square, X, GitCompare, Globe, Terminal, FolderOpen, Workflow } from "@lucide/svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { appDataDir } from "@tauri-apps/api/path";
   import { openUrl } from "@tauri-apps/plugin-opener";
@@ -192,8 +192,17 @@
   <!-- Placeholder docks: views arrive over time; buttons keep them visible. -->
   <button
     class="tb-btn soon"
+    class:open={$rightPanelOpen && $rightPanelTab === "subagents"}
+    title="Subagent thread inspector — coming soon"
+    onclick={() => openRightPanel("subagents")}
+  >
+    <Workflow size={14} strokeWidth={2} />
+    <span>Subagents</span>
+  </button>
+  <button
+    class="tb-btn"
     class:open={$rightPanelOpen && $rightPanelTab === "diff"}
-    title="Diff view — coming soon"
+    title="Working-tree diff vs HEAD (right panel)"
     onclick={() => openRightPanel("diff")}
   >
     <GitCompare size={14} strokeWidth={2} />
@@ -218,9 +227,9 @@
     <span>Terminal</span>
   </button>
   <button
-    class="tb-btn soon"
+    class="tb-btn"
     class:open={$rightPanelOpen && $rightPanelTab === "files"}
-    title="Files view — coming soon"
+    title="Repo file tree — opens code files in the viewer (right panel)"
     onclick={() => openRightPanel("files")}
   >
     <FolderOpen size={14} strokeWidth={2} />

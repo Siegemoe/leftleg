@@ -16,7 +16,7 @@
   import { projectIconStyle } from "../lib/project-icons";
   import ProjectIcon from "./ProjectIcon.svelte";
   import { ChevronRight, Folder, GitBranch, Layers, List, Monitor, Moon, Plus, Search, Settings, Sun } from "@lucide/svelte";
-  import { gitRepoInfo } from "../lib/api";
+  import { gitRepoInfo, gitDiffSummary } from "../lib/api";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import SessionRow from "./SessionRow.svelte";
 
@@ -263,6 +263,43 @@
       if (revision === gitRevision && target === $projectDir) gitInfo = null;
     }
   }
+  // Branch-chip hover: one-line working-tree diff total (+N −M vs HEAD).
+  // Debounced on hover-open and cached 5 s so pointer travel doesn't re-run
+  // git; the popover is pointer-events:none, so leaving the chip is the only
+  // dismiss path (no focus-handlers needed on a passive tooltip).
+  interface DiffHover { added: number; deleted: number; files: number }
+  let diffHover = $state<DiffHover | null>(null);
+  let diffHoverTimer: ReturnType<typeof setTimeout> | null = null;
+  let diffCache: { at: number; dir: string; data: DiffHover } | null = null;
+  function onChipEnter() {
+    if (diffHoverTimer) return;
+    diffHoverTimer = setTimeout(async () => {
+      diffHoverTimer = null;
+      const dir = $projectDir;
+      if (!dir) return;
+      const now = Date.now();
+      if (diffCache && diffCache.dir === dir && now - diffCache.at < 5000) {
+        diffHover = diffCache.data;
+        return;
+      }
+      try {
+        const summary = await gitDiffSummary(dir);
+        if (dir !== $projectDir) return;
+        const data: DiffHover = {
+          added: summary.files.reduce((n, f) => n + f.added, 0),
+          deleted: summary.files.reduce((n, f) => n + f.deleted, 0),
+          files: summary.files.length,
+        };
+        diffCache = { at: Date.now(), dir, data };
+        diffHover = data;
+      } catch { /* hover stats are best-effort */ }
+    }, 250);
+  }
+  function onChipLeave() {
+    if (diffHoverTimer) { clearTimeout(diffHoverTimer); diffHoverTimer = null; }
+    diffHover = null;
+  }
+
   $effect(() => {
     const dir = $projectDir;
     void refreshGit(dir);
@@ -589,15 +626,26 @@
         {$connected ? "pi connected" : "pi offline"}
       </div>
       {#if gitInfo?.repo}
-        <button
-          class="ghost git-chip"
-          title={"branch " + gitInfo.branch + (gitInfo.dirty ? ` · ${gitInfo.dirty} uncommitted` : " · clean") + (gitInfo.toplevel ? "\n" + gitInfo.toplevel : "")}
-          onclick={() => void refreshGit()}
-        >
-          <GitBranch size={13} strokeWidth={2} />
-          <span class="git-branch mono">{gitInfo.branch || "detached"}</span>
-          {#if gitInfo.dirty}<span class="git-dirty">{gitInfo.dirty}</span>{/if}
-        </button>
+        <div class="git-wrap">
+          <button
+            class="ghost git-chip"
+            title={"branch " + gitInfo.branch + (gitInfo.dirty ? ` · ${gitInfo.dirty} uncommitted` : " · clean") + (gitInfo.toplevel ? "\n" + gitInfo.toplevel : "")}
+            onmouseenter={onChipEnter}
+            onmouseleave={onChipLeave}
+            onclick={() => void refreshGit()}
+          >
+            <GitBranch size={13} strokeWidth={2} />
+            <span class="git-branch mono">{gitInfo.branch || "detached"}</span>
+            {#if gitInfo.dirty}<span class="git-dirty">{gitInfo.dirty}</span>{/if}
+          </button>
+          {#if diffHover}
+            <div class="diff-pop" role="status">
+              <span class="pop-added">+{diffHover.added}</span>
+              <span class="pop-deleted">−{diffHover.deleted}</span>
+              <span class="pop-hint">working tree vs HEAD · {diffHover.files} file{diffHover.files === 1 ? "" : "s"}</span>
+            </div>
+          {/if}
+        </div>
       {/if}
     </div>
   </div>
@@ -864,6 +912,28 @@
     line-height: 14px;
     font-weight: 700;
   }
+  .git-wrap { position: relative; }
+  .diff-pop {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 60;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow);
+    white-space: nowrap;
+    pointer-events: none;
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .pop-added { color: var(--ok); font-family: var(--font-mono); font-size: 11.5px; }
+  .pop-deleted { color: var(--danger); font-family: var(--font-mono); font-size: 11.5px; }
+  .pop-hint { color: var(--text-3); }
   .conn { font-size: 10.5px; color: var(--text-3); }
   .conn.on { color: var(--ok); }
 </style>

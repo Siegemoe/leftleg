@@ -12,6 +12,7 @@
   import ExtDialog from "./components/ExtDialog.svelte";
   import Notifications from "./components/Notifications.svelte";
   import RightPanel from "./components/RightPanel.svelte";
+  import FileCard from "./components/FileCard.svelte";
   import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
@@ -126,6 +127,7 @@
 {/if}
 
 <Notifications />
+<FileCard />
 
 {#if $extDialog}
   <ExtDialog />

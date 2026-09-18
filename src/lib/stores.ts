@@ -15,7 +15,7 @@ export const projectDir = writable<string>("");
 export const sidebarOpen = writable<boolean>(true);
 export const settingsOpen = writable<boolean>(false);
 /** Right panel (Status / Artifacts / placeholder docks beside the chat). */
-export type RightPanelTab = "status" | "artifacts" | "diff" | "browser" | "terminal" | "files";
+export type RightPanelTab = "status" | "subagents" | "artifacts" | "diff" | "browser" | "terminal" | "files";
 export const rightPanelOpen = writable<boolean>(false);
 export const rightPanelTab = writable<RightPanelTab>("status");
 export const rightPanelWidth = writable<number>(420);
@@ -26,6 +26,22 @@ export function openRightPanel(tab: RightPanelTab) {
     rightPanelTab.set(tab);
     rightPanelOpen.set(true);
   }
+}
+
+// ---------- code-viewer card ----------
+
+/** The floating code-viewer card. One instance: opening a file raises it
+ * with new content rather than stacking windows. Its rect persists in gui
+ * state (screen coordinates are window-relative CSS px, clamped by the
+ * component on open) so the card reopens where the user left it. */
+export interface FileCardRect { x: number; y: number; w: number; h: number }
+export const fileCardOpen = writable<boolean>(false);
+export const fileCardFile = writable<{ projectDir: string; path: string } | null>(null);
+export const fileCardRect = writable<FileCardRect>({ x: 120, y: 80, w: 720, h: 540 });
+/** Open (or refocus) the viewer card on a repo-relative file path. */
+export function openFileCard(projectDir: string, path: string) {
+  fileCardFile.set({ projectDir, path });
+  fileCardOpen.set(true);
 }
 /** Which project the settings modal is scoped to (null = general view). */
 export const settingsProject = writable<string | null>(null);
@@ -1480,6 +1496,13 @@ async function bootImpl() {
   rightPanelOpen.set((gui.rightPanelOpen as boolean) ?? false);
   rightPanelTab.set((gui.rightPanelTab as RightPanelTab) ?? "status");
   rightPanelWidth.set((gui.rightPanelWidth as number) ?? 420);
+  const cardRect = gui.fileCardRect as Partial<FileCardRect> | undefined;
+  fileCardRect.set({
+    x: cardRect?.x ?? 120,
+    y: cardRect?.y ?? 80,
+    w: cardRect?.w ?? 720,
+    h: cardRect?.h ?? 540,
+  });
   autoRetry.set(true);
 
   // Persist theme + sidebar changes
@@ -1529,6 +1552,10 @@ async function bootImpl() {
   });
   rightPanelWidth.subscribe(async (v) => {
     gui.rightPanelWidth = v;
+    try { await api.writeGuiState(gui); } catch { /* ignore */ }
+  });
+  fileCardRect.subscribe(async (v) => {
+    gui.fileCardRect = v;
     try { await api.writeGuiState(gui); } catch { /* ignore */ }
   });
   delete gui.autoRetry; // agent settings are persisted only by Pi

@@ -181,3 +181,61 @@ export function getAgentDir(): Promise<string> {
 export function writeAgentExtension(relPath: string, content: string): Promise<void> {
   return invoke("write_agent_extension", { relPath, content });
 }
+
+export interface GitDiffFile {
+  path: string;
+  added: number;
+  deleted: number;
+}
+
+export interface GitDiffSummary {
+  repo: boolean;
+  files: GitDiffFile[];
+  truncated: boolean;
+}
+
+/** Working-tree diff vs HEAD, per-file line counts (binary files excluded). */
+export function gitDiffSummary(projectDir: string): Promise<GitDiffSummary> {
+  return invoke("git_diff_summary", { projectDir });
+}
+
+export interface RepoFile {
+  path: string;
+  size: number;
+}
+
+export interface RepoFileList {
+  repo: boolean;
+  files: RepoFile[];
+  truncated: boolean;
+}
+
+/** The repo's tracked text files (binary extensions filtered native-side). */
+export function repoFiles(projectDir: string): Promise<RepoFileList> {
+  return invoke("repo_files", { projectDir });
+}
+
+export interface FileStat {
+  path: string;
+  loc: number | null;
+  size: number;
+  isText: boolean;
+}
+
+/** LOC + size for a batch of repo-relative paths (lazy per directory). */
+export function fileStats(projectDir: string, paths: string[]): Promise<FileStat[]> {
+  return invoke("file_stats_batch", { projectDir, paths });
+}
+
+export interface TextFileContent {
+  path: string;
+  content: string;
+  loc: number;
+  size: number;
+  truncated: boolean;
+}
+
+/** Read one tracked, contained, text-only repo file for the viewer card. */
+export function readTextFile(projectDir: string, path: string): Promise<TextFileContent> {
+  return invoke("read_text_file", { projectDir, path });
+}
