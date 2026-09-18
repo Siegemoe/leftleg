@@ -4,7 +4,7 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, applyTheme, connected, newSession, nowTick, openSession, openNewProject,
+    activeSessionPath, applyTheme, connected, extDialog, newSession, nowTick, openSession, openNewProject,
     openProjectSettingsCard, pins,
     projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
@@ -87,7 +87,12 @@
     if (scopeOpen && !(e.target as Element | null)?.closest(".scope")) scopeOpen = false;
   }
   function onScopeWindowKeydown(e: KeyboardEvent) {
-    if (scopeOpen && e.key === "Escape" && !e.defaultPrevented) scopeOpen = false;
+    // ExtDialog is the one layer that both outranks the popover and registers
+    // later — stand down for it; preventDefault so later-registered lower
+    // layers stand down in turn (topmost-only Esc, same ladder as the modals).
+    if (!scopeOpen || e.key !== "Escape" || e.defaultPrevented || $extDialog) return;
+    e.preventDefault();
+    scopeOpen = false;
   }
 
   const searching = $derived($sessionQuery.trim().length > 0);

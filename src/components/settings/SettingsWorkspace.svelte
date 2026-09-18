@@ -84,7 +84,6 @@
   });
   let search = $state("");
   let scope = $state<Scope>(untrack(() => $settingsProject ? "project" : "global"));
-  let close = () => settingsOpen.set(false);
 
   // ---- file-backed settings state ----
   interface FileState { data: Record<string, unknown> | null; revision: string | null; exists: boolean }

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Minimal fixed-position context menu (T3-style row actions, no library).
   import { onMount } from "svelte";
+  import { extDialog } from "../lib/stores";
 
   export interface MenuItem {
     label: string;
@@ -33,7 +34,13 @@
       if (el && !el.contains(e.target as Node)) onclose();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onclose();
+      if (e.defaultPrevented) return;
+      // An extension dialog arriving while the menu is open is topmost (z-200)
+      // and registered later — its Esc wins; the menu stands down.
+      if ($extDialog) return;
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      onclose();
     };
     window.addEventListener("mousedown", onDown, true);
     window.addEventListener("keydown", onKey);

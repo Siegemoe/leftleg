@@ -61,6 +61,13 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    // An earlier-registered closer (TitleBar: menus/About) that handled this
+    // Esc marks it with preventDefault — stand down so exactly one layer
+    // closes per keypress. The store gates below cover the reverse order:
+    // this listener mounts unconditionally at app start, BEFORE the on-demand
+    // modals (Settings z-100, ExtDialog z-200) and the z-150 cards, so those
+    // closers run later and their preventDefault would never be seen here.
+    if (e.defaultPrevented) return;
     // Esc closes the card only when it is the topmost overlay: stand down for
     // the modals above it (Settings z-100+, About z-150, ExtDialog z-200) so
     // one keypress dismisses exactly one layer.

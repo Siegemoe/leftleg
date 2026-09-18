@@ -16,30 +16,38 @@
   };
 
   // Escape closes the modal — Esc is documented as reserved for closing
-  // menus and dialogs (Key bindings section). ExtDialog (z-200) outranks it:
-  // stand down while a question is pending. The z-150 cards cannot co-open
-  // with Settings, so they need no stand-down. While a key-binding capture is
-  // armed, the workspace's capture-phase window listener stops propagation
-  // before this handler sees the key — Esc cancels the capture instead.
+  // menus and dialogs (Key bindings section). This modal mounts on demand,
+  // so its listener registers after every always-mounted one (TitleBar,
+  // FileCard, the z-150 cards) but before or after ExtDialog's depending on
+  // which opened first — two stand-downs cover both orders:
+  // - $extDialog store gate: when the dialog arrived while this modal was
+  //   already up, the dialog's listener registers LATER, so its
+  //   preventDefault would never be seen here — the store read (z-200
+  //   outranks z-100) is the only signal in that order.
+  // - e.defaultPrevented: when a closer registered EARLIER (TitleBar
+  //   menus/About, the z-150 cards over this modal) handled this Esc, it
+  //   already marked the event — stand down so one key closes one layer.
+  // While a key-binding capture is armed, the workspace's capture-phase
+  // window listener stops propagation before this handler sees the key —
+  // Esc cancels the capture instead.
   function onKeydown(e: KeyboardEvent) {
+    if (e.defaultPrevented) return;
     if (e.key !== "Escape" || $extDialog) return;
     e.preventDefault();
     close();
   }
 
-  // Remount key. Beyond the foreground project and its process generation,
-  // the scoped project (per-project card → Advanced settings…) and ITS
-  // generation are included: a card-hop must remount the workspace bound to
-  // the right companion, and a target process replacement must rebind with
-  // fresh data instead of saving through a stale one.
+  // Remount key. The workspace binds to exactly one project — the scoped one
+  // (per-project card → Advanced settings…) when set, the foreground one
+  // otherwise — so the key names that binding and ITS process generation
+  // only: a card-hop re-keys onto the right companion, a target process
+  // replacement rebinds with fresh data instead of saving through a stale
+  // one, and an unrelated foreground process death/restart can no longer
+  // re-key (and silently discard, with no confirm) a scoped draft.
   const workspaceKey = $derived.by(() => {
     const scoped = $settingsProject;
-    return [
-      scoped ?? "",
-      scoped ? $lastProcByProject[scoped] ?? "none" : "",
-      $projectDir,
-      $lastProcByProject[$projectDir] ?? "none",
-    ].join("|");
+    if (scoped) return `scoped|${scoped}|${$lastProcByProject[scoped] ?? "none"}`;
+    return `foreground|${$projectDir}|${$lastProcByProject[$projectDir] ?? "none"}`;
   });
 </script>
 

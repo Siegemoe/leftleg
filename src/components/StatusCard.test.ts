@@ -90,6 +90,25 @@ describe("status card state ownership", () => {
     expect(document.body.textContent).toContain("new task");
     expect(document.body.textContent).not.toContain("old task");
   });
+
+  it("drops an older pi-module response that resolves after an owner change", async () => {
+    let resolveOld!: (value: unknown) => void;
+    let resolveNew!: (value: unknown) => void;
+    mocks.piModuleInfo
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveNew = resolve; }));
+    instance = mount(StatusCard, { target: document.body });
+    await settle(); // let run 1 execute with the deferred impl before changing owner
+    activeSessionPath.set("/a/another-session.jsonl"); // owner change → effect re-runs
+    await vi.waitFor(() => expect(mocks.piModuleInfo).toHaveBeenCalledTimes(2));
+    resolveNew({ name: "pi", version: "2" });
+    await settle();
+    resolveOld({ name: "pi", version: "1" });
+    await settle();
+
+    expect(document.body.textContent).toContain("pi v2");
+    expect(document.body.textContent).not.toContain("pi v1");
+  });
 });
 
 describe("status card at the start view (no owner project)", () => {
