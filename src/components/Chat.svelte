@@ -1,5 +1,6 @@
 <script lang="ts">
   import { items, streaming, rpcState, projectDir, activeSessionPath, chooseProject, disconnected, activePromptId } from "../lib/stores";
+  import { pickActivePrompt } from "../lib/scroll-spy";
   import MessageView from "./MessageView.svelte";
   import Composer from "./Composer.svelte";
   import mark from "../assets/leftleg-mark.png";
@@ -8,16 +9,18 @@
   let stick = $state(true);
 
   /** Scroll-spy for the prompt rail: the last user prompt whose anchor has
-   * reached the top region of the viewport reads as "where you are". */
+   * reached the top region of the viewport reads as "where you are". The
+   * decision rule lives in lib/scroll-spy (tested); this owns the DOM reads. */
   function updateActivePrompt() {
     if (!scroller) { activePromptId.set(null); return; }
-    const top = scroller.getBoundingClientRect().top;
-    let active: string | null = null;
-    for (const el of scroller.querySelectorAll<HTMLElement>("[data-prompt]")) {
-      if (el.getBoundingClientRect().top <= top + 120) active = el.getAttribute("data-prompt");
-      else break;
-    }
-    activePromptId.set(active);
+    const anchors = Array.from(scroller.querySelectorAll<HTMLElement>("[data-prompt]"));
+    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+    const viewportTop = scroller.getBoundingClientRect().top;
+    activePromptId.set(pickActivePrompt(
+      anchors.map((el) => ({ id: el.getAttribute("data-prompt") ?? "", top: el.getBoundingClientRect().top })),
+      viewportTop,
+      atBottom,
+    ));
   }
 
   function onScroll() {
@@ -44,6 +47,9 @@
     $items; $streaming;
     if (stick && scroller) {
       const frame = requestAnimationFrame(() => {
+        // stick may have flipped between scheduling and firing (a rail-tick
+        // jump landed in between) — re-check so the jump isn't yanked back.
+        if (!stick) return;
         scroller?.scrollTo({ top: scroller.scrollHeight });
       });
       return () => cancelAnimationFrame(frame);
@@ -110,6 +116,8 @@
     padding: 20px 0 12px;
     min-height: 0;
   }
+  /* Rail jumps land the prompt at the padding line, not flush at the edge. */
+  .anchor { scroll-margin-top: 20px; }
   .hero {
     height: 100%;
     display: flex;

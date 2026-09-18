@@ -232,6 +232,5 @@
     font-size: 12px;
     font-weight: 600;
   }
-  .primary:hover { filter: brightness(1.1); }
-  .primary:disabled { opacity: 0.45; cursor: default; filter: none; }
+  .primary:disabled { opacity: 0.45; cursor: default; }
 </style>

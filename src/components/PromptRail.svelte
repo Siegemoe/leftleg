@@ -6,14 +6,10 @@
   // chat-space, not a third panel; the + new-chat button shows only while
   // the sidebar is collapsed — the sidebar owns session switching.
   import { Plus } from "@lucide/svelte";
-  import { activePromptId, items, newSession, sidebarOpen } from "../lib/stores";
+  import { activePromptId, items, newSession, nowTick, sidebarOpen } from "../lib/stores";
   import { formatRelativeTime } from "../lib/sidebar-model";
 
-  let now = $state(Date.now());
-  $effect(() => {
-    const t = setInterval(() => (now = Date.now()), 30_000);
-    return () => clearInterval(t);
-  });
+  const now = $derived($nowTick);
 
   const ticks = $derived.by(() => {
     const out: { id: string; label: string; at: number; failed: boolean; sending: boolean }[] = [];

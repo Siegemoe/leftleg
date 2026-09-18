@@ -4,7 +4,7 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, switchToProject, applyTheme, connected, newSession, openSession, openNewProject, pins,
+    activeSessionPath, switchToProject, applyTheme, connected, newSession, nowTick, openSession, openNewProject, pins,
     projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
     settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
@@ -22,11 +22,7 @@
 
   const SETTLED_PREVIEW_COUNT = 50;
 
-  let now = $state(Date.now());
-  $effect(() => {
-    const t = setInterval(() => (now = Date.now()), 30_000);
-    return () => clearInterval(t);
-  });
+  const now = $derived($nowTick);
 
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let renamingPath = $state<string | null>(null);

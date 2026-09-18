@@ -11,5 +11,6 @@ export default defineConfig({
   test: {
     environment: "jsdom", // DOMPurify needs a DOM; store tests read svelte stores
     include: ["src/**/*.test.ts"],
+    fsModuleCache: true, // cache transforms on disk — transforms were ~56% of suite time
   },
 });

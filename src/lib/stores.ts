@@ -1,4 +1,4 @@
-import { writable, get, type Writable } from "svelte/store";
+import { writable, readable, get, type Writable } from "svelte/store";
 import type {
   AgentMessage, PiEvent, RpcState, SessionInfo, SessionStats, UiItem,
   ToolItem, AssistantItem, Block, ModelInfo, ThinkingLevel, ExtCommand, UserItem,
@@ -9,6 +9,14 @@ import { handleMgmtNotify, abortPendingMgmt, pendingManagementCount, primeAgentD
 import { composerDraftBlockers, pruneEmptyComposerDrafts } from "./composer-drafts";
 
 // ---------- stores ----------
+
+/** 30s wall-clock tick backing relative-time UI (sidebar rows, rail
+ * tooltips). One shared interval instead of one per consumer — started
+ * with the first subscriber, stopped with the last. */
+export const nowTick = readable(Date.now(), (set) => {
+  const t = setInterval(() => set(Date.now()), 30_000);
+  return () => clearInterval(t);
+});
 
 export const theme = writable<"light" | "dark" | "system">("system");
 export const projectDir = writable<string>("");
@@ -56,14 +64,24 @@ export function openNewProject() {
 }
 
 /** Create the folder and make it the active project. Resolves to the new
- * path; throws so the caller (the card) can show the error inline. The
- * update-lock check comes first so a locked navigation can't leave a
- * created-but-never-opened folder behind. */
+ * path; throws so the caller (the card) can show the error inline. Folder
+ * creation runs inside the navigation gate with a run-time lock re-check —
+ * the call-time check alone is racy, and a lock engaging mid-queue must
+ * not leave a created-but-never-opened folder behind. */
 export async function createProject(parent: string, name: string): Promise<string> {
-  if (get(updateInstallLock)) throw new Error("update installation is preparing — try again in a moment");
-  const dir = await api.createProjectDir(parent, name);
-  const ok = await switchToProject(dir);
-  if (!ok) throw new Error("couldn't start pi in the new folder");
+  const lockedErr = "update installation is preparing — try again in a moment";
+  if (get(updateInstallLock)) throw new Error(lockedErr);
+  const dir = await navigate(async () => {
+    if (get(updateInstallLock)) throw new Error(lockedErr);
+    const created = await api.createProjectDir(parent, name);
+    // Already inside the serialized navigation — call the impl directly
+    // (a nested navigate() would deadlock on its own tail).
+    const ok = await switchToProjectImpl(created);
+    if (!ok) throw new Error("couldn't start pi in the new folder");
+    return created;
+  });
+  // navigate() resolves undefined when its call-time lock check rejects.
+  if (!dir) throw new Error(lockedErr);
   newProjectOpen.set(false);
   transientNote(`Project created: ${dir}`, 6000);
   return dir;

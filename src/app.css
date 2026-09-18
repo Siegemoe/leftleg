@@ -139,7 +139,10 @@ button.primary {
   color: var(--on-accent);
   font-weight: 600;
 }
-button.primary:hover { filter: brightness(0.94); background: var(--accent); }
+/* Hover shifts the fill toward the opposite pole of the monochrome pair —
+ * perceptible on both themes (a brightness filter is invisible on the
+ * near-black light-theme fill). */
+button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--on-accent)); }
 
 button.ghost {
   background: transparent;

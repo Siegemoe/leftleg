@@ -84,48 +84,48 @@
        window when the sidebar is hidden. -->
   <div class="right-col">
     <div class="content">
-  {#if $projectDir}
-    <PromptRail />
-  {/if}
-  <main>
-    {#if $updateAvailable}
-      <div class="update-banner">
-        <span class="update-text">⟳ Update available: v{$updateAvailable.version}</span>
-        {#if $updateStatus === "downloading"}
-          <span class="update-progress">Downloading…</span>
-        {:else if $updateStatus === "preparing"}
-          <span class="update-progress">Stopping Pi safely…</span>
-        {:else if $updateStatus === "installing"}
-          <span class="update-progress">Starting installer…</span>
-        {:else if $updateStatus === "ready"}
-          <button class="update-btn" onclick={() => void applyUpdate()}>Install downloaded update</button>
-        {:else}
-          <button class="update-btn" onclick={() => void applyUpdate()}>Install &amp; restart</button>
-        {/if}
-        <button class="ghost update-dismiss" title="Dismiss" disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={() => void dismissUpdate()}>×</button>
-        {#if $updateError}<span class="update-err">{$updateError}</span>{/if}
-      </div>
+    {#if $projectDir}
+      <PromptRail />
     {/if}
-    {#if $disconnected}
-      <div class="exit-banner">
-        <span>⚠ pi exited unexpectedly — your session can be restored.</span>
-        <button class="resume" onclick={() => void restartPi()}>Restart &amp; resume</button>
-      </div>
+    <main>
+      {#if $updateAvailable}
+        <div class="update-banner">
+          <span class="update-text">⟳ Update available: v{$updateAvailable.version}</span>
+          {#if $updateStatus === "downloading"}
+            <span class="update-progress">Downloading…</span>
+          {:else if $updateStatus === "preparing"}
+            <span class="update-progress">Stopping Pi safely…</span>
+          {:else if $updateStatus === "installing"}
+            <span class="update-progress">Starting installer…</span>
+          {:else if $updateStatus === "ready"}
+            <button class="update-btn" onclick={() => void applyUpdate()}>Install downloaded update</button>
+          {:else}
+            <button class="update-btn" onclick={() => void applyUpdate()}>Install &amp; restart</button>
+          {/if}
+          <button class="ghost update-dismiss" title="Dismiss" disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={() => void dismissUpdate()}>×</button>
+          {#if $updateError}<span class="update-err">{$updateError}</span>{/if}
+        </div>
+      {/if}
+      {#if $disconnected}
+        <div class="exit-banner">
+          <span>⚠ pi exited unexpectedly — your session can be restored.</span>
+          <button class="resume" onclick={() => void restartPi()}>Restart &amp; resume</button>
+        </div>
+      {/if}
+      {#if $projectDir === ""}
+        <div class="startwrap" out:fade={{ duration: 140 }}>
+          <StartScreen />
+        </div>
+      {:else}
+        <div class="chatwrap" in:fade={{ duration: 140 }}>
+          <Chat />
+        </div>
+      {/if}
+    </main>
+    {#if $rightPanelOpen}
+      <RightPanel />
     {/if}
-    {#if $projectDir === ""}
-      <div class="startwrap" out:fade={{ duration: 140 }}>
-        <StartScreen />
-      </div>
-    {:else}
-      <div class="chatwrap" in:fade={{ duration: 140 }}>
-        <Chat />
-      </div>
-    {/if}
-  </main>
-  {#if $rightPanelOpen}
-    <RightPanel />
-  {/if}
-  </div>
+    </div>
   {#if $projectDir !== ""}
     <StatusBar />
   {/if}

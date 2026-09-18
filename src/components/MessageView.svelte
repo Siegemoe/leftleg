@@ -187,7 +187,7 @@
   }
   .dismiss:hover { opacity: 1; }
   .user-bubble :global(.md p) { margin: 0.15em 0; }
-  .user-bubble :global(a) { color: #e6e0ff; }
+  .user-bubble :global(a) { color: var(--on-accent); }
   .user-bubble :global(code) { background: rgba(255,255,255,0.18); }
   .user-bubble :global(pre) { background: rgba(0,0,0,0.25); border-color: rgba(255,255,255,0.15); }
   .thumbs {
