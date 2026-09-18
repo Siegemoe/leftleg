@@ -27,8 +27,12 @@ export type RightPanelTab = "status" | "subagents" | "artifacts" | "diff" | "bro
 export const rightPanelOpen = writable<boolean>(false);
 export const rightPanelTab = writable<RightPanelTab>("status");
 export const rightPanelWidth = writable<number>(420);
+/** Start view collapses the right panel. It's a default, not a lock: a dock
+ * button reopens the panel manually, and choosing a project clears it. */
+export const homePanelCollapsed = writable<boolean>(false);
 /** Open the right panel on a tab; re-triggering the active tab closes it. */
 export function openRightPanel(tab: RightPanelTab) {
+  homePanelCollapsed.set(false);
   if (get(rightPanelOpen) && get(rightPanelTab) === tab) rightPanelOpen.set(false);
   else {
     rightPanelTab.set(tab);
@@ -53,6 +57,12 @@ export function openFileCard(projectDir: string, path: string) {
 }
 /** Which project the settings modal is scoped to (null = general view). */
 export const settingsProject = writable<string | null>(null);
+/** Project shown in the dedicated per-project settings card (null = closed). */
+export const projectSettingsDir = writable<string | null>(null);
+/** Open the per-project settings card for a project directory. */
+export function openProjectSettingsCard(dir: string) {
+  projectSettingsDir.set(dir);
+}
 
 // ---------- new-project card ----------
 
@@ -1127,6 +1137,9 @@ async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<b
     rpcState.set(null);
     connected.set(true);
     disconnected.set(false);
+    // The start view collapses the right panel by default; entering a
+    // project restores it to however the user had it.
+    homePanelCollapsed.set(false);
     await refreshRpcState();
     let switched = false;
     // Trust pi: on a reused process it may not be in the requested session.
@@ -1169,6 +1182,43 @@ async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<b
     transientNote(`Couldn't open project: ${e}`);
     return false;
   }
+}
+
+/** Return to the start view (title-bar logo). The active project's live
+ * surface is saved first, so its pi process keeps running in the background
+ * (mid-stream turns continue feeding the sidebar) and switching back restores
+ * transcript, queue, and extension state exactly as they were. */
+export function goHome() {
+  return navigate(async () => {
+    saveSurface();
+    // Leaving the old project: GC its empty per-session drafts (non-empty
+    // ones survive for when the user switches back).
+    pruneEmptyComposerDrafts(get(projectDir));
+    projectDir.set("");
+    items.set([]);
+    streaming.set(false);
+    queue.set({ steering: [], followUp: [] });
+    composerDraft.set(null);
+    activeSessionPath.set(null);
+    activePromptId.set(null);
+    statusNote.set("");
+    extStatuses.set({});
+    extWidgets.set({});
+    extDialog.set(null);
+    mainSurface.assistant = null;
+    mainSurface.dialogs = [];
+    mainSurface.turnStartTs = null;
+    commands.set([]);
+    models.set([]);
+    stats.set(null);
+    rpcState.set(null);
+    connected.set(false);
+    // A dead process's exit banner is project-scoped recovery (Restart works
+    // on the current project); at the start view there is nothing to restart,
+    // so drop the banner — switching back starts a fresh process anyway.
+    disconnected.set(false);
+    homePanelCollapsed.set(true);
+  });
 }
 
 export function openSession(path: string) { return navigate(() => openSessionImpl(path)); }

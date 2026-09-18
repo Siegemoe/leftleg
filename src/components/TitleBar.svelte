@@ -9,7 +9,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import {
     sidebarOpen, settingsOpen, settingsProject, theme, extDialog,
-    chooseProject, newSession, applyTheme, transientNote,
+    chooseProject, newSession, applyTheme, transientNote, goHome,
     openRightPanel, rightPanelOpen, rightPanelTab, openNewProject,
   } from "../lib/stores";
   import { checkForUpdates } from "../lib/updater";
@@ -115,8 +115,12 @@
   >
     <PanelLeft size={15} strokeWidth={2} />
   </button>
-  <span class="app-title" data-tauri-drag-region>Leftleg</span>
-  <img class="app-mark" src={mark} alt="" draggable="false" />
+  <!-- The logo returns to the start view. Interactive children never start a
+       window drag, so this button opts out of the bar's drag region. -->
+  <button class="app-home" title="Back to start view" onclick={() => void goHome()}>
+    <span class="app-title">Leftleg</span>
+    <img class="app-mark" src={mark} alt="" draggable="false" />
+  </button>
 
   <nav class="menubar">
     <div class="menu">
@@ -276,12 +280,23 @@
     border-bottom: 1px solid var(--border);
     user-select: none;
   }
+  .app-home {
+    display: inline-flex;
+    align-items: center;
+    background: transparent;
+    border: none;
+    padding: 3px 6px;
+    margin-left: -6px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .app-home:hover { background: var(--bg-surface-2); }
   .app-title {
     font-weight: 700;
     font-size: 13.5px;
     letter-spacing: 0.3px;
     padding: 0 6px;
-    cursor: default;
+    cursor: pointer;
   }
   .app-mark {
     height: 20px;
