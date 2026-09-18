@@ -7,7 +7,7 @@
   import { X } from "@lucide/svelte";
   import {
     fileCardOpen, fileCardFile, fileCardRect, settingsOpen, extDialog,
-    projectSettingsDir, type FileCardRect,
+    projectSettingsDir, newProjectOpen, type FileCardRect,
   } from "../lib/stores";
   import { readTextFile, type TextFileContent } from "../lib/api";
 
@@ -61,7 +61,7 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && $fileCardOpen && !$settingsOpen && !$extDialog && !$projectSettingsDir) {
+    if (e.key === "Escape" && $fileCardOpen && !$settingsOpen && !$extDialog && !$projectSettingsDir && !$newProjectOpen) {
       e.preventDefault();
       close();
     }

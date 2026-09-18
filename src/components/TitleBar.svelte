@@ -11,7 +11,7 @@
     sidebarOpen, settingsOpen, settingsProject, theme, extDialog,
     chooseProject, newSession, applyTheme, transientNote, goHome,
     openRightPanel, rightPanelOpen, rightPanelTab, homePanelCollapsed,
-    openNewProject, projectSettingsDir,
+    openNewProject, newProjectOpen, projectSettingsDir,
     keybindings,
   } from "../lib/stores";
   import { matchKeybinding, effectiveBindings } from "../lib/keybindings";
@@ -63,7 +63,7 @@
     // Registry-driven accelerators (defaults + user overrides from Settings →
     // Key bindings). These keys are free in this webview, so they work while
     // typing too; step aside when a modal owns the keyboard.
-    if (e.defaultPrevented || $settingsOpen || $extDialog || $projectSettingsDir) return;
+    if (e.defaultPrevented || $settingsOpen || $extDialog || $projectSettingsDir || $newProjectOpen) return;
     const action = matchKeybinding(e, bindings);
     if (!action) return;
     e.preventDefault();

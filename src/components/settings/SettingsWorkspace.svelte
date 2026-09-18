@@ -427,11 +427,13 @@
 
   // Leaving the Key bindings section must disarm the capture — the listener
   // would otherwise swallow every keydown app-wide with no visible row.
-  // stopCapture only writes captureAction/captureNote, never section, so the
-  // effect can't re-trigger itself.
+  // stopCapture READS captureAction (its no-capture early return), so a bare
+  // call would put captureAction in this effect's dependency set — and the
+  // capture's own write would re-run the effect, instantly disarming itself.
+  // Untrack the call: `section` stays the only dependency.
   $effect(() => {
     void section;
-    stopCapture();
+    untrack(() => stopCapture());
   });
 
   // ---- model catalog ----
