@@ -76,10 +76,14 @@
 
 <TitleBar />
 <div class="shell">
-  <div class="content">
   {#if $sidebarOpen}
     <Sidebar />
   {/if}
+  <!-- Everything right of the sidebar. The status bar rides this column so
+       its left edge follows the sidebar's edge; it only spans the full
+       window when the sidebar is hidden. -->
+  <div class="right-col">
+    <div class="content">
   {#if $projectDir}
     <SessionRail />
   {/if}
@@ -125,6 +129,7 @@
   {#if $projectDir !== ""}
     <StatusBar />
   {/if}
+  </div>
 </div>
 
 {#if $settingsOpen}
@@ -143,9 +148,17 @@
 <style>
   .shell {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     height: calc(100vh - var(--topbar-h));
     background: var(--bg);
+  }
+  /* Sidebar is a full-height shell child; this column holds everything to
+   * its right, including the status bar. */
+  .right-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
   .content {
     flex: 1;
