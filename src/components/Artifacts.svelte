@@ -8,7 +8,7 @@
   import { projectDir, rightPanelOpen, rightPanelTab, transientNote, items } from "../lib/stores";
   import { listArtifacts, deleteArtifact, openPathLocal, type ArtifactFile } from "../lib/api";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { ExternalLink, Copy, Trash2, RefreshCw } from "@lucide/svelte";
+  import { ExternalLink, Copy, Check, Trash2, RefreshCw } from "@lucide/svelte";
 
   let tab = $state<"images" | "docs">("images");
   let loading = $state(false);
@@ -88,10 +88,17 @@
     catch (e) { transientNote(`Couldn't open: ${e}`); }
   }
 
+  // Inline "Copied" feedback on the tile (status-bar notes are out of the
+  // sight line here); failures still surface as a note.
+  let copiedPath = $state<string | null>(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
   async function copyPath(path: string) {
     try {
       await navigator.clipboard.writeText(path);
-      transientNote("Path copied", 3000);
+      copiedPath = path;
+      if (copiedTimer) clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => (copiedPath = null), 2000);
     } catch (e) {
       transientNote(`Couldn't copy: ${e}`);
     }
@@ -175,7 +182,11 @@
               </div>
               <div class="tileactions">
                 <button class="ghost icon" title="Open externally" onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button>
-                <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
+                {#if copiedPath === file.path}
+                  <span class="copied-chip"><Check size={11} strokeWidth={2.4} /> Copied</span>
+                {:else}
+                  <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
+                {/if}
                 <button class="ghost icon danger" title="Delete" onclick={() => void removeImage(file)}><Trash2 size={13} /></button>
               </div>
             </div>
@@ -193,7 +204,11 @@
             <div class="tileactions">
               {#if file.exists}
                 <button class="ghost icon" title="Open externally — {file.path}" onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button>
-                <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
+                {#if copiedPath === file.path}
+                  <span class="copied-chip"><Check size={11} strokeWidth={2.4} /> Copied</span>
+                {:else}
+                  <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
+                {/if}
               {/if}
             </div>
           </div>
@@ -311,7 +326,16 @@
     white-space: nowrap;
   }
   .meta { font-size: 10.5px; color: var(--text-3); }
-  .tileactions { display: flex; gap: 4px; }
+  .tileactions { display: flex; gap: 4px; align-items: center; }
+  .copied-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--ok);
+    padding: 0 4px;
+    user-select: none;
+  }
   .docs { display: flex; flex-direction: column; gap: 8px; }
   .docrow {
     display: flex;

@@ -5,7 +5,7 @@
   import { sanitizeThinking } from "../lib/thinking";
   import { dayHeaderLabel, formatDuration } from "../lib/time-format";
   import { retryFailedUser, dismissFailedUser, transientNote } from "../lib/stores";
-  import { Lightbulb, TriangleAlert, Copy } from "@lucide/svelte";
+  import { Lightbulb, TriangleAlert, Copy, Check } from "@lucide/svelte";
 
   let { item }: { item: UiItem } = $props();
 
@@ -22,10 +22,18 @@
     return item.blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n\n").trim();
   }
 
+  // "Copied" feedback lives right on the button, where the action happened —
+  // the status-bar note was out of the sight line. Copy failures still
+  // surface as a note (an error must never be silent).
+  let copied = $state(false);
+  let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
   async function copyResponse() {
     try {
       await navigator.clipboard.writeText(responseText());
-      transientNote("Response copied", 3000);
+      copied = true;
+      if (copiedTimer) clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => (copied = false), 2000);
     } catch (e) {
       transientNote(`Couldn't copy: ${e}`);
     }
@@ -86,13 +94,17 @@
       {#if item.streaming}
         <span class="cursor"></span>
       {:else}
-        {#if responseText()}
-          <button class="copy-btn" title="Copy response text" onclick={() => void copyResponse()}>
-            <Copy size={11} strokeWidth={2} /> Copy
-          </button>
-        {/if}
-        {#if item.turnDurationMs}
-          <div class="turn-meta">turn · {formatDuration(item.turnDurationMs)}</div>
+        {#if responseText() || item.turnDurationMs}
+          <div class="msg-meta">
+            {#if item.turnDurationMs}
+              <span class="turn-meta">turn · {formatDuration(item.turnDurationMs)}</span>
+            {/if}
+            {#if responseText()}
+              <button class="copy-btn" class:done={copied} title={copied ? "Copied" : "Copy response text"} onclick={() => void copyResponse()}>
+                {#if copied}<Check size={11} strokeWidth={2.4} /> Copied{:else}<Copy size={11} strokeWidth={2} /> Copy{/if}
+              </button>
+            {/if}
+          </div>
         {/if}
       {/if}
     </div>
@@ -246,12 +258,16 @@
     text-transform: none;
     letter-spacing: 0;
   }
+  .msg-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+  }
   .copy-btn {
-    align-self: flex-start;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    margin-top: 2px;
     padding: 2px 9px;
     font-size: 10.5px;
     color: var(--text-3);
@@ -262,7 +278,12 @@
     opacity: 0.75;
   }
   .copy-btn:hover { color: var(--text); border-color: var(--border-strong); opacity: 1; }
-  .turn-meta { font-size: 10.5px; color: var(--text-3); padding: 1px 0; user-select: none; }
+  .copy-btn.done {
+    color: var(--ok);
+    border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+    opacity: 1;
+  }
+  .turn-meta { font-size: 10.5px; color: var(--text-3); user-select: none; }
   .error-note {
     color: var(--danger);
     font-size: 12.5px;
