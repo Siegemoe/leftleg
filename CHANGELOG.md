@@ -5,6 +5,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning
 follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 `src-tauri/tauri.conf.json`.
 
+## [0.6.1] — 2026-09-18
+
+### Added
+- Diff and Files docks with guarded native Git summaries, a tracked-source
+  browser, lazy file statistics, and a movable code-viewer card.
+- Branch-hover diff totals and a subagents dock for current agent activity.
+
+### Fixed
+- Prevent delayed RPC prompt delivery after a stdin write timeout by poisoning
+  and stopping the ambiguous transport before queued writers can proceed.
+- Bound the complete pi-update process tree and inherited output pipes with a
+  Windows Job Object, including the case where the direct child exits first.
+- Serialize startup Pi updates with prompts, navigation, settings writes, and
+  app installation for the full npm update window.
+- Preserve session-name synchronization through rename debounce and reject
+  incomplete numeric input without clearing stored settings.
+- Keep NUL-delimited Git paths verbatim, contain all new repository commands,
+  and prevent stale file-stat requests from populating a refreshed tree.
+
 ## [0.5.1] — 2026-09-17
 
 ### Added

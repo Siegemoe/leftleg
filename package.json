@@ -1,7 +1,7 @@
 {
   "name": "leftleg",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.6.1",
   "type": "module",
   "engines": {
     "node": ">=22.0.0"
