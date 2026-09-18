@@ -5,6 +5,9 @@ mod sessions;
 /// Containment boundary for local opens, re-exported for the integration
 /// test that exercises it without opening anything.
 pub use sessions::open_path_allowed;
+/// read_text_file's command pipeline, re-exported alongside the open boundary
+/// so its integration test drives the same containment path.
+pub use sessions::read_text_file_checked;
 
 use pi::PiProcess;
 use serde_json::Value;
@@ -597,6 +600,10 @@ pub fn run() {
             sessions::list_artifacts,
             sessions::delete_artifact,
             sessions::git_repo_info,
+            sessions::git_diff_summary,
+            sessions::repo_files,
+            sessions::file_stats_batch,
+            sessions::read_text_file,
             pi::pi_module_info,
             pimgr::run_pi_manager,
             pimgr::pi_integrity_report,

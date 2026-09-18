@@ -671,6 +671,330 @@ pub async fn delete_artifact(project_dir: String, path: String) -> Result<(), St
     tauri::async_runtime::spawn_blocking(move || delete_artifact_checked(&project_dir, &path)).await.map_err(|e| e.to_string())?
 }
 
+// ---------- repo tree, diff summary, and guarded text reads ----------
+
+/// Cap on per-file diff entries returned by git_diff_summary.
+const MAX_DIFF_FILES: usize = 200;
+/// Cap on tracked-file entries returned by repo_files.
+const MAX_REPO_FILES: usize = 5000;
+/// Cap on paths accepted per file_stats_batch call.
+const MAX_STATS_BATCH: usize = 200;
+/// Files above this size are too costly to scan for line counts (loc: None).
+const LOC_READ_CAP: u64 = 1024 * 1024;
+/// read_text_file's hard cap; larger files return the first chunk with
+/// truncated: true rather than an error.
+const TEXT_READ_CAP: u64 = 512 * 1024;
+/// Binary sniff window: a NUL in the first 8 KiB marks non-text content.
+const BINARY_SNIFF_BYTES: usize = 8 * 1024;
+
+/// File types that are never source text: repo file listings omit them and
+/// read_text_file refuses them before reading any bytes. Matched
+/// case-insensitively on the final extension (rfind makes double extensions
+/// count — archive.tar.gz is binary via gz, like the open-path denylist).
+const BINARY_EXTENSIONS: &[&str] = &[
+    // images
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "avif", "tif", "tiff", "svg", "icns",
+    // fonts
+    "woff", "woff2", "ttf", "otf", "eot",
+    // media
+    "mp3", "mp4", "wav", "ogg", "webm", "avi", "mov", "mkv",
+    // archives
+    "zip", "gz", "tar", "bz2", "xz", "7z", "rar",
+    // documents
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    // executables and object code
+    "exe", "dll", "so", "dylib", "lib", "a", "obj", "bin", "dat", "wasm",
+    // databases and build artifacts
+    "db", "sqlite", "pdb", "msi", "aps", "rsp", "suo", "class", "jar",
+];
+
+fn is_binary_extension(path: &str) -> bool {
+    let Some(name) = std::path::Path::new(path).file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let lower = name.to_ascii_lowercase();
+    let Some(dot) = lower.rfind('.') else { return false };
+    BINARY_EXTENSIONS.contains(&&lower[dot + 1..])
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiffFile {
+    pub path: String,
+    pub added: u64,
+    pub deleted: u64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiffSummary {
+    pub repo: bool,
+    pub files: Vec<GitDiffFile>,
+    pub truncated: bool,
+}
+
+/// One numstat row ("added<TAB>deleted<TAB>path"). Binary rows report "-" in
+/// both count columns and are dropped; malformed rows are dropped too so a
+/// stray git notice can't poison the list.
+fn parse_numstat_row(line: &str) -> Option<GitDiffFile> {
+    let mut parts = line.splitn(3, '\t');
+    let added = parts.next()?;
+    let deleted = parts.next()?;
+    let path = parts.next()?;
+    if added == "-" || deleted == "-" {
+        return None;
+    }
+    Some(GitDiffFile {
+        path: path.to_string(),
+        added: added.trim().parse().unwrap_or(0),
+        deleted: deleted.trim().parse().unwrap_or(0),
+    })
+}
+
+/// Working-tree vs HEAD change counts per file. Like git_repo_info, any git
+/// failure (including not-a-repo) reads as "no git" — repo: false with an
+/// empty list — because the UI treats that as "no data", not an error.
+pub fn git_diff_summary_impl(project_dir: &str) -> GitDiffSummary {
+    let Ok(out) = run_git(project_dir, &["diff", "HEAD", "--numstat", "--no-renames"]) else {
+        return GitDiffSummary { repo: false, files: Vec::new(), truncated: false };
+    };
+    let mut files: Vec<GitDiffFile> = out.lines().filter_map(parse_numstat_row).collect();
+    let truncated = files.len() > MAX_DIFF_FILES;
+    files.truncate(MAX_DIFF_FILES);
+    GitDiffSummary { repo: true, files, truncated }
+}
+
+/// Per-file working-tree diff summary for a project directory.
+#[tauri::command]
+pub async fn git_diff_summary(project_dir: String) -> Result<GitDiffSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(git_diff_summary_impl(&project_dir)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoFile {
+    pub path: String,
+    pub size: u64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoFileList {
+    pub repo: bool,
+    pub files: Vec<RepoFile>,
+    pub truncated: bool,
+}
+
+/// Tracked files with sizes. Binary-typed entries are omitted (the UI only
+/// lists viewable text) and unstattable ones report size 0. Git failure
+/// (including not-a-repo) reads as repo: false, same as git_repo_info.
+pub fn repo_files_impl(project_dir: &str) -> RepoFileList {
+    let Ok(out) = run_git(project_dir, &["ls-files", "-z"]) else {
+        return RepoFileList { repo: false, files: Vec::new(), truncated: false };
+    };
+    // -z separates entries with NUL; newline is a defensive second separator
+    // in case a git build ignores it. Paths are relative to project_dir, so
+    // they join straight onto it for statting.
+    let mut paths: Vec<&str> = out.split(['\0', '\n']).filter(|p| !p.is_empty()).collect();
+    let truncated = paths.len() > MAX_REPO_FILES;
+    paths.truncate(MAX_REPO_FILES);
+    let files = paths
+        .into_iter()
+        .filter(|rel| !is_binary_extension(rel))
+        .map(|rel| RepoFile {
+            path: rel.to_string(),
+            size: fs::metadata(std::path::Path::new(project_dir).join(rel))
+                .map(|m| m.len())
+                .unwrap_or(0),
+        })
+        .collect();
+    RepoFileList { repo: true, files, truncated }
+}
+
+/// Tracked-file listing with sizes for a project directory.
+#[tauri::command]
+pub async fn repo_files(project_dir: String) -> Result<RepoFileList, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(repo_files_impl(&project_dir)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStat {
+    pub path: String,
+    pub loc: Option<u64>,
+    pub size: u64,
+    pub is_text: bool,
+}
+
+/// Line count for a byte buffer: newline count, plus one for a final
+/// unterminated line only when the buffer holds the whole file — a truncated
+/// read's tail may be cut mid-line and must not count.
+fn count_loc(bytes: &[u8], complete: bool) -> u64 {
+    let newlines = bytes.iter().filter(|&&b| b == b'\n').count() as u64;
+    if complete && !bytes.is_empty() && bytes[bytes.len() - 1] != b'\n' {
+        newlines + 1
+    } else {
+        newlines
+    }
+}
+
+/// NUL anywhere in the sniff window marks non-text content.
+fn has_nul_prefix(bytes: &[u8]) -> bool {
+    bytes[..bytes.len().min(BINARY_SNIFF_BYTES)].contains(&0)
+}
+
+/// Read at most `cap` bytes; returns (bytes, original file length). `take`
+/// bounds the read so an oversized file never fills memory; callers detect
+/// truncation by comparing the length against the buffer.
+fn read_capped(path: &std::path::Path, cap: u64) -> std::io::Result<(Vec<u8>, u64)> {
+    use std::io::Read;
+    let mut file = fs::File::open(path)?;
+    let original_len = file.metadata()?.len();
+    let mut buf = Vec::new();
+    (&mut file).take(cap).read_to_end(&mut buf)?;
+    Ok((buf, original_len))
+}
+
+/// Reject every path shape that does not name a file relative to the project
+/// root: absolute, drive-relative, rooted (`/x` would replace the root on a
+/// Windows join), and `..` — even when `..` would stay inside the root.
+fn repo_relative_path(path: &str) -> Result<PathBuf, String> {
+    let p = std::path::Path::new(path);
+    let bad = p.is_absolute()
+        || p.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir | std::path::Component::RootDir | std::path::Component::Prefix(_)
+            )
+        });
+    if bad {
+        return Err("repo-relative path expected".into());
+    }
+    Ok(p.to_path_buf())
+}
+
+/// Resolve a repo-relative path against the project root and prove it stays
+/// inside: the canonical-ancestor technique (same as the open-path boundary)
+/// resolves symlinks in every existing component so a link can't smuggle the
+/// target out of the root. Returns the joined path for filesystem use.
+fn resolve_in_project(project_dir: &str, rel_path: &str) -> Result<PathBuf, String> {
+    let rel = repo_relative_path(rel_path)?;
+    let root = std::path::Path::new(project_dir);
+    let joined = root.join(&rel);
+    let canon_root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let resolved = canonical_ancestor(&joined).ok_or_else(|| "path not found".to_string())?;
+    if !resolved.starts_with(&canon_root) {
+        return Err("path traversal rejected".into());
+    }
+    Ok(joined)
+}
+
+fn file_stat_one(project_dir: &str, rel: &str) -> FileStat {
+    let degraded = FileStat { path: rel.to_string(), loc: None, size: 0, is_text: false };
+    let joined = match resolve_in_project(project_dir, rel) {
+        Ok(p) => p,
+        Err(_) => return degraded,
+    };
+    let size = fs::metadata(&joined).map(|m| m.len()).unwrap_or(0);
+    let Ok((buf, original_len)) = read_capped(&joined, LOC_READ_CAP) else {
+        return FileStat { path: rel.to_string(), loc: None, size, is_text: false };
+    };
+    // The extension check keeps is_text honest for NUL-free binary formats
+    // (svg, woff) that the sniff window alone would pass.
+    let is_text = !is_binary_extension(rel) && !has_nul_prefix(&buf);
+    let loc = if original_len <= LOC_READ_CAP {
+        Some(count_loc(&buf, buf.len() as u64 == original_len))
+    } else {
+        None
+    };
+    FileStat { path: rel.to_string(), loc, size, is_text }
+}
+
+/// Stats for a batch of repo-relative paths, one entry per request in request
+/// order. Individual failures (traversal, missing, unreadable) degrade that
+/// entry to loc: None / is_text: false / size 0 instead of failing the batch.
+pub fn file_stats_batch_impl(project_dir: &str, paths: &[String]) -> Vec<FileStat> {
+    paths.iter().take(MAX_STATS_BATCH).map(|rel| file_stat_one(project_dir, rel)).collect()
+}
+
+/// Size/line-count/textness for a batch of repo-relative paths.
+#[tauri::command]
+pub async fn file_stats_batch(project_dir: String, paths: Vec<String>) -> Result<Vec<FileStat>, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(file_stats_batch_impl(&project_dir, &paths)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TextFileContent {
+    pub path: String,
+    pub content: String,
+    pub loc: u64,
+    pub size: u64,
+    pub truncated: bool,
+}
+
+/// Tracked check + capped read for an already-contained path. Split from
+/// `read_text_file_checked` so tests can exercise tracking, the denylist, and
+/// the caps without an app handle.
+fn read_tracked_text(project_dir: &str, path: &str) -> Result<TextFileContent, String> {
+    // Only repo-tracked files are readable: agent-dir and app-data paths can
+    // never pass this even when containment would allow them.
+    if run_git(project_dir, &["ls-files", "--", path])
+        .map(|out| out.is_empty())
+        .unwrap_or(true)
+    {
+        return Err("file is not tracked in this repository".into());
+    }
+    if is_binary_extension(path) {
+        return Err("binary file type".into());
+    }
+    let joined = std::path::Path::new(project_dir).join(repo_relative_path(path)?);
+    let (buf, original_len) = read_capped(&joined, TEXT_READ_CAP).map_err(|e| format!("{path}: {e}"))?;
+    if has_nul_prefix(&buf) {
+        return Err("binary file".into());
+    }
+    Ok(TextFileContent {
+        path: path.to_string(),
+        content: String::from_utf8_lossy(&buf).into_owned(),
+        loc: count_loc(&buf, buf.len() as u64 == original_len),
+        size: original_len,
+        truncated: original_len > TEXT_READ_CAP,
+    })
+}
+
+/// Full read path for a renderer-supplied repo-relative path: shape check,
+/// then the same containment boundary (and executable denylist) that governs
+/// "open", then the tracked/denylist/read gates.
+pub fn read_text_file_checked<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    project_dir: &str,
+    path: &str,
+) -> Result<TextFileContent, String> {
+    let rel = repo_relative_path(path)?;
+    let joined = std::path::Path::new(project_dir).join(&rel);
+    open_path_allowed(app, &joined.to_string_lossy())?;
+    read_tracked_text(project_dir, path)
+}
+
+/// Read a tracked text file (repo-relative) from a project directory,
+/// truncated at 512 KiB.
+#[tauri::command]
+pub async fn read_text_file(
+    app: tauri::AppHandle,
+    project_dir: String,
+    path: String,
+) -> Result<TextFileContent, String> {
+    tauri::async_runtime::spawn_blocking(move || read_text_file_checked(&app, &project_dir, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -887,4 +1211,173 @@ mod tests {
         ]);
         assert_eq!(first_user_text(&path), Some("the real one".to_string()));
     }
+
+    // ---------- repo tree, diff summary, and text-file reads ----------
+
+    #[test]
+    fn numstat_parses_text_skips_binary_and_malformed() {
+        let row = parse_numstat_row("12\t3\tsrc/main.rs").expect("text row");
+        assert_eq!((row.path.as_str(), row.added, row.deleted), ("src/main.rs", 12, 3));
+        assert!(parse_numstat_row("-\t-\tlogo.png").is_none(), "binary rows are skipped");
+        assert!(parse_numstat_row("1\t2").is_none(), "missing path column");
+        assert!(parse_numstat_row("").is_none(), "empty line");
+        assert_eq!(parse_numstat_row("0\t0\tname with spaces.txt").unwrap().path, "name with spaces.txt");
+        assert_eq!(parse_numstat_row("7\t\tpath").unwrap().deleted, 0, "empty count parses as 0");
+    }
+
+    #[test]
+    fn diff_summary_real_repo_and_nonrepo() {
+        // The build directory lives inside this repo, so the checkout is real.
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let summary = git_diff_summary_impl(repo_root.to_str().unwrap());
+        assert!(summary.repo);
+        assert!(summary.files.iter().all(|f| !f.path.is_empty()));
+
+        let nonrepo = temp_dir("diff-nonrepo");
+        let s2 = git_diff_summary_impl(nonrepo.to_str().unwrap());
+        assert!(!s2.repo);
+        assert!(s2.files.is_empty());
+        assert!(!s2.truncated);
+        fs::remove_dir_all(nonrepo).unwrap();
+    }
+
+    #[test]
+    fn diff_summary_caps_at_200_entries() {
+        let dir = temp_dir("diff-cap");
+        run_git(dir.to_str().unwrap(), &["init"]).unwrap();
+        for i in 0..210 {
+            fs::write(dir.join(format!("f{i:03}.txt")), format!("v1-{i}\n")).unwrap();
+        }
+        run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
+        run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
+        for i in 0..210 {
+            fs::write(dir.join(format!("f{i:03}.txt")), format!("v2-{i}\n")).unwrap();
+        }
+        let summary = git_diff_summary_impl(dir.to_str().unwrap());
+        assert!(summary.repo);
+        assert!(summary.truncated, "210 changed files exceed the cap");
+        assert_eq!(summary.files.len(), MAX_DIFF_FILES);
+        assert!(summary.files.iter().all(|f| f.added == 1 && f.deleted == 1));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn repo_files_real_repo_lists_package_json() {
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let list = repo_files_impl(repo_root.to_str().unwrap());
+        assert!(list.repo);
+        assert!(!list.files.is_empty());
+        let pkg = list.files.iter().find(|f| f.path == "package.json").expect("package.json is tracked");
+        assert!(pkg.size > 0, "size comes from the file's metadata");
+        assert!(list.files.iter().all(|f| !is_binary_extension(&f.path)), "denylisted extensions are omitted even when tracked");
+
+        let nonrepo = temp_dir("files-nonrepo");
+        let l2 = repo_files_impl(nonrepo.to_str().unwrap());
+        assert!(!l2.repo);
+        assert!(l2.files.is_empty());
+        assert!(!l2.truncated);
+        fs::remove_dir_all(nonrepo).unwrap();
+    }
+
+    #[test]
+    fn binary_extension_denylist_matches_final_extension_case_insensitively() {
+        for hit in ["a.png", "photo.BMP", "x/y/z.svg", "archive.tar.gz", "site.woff2", "app.class", "OLD.SUO", "core.dylib", "movie.mkv", "db.sqlite", "run.7z", "a.tar"] {
+            assert!(is_binary_extension(hit), "{hit} must be denied");
+        }
+        for miss in ["main.rs", "notes.txt", "README", ".gitignore", "style.css", "pkg.json", "dir.d/file", "makefile"] {
+            assert!(!is_binary_extension(miss), "{miss} must be allowed");
+        }
+    }
+
+    #[test]
+    fn count_loc_counts_trailing_unterminated_line_only_when_complete() {
+        assert_eq!(count_loc(b"a\nb\n", true), 2);
+        assert_eq!(count_loc(b"a\nb", true), 2, "unterminated final line counts when complete");
+        assert_eq!(count_loc(b"a\nb", false), 1, "truncated tail line must not count");
+        assert_eq!(count_loc(b"", true), 0);
+        assert_eq!(count_loc(b"\n", true), 1);
+        assert_eq!(count_loc(b"a", true), 1);
+        assert_eq!(count_loc(b"a", false), 0);
+    }
+
+    #[test]
+    fn file_stats_batch_reports_text_sizes_and_degrades_failures() {
+        let dir = temp_dir("stats");
+        fs::write(dir.join("trailing.txt"), "one\ntwo\n").unwrap();
+        fs::write(dir.join("notrail.txt"), "one\ntwo").unwrap();
+        fs::write(dir.join("empty.txt"), "").unwrap();
+        fs::write(dir.join("nul.txt"), b"a\0b\n").unwrap();
+        fs::write(dir.join("img.png"), b"\x89PNG\r\n\x1a\n").unwrap();
+        fs::File::create(dir.join("big.txt")).unwrap().set_len(LOC_READ_CAP + 1).unwrap();
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        fs::write(dir.join("sub").join("inner.txt"), "x\n").unwrap();
+
+        let paths: Vec<String> = [
+            "trailing.txt", "notrail.txt", "empty.txt", "nul.txt", "img.png",
+            "big.txt", "sub/inner.txt", "missing.txt", "../outside.txt",
+        ].iter().map(|s| s.to_string()).collect();
+        // Results are one-per-request in request order.
+        let stats = file_stats_batch_impl(dir.to_str().unwrap(), &paths);
+        assert_eq!(stats.len(), paths.len());
+        let s = |i: usize| &stats[i];
+        assert_eq!((s(0).loc, s(0).is_text, s(0).size), (Some(2), true, 8));
+        assert_eq!((s(1).loc, s(1).is_text, s(1).size), (Some(2), true, 7), "no trailing newline adds the last line");
+        assert_eq!((s(2).loc, s(2).is_text, s(2).size), (Some(0), true, 0));
+        assert_eq!(s(3).is_text, false, "NUL in the sniff window marks binary");
+        assert_eq!(s(3).loc, Some(1));
+        assert_eq!(s(4).is_text, false, "denylisted extension is binary even without NULs");
+        assert_eq!((s(5).loc, s(5).size), (None, LOC_READ_CAP + 1), "oversized file gets no loc");
+        assert_eq!((s(6).loc, s(6).is_text, s(6).size), (Some(1), true, 2), "subdirectory paths resolve");
+        assert_eq!((s(7).loc, s(7).is_text, s(7).size), (None, false, 0), "missing file degrades");
+        assert_eq!((s(8).loc, s(8).is_text, s(8).size), (None, false, 0), "traversal degrades");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn file_stats_batch_caps_input_at_200() {
+        let paths: Vec<String> = (0..205).map(|i| format!("f{i}.txt")).collect();
+        let stats = file_stats_batch_impl(".", &paths);
+        assert_eq!(stats.len(), MAX_STATS_BATCH);
+        assert!(stats.iter().all(|s| s.loc.is_none()), "nonexistent entries degrade without failing");
+    }
+
+    #[test]
+    fn repo_relative_path_rejects_non_relative_shapes() {
+        assert!(repo_relative_path("src/main.rs").is_ok());
+        assert!(repo_relative_path("./src/main.rs").is_ok());
+        for bad in ["C:\\Windows\\evil.txt", "/etc/passwd", "..\\evil.txt", "src/../../../etc/passwd", "a/../b", "C:relative.txt"] {
+            assert!(repo_relative_path(bad).is_err(), "{bad} must be rejected");
+        }
+    }
+
+    #[test]
+    fn read_tracked_text_caps_size_and_refuses_binary_extensions() {
+        let dir = temp_dir("text-caps");
+        run_git(dir.to_str().unwrap(), &["init"]).unwrap();
+        fs::write(dir.join("small.txt"), "hi").unwrap();
+        fs::write(dir.join("fake.png"), [0u8, 1, 2]).unwrap();
+        let big = b"a\n".repeat(300 * 1024); // 600 KiB, past the 512 KiB cap
+        fs::write(dir.join("big.txt"), &big).unwrap();
+        run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
+        run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
+
+        let small = read_tracked_text(dir.to_str().unwrap(), "small.txt").unwrap();
+        assert_eq!(small.content, "hi");
+        assert_eq!(small.loc, 1);
+        assert!(!small.truncated);
+        assert_eq!(small.size, 2);
+
+        let big = read_tracked_text(dir.to_str().unwrap(), "big.txt").unwrap();
+        assert!(big.truncated);
+        assert_eq!(big.content.len() as u64, TEXT_READ_CAP, "content is capped, not refused");
+        assert_eq!(big.loc, TEXT_READ_CAP / 2, "truncated tail line must not count");
+        assert_eq!(big.size, (300 * 1024 * 2) as u64, "size reports the original length");
+
+        let err = read_tracked_text(dir.to_str().unwrap(), "fake.png").unwrap_err();
+        assert!(err.contains("binary file type"), "{err}");
+        let err = read_tracked_text(dir.to_str().unwrap(), "never-committed.txt").unwrap_err();
+        assert!(err.contains("not tracked"), "{err}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }
