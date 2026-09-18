@@ -5,6 +5,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning
 follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 `src-tauri/tauri.conf.json`.
 
+## [Unreleased]
+
+### Added
+- Title-bar logo returns to the start view: the active project's pi process
+  keeps running in the background (mid-stream turns continue feeding the
+  sidebar), and switching back restores the transcript, queue, and extension
+  state. The right panel collapses at the start view by default — not
+  locked: a dock button reopens it, and entering a project restores it.
+- Start-view composer: attachment picker with removable chips and image
+  thumbnails, clipboard image paste (20 MiB cap), and a send arrow running
+  the folder-picker flow (images in the images param, text files inlined as
+  fenced blocks). A rejected first prompt recovers its attachments into the
+  destination composer draft alongside the text.
+- Per-project settings card: each row in the sidebar's project-selector
+  dropdown gains a hover-revealed gear, and right-clicking a project row
+  opens a settings card scoped to that project (rename, icon, color,
+  hide/restore, open folder) without switching to it; "Advanced settings…"
+  hops into the full modal.
+- Dedicated Key bindings section in Settings: every app shortcut lives in a
+  registry; click Change and press a combination (Ctrl/Cmd + key) to
+  rebind; a duplicate chord is named after the action that already owns it
+  and is never applied; overrides persist in GUI state; Reset all restores
+  the defaults. The File/View menu hint-keys render the effective bindings.
+- Per-session activity indicator: the status bar's global idle/working pill
+  is replaced by a per-session "working" chip (pulsing accent dot) in each
+  session row, right of the session's timestamp — session-specific cues for
+  multiple simultaneously running sessions across projects.
+
 ## [0.6.2] — 2026-09-18
 
 ### Added
