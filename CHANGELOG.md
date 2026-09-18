@@ -33,6 +33,36 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   session row, right of the session's timestamp — session-specific cues for
   multiple simultaneously running sessions across projects.
 
+### Fixed
+- Overlay ladders close topmost-only: Escape now steps aside for higher
+  layers everywhere (settings modal, both cards, the file viewer, the About
+  card), the Settings modal honors Escape and confirms before discarding
+  unsaved edits, and keyboard accelerators stand down while a modal owns
+  the screen.
+- At the start view, project-scoped actions can no longer reach the project
+  running in the background: new chat, runtime settings, compaction, abort,
+  clone, and export stand down with a visible note (runtime controls are
+  disabled with an explanation), and the Status dock shows its empty state
+  instead of the backgrounded project's task list while pi identity and
+  extension checks keep resolving.
+- A session's "working" chip settles when its pi process exits (clean stop
+  → idle, crash → attention) and a restart starts it clean; previously the
+  chip kept pulsing on a dead process until the next full turn.
+- Key-binding capture no longer disarms itself the moment it starts, and
+  exotic keys (Dead/Process, Ctrl+plus) are canonicalized before saving.
+- Start-view composer: staged attachments survive returning to the start
+  view and count in the update-check audit; nothing can be typed, pasted,
+  or removed while a project is opening (a chip removed mid-flight no
+  longer still delivers or resurrects); the paperclip stands down during
+  an update install.
+- Per-project settings: "Advanced settings…" edits the chosen project's own
+  configuration through that project's pi process — even from the start
+  view or with a different project in the foreground — instead of silently
+  editing whichever project was active.
+- Scope filter resets when its project is hidden; menu hint keys reflect
+  effective bindings; a stale-view request can no longer land in the global
+  error banner.
+
 ## [0.6.2] — 2026-09-18
 
 ### Added
