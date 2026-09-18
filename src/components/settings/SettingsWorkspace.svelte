@@ -9,7 +9,7 @@
     setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, abortRetry,
     exportSessionHtml, cloneSession, projectMeta, sessions, updateProjectMeta,
     forgetProject, restoreProject, chooseProject, autoRetry, refreshCommands,
-    statusNote, navigating, updateInstallLock,
+    statusNote, transientNote, navigating, updateInstallLock,
   } from "../../lib/stores";
   import { companionAvailable, bindManagement, agentDirStore, isCompanionCommand } from "../../lib/settings/mgmt";
   import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle, projectIconLabel } from "../../lib/project-icons";
@@ -192,17 +192,20 @@
     const v = getPath(draft, path);
     return v === undefined || v === null ? "" : String(v);
   }
-  function setFieldNum(path: string, v: string) {
+  function rejectBadNumber(path: string, input: HTMLInputElement): boolean {
+    const v = input.value.trim();
+    // Incomplete numeric typing has value="" too; validity distinguishes it
+    // from a deliberate clear before that clear can remove the setting.
+    if (!input.validity.badInput && (v === "" || Number.isFinite(Number(v)))) return false;
+    transientNote(`Invalid number for ${path} — value kept`, 6000);
+    return true;
+  }
+  function setFieldNum(path: string, input: HTMLInputElement) {
+    if (rejectBadNumber(path, input)) return;
+    const v = input.value;
     if (v.trim() === "") { markInherit(path); return; }
     inheritKeys = inheritKeys.filter((k) => k !== path);
     const n = Number(v);
-    if (Number.isNaN(n)) {
-      // Garbage input must not silently become "inherit" — keep the stored
-      // value and tell the user.
-      statusNote.set(`⚠ "${v.trim()}" is not a number for ${path} — value kept as ${fieldNum(path) || "(inherit)"}`);
-      setTimeout(() => statusNote.set(""), 6000);
-      return;
-    }
     setPath(draft, path, n);
     draft = { ...draft };
   }
@@ -417,8 +420,9 @@
     // would wipe it, so hold off. The timer clears itself when it fires, so
     // the next store change (the rename ack itself, or a session switch)
     // resyncs the field normally.
+    const canonicalName = $rpcState?.sessionName ?? "";
     if (renameTimer) return;
-    sessionName = $rpcState?.sessionName ?? "";
+    sessionName = canonicalName;
   });
 
   $effect(() => {
@@ -566,14 +570,14 @@
           <span class="with-chip">Compaction <span class="chip src">{sourceChip("compaction.enabled")}</span> <span class="chip">defaults: on · 16384 · 20000</span></span>
           <div class="inline">
             <label class="check"><input type="checkbox" checked={fieldBool("compaction.enabled")} onchange={(e) => setFieldBool("compaction.enabled", e.currentTarget.checked)} /> enabled</label>
-            <input class="num" type="number" value={fieldNum("compaction.reserveTokens")} oninput={(e) => setFieldNum("compaction.reserveTokens", e.currentTarget.value)} title="reserveTokens" />
-            <input class="num" type="number" value={fieldNum("compaction.keepRecentTokens")} oninput={(e) => setFieldNum("compaction.keepRecentTokens", e.currentTarget.value)} title="keepRecentTokens" />
+            <input class="num" type="number" value={fieldNum("compaction.reserveTokens")} oninput={(e) => setFieldNum("compaction.reserveTokens", e.currentTarget)} title="reserveTokens" />
+            <input class="num" type="number" value={fieldNum("compaction.keepRecentTokens")} oninput={(e) => setFieldNum("compaction.keepRecentTokens", e.currentTarget)} title="keepRecentTokens" />
           </div>
         </div>
         <div class="row" class:filtered={!matchesSearch("branch summary", "branchSummary")}>
           <span class="with-chip">Branch summary <span class="chip">defaults: 16384 · no skip</span></span>
           <div class="inline">
-            <input class="num" type="number" value={fieldNum("branchSummary.reserveTokens")} oninput={(e) => setFieldNum("branchSummary.reserveTokens", e.currentTarget.value)} title="reserveTokens" />
+            <input class="num" type="number" value={fieldNum("branchSummary.reserveTokens")} oninput={(e) => setFieldNum("branchSummary.reserveTokens", e.currentTarget)} title="reserveTokens" />
             <label class="check"><input type="checkbox" checked={fieldBool("branchSummary.skipPrompt")} onchange={(e) => setFieldBool("branchSummary.skipPrompt", e.currentTarget.checked)} /> skipPrompt</label>
           </div>
         </div>
@@ -581,16 +585,16 @@
           <span class="with-chip">Agent retry <span class="chip">defaults: on · 3 · 2000ms (2s→4s→8s)</span> <span class="chip src">{sourceChip("retry.maxRetries")}</span></span>
           <div class="inline">
             <label class="check"><input type="checkbox" checked={fieldBool("retry.enabled")} onchange={(e) => setFieldBool("retry.enabled", e.currentTarget.checked)} /> enabled</label>
-            <input class="num" type="number" value={fieldNum("retry.maxRetries")} oninput={(e) => setFieldNum("retry.maxRetries", e.currentTarget.value)} title="maxRetries" />
-            <input class="num" type="number" value={fieldNum("retry.baseDelayMs")} oninput={(e) => setFieldNum("retry.baseDelayMs", e.currentTarget.value)} title="baseDelayMs" />
+            <input class="num" type="number" value={fieldNum("retry.maxRetries")} oninput={(e) => setFieldNum("retry.maxRetries", e.currentTarget)} title="maxRetries" />
+            <input class="num" type="number" value={fieldNum("retry.baseDelayMs")} oninput={(e) => setFieldNum("retry.baseDelayMs", e.currentTarget)} title="baseDelayMs" />
           </div>
         </div>
         <div class="row" class:filtered={!matchesSearch("provider retry timeout", "retry.provider")}>
           <span class="with-chip">Provider retries <span class="chip">timeoutMs / maxRetries / maxRetryDelayMs — keep maxRetries 0 unless needed</span></span>
           <div class="inline">
-            <input class="num" type="number" value={fieldNum("retry.provider.timeoutMs")} oninput={(e) => setFieldNum("retry.provider.timeoutMs", e.currentTarget.value)} title="timeoutMs" />
-            <input class="num" type="number" value={fieldNum("retry.provider.maxRetries")} oninput={(e) => setFieldNum("retry.provider.maxRetries", e.currentTarget.value)} title="maxRetries" />
-            <input class="num" type="number" value={fieldNum("retry.provider.maxRetryDelayMs")} oninput={(e) => setFieldNum("retry.provider.maxRetryDelayMs", e.currentTarget.value)} title="maxRetryDelayMs" />
+            <input class="num" type="number" value={fieldNum("retry.provider.timeoutMs")} oninput={(e) => setFieldNum("retry.provider.timeoutMs", e.currentTarget)} title="timeoutMs" />
+            <input class="num" type="number" value={fieldNum("retry.provider.maxRetries")} oninput={(e) => setFieldNum("retry.provider.maxRetries", e.currentTarget)} title="maxRetries" />
+            <input class="num" type="number" value={fieldNum("retry.provider.maxRetryDelayMs")} oninput={(e) => setFieldNum("retry.provider.maxRetryDelayMs", e.currentTarget)} title="maxRetryDelayMs" />
           </div>
         </div>
         <div class="row" class:filtered={!matchesSearch("transport timeout", "transport httpIdleTimeoutMs websocketConnectTimeoutMs")}>
@@ -600,8 +604,8 @@
               <option value="">(inherited)</option>
               <option value="auto">auto</option><option value="sse">sse</option><option value="websocket">websocket</option><option value="websocket-cached">websocket-cached</option>
             </select>
-            <input class="num" type="number" value={fieldNum("httpIdleTimeoutMs")} oninput={(e) => setFieldNum("httpIdleTimeoutMs", e.currentTarget.value)} title="httpIdleTimeoutMs (0 disables)" />
-            <input class="num" type="number" value={fieldNum("websocketConnectTimeoutMs")} oninput={(e) => setFieldNum("websocketConnectTimeoutMs", e.currentTarget.value)} title="websocketConnectTimeoutMs" />
+            <input class="num" type="number" value={fieldNum("httpIdleTimeoutMs")} oninput={(e) => setFieldNum("httpIdleTimeoutMs", e.currentTarget)} title="httpIdleTimeoutMs (0 disables)" />
+            <input class="num" type="number" value={fieldNum("websocketConnectTimeoutMs")} oninput={(e) => setFieldNum("websocketConnectTimeoutMs", e.currentTarget)} title="websocketConnectTimeoutMs" />
           </div>
         </div>
         <div class="row" class:filtered={!matchesSearch("images resize block", "images")}>

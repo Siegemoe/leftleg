@@ -113,6 +113,7 @@ async function runApplyUpdate(): Promise<void> {
   const update = get(updateAvailable);
   if (!update) return;
   let nativePrepared = false;
+  let ownsUpdateLock = false;
   try {
     updateError.set("");
     if (downloadedUpdate !== update) {
@@ -125,10 +126,17 @@ async function runApplyUpdate(): Promise<void> {
 
     // Take the frontend lock before the synchronous blocker snapshot so new
     // work cannot enter between the safety check and native shutdown.
+    if (get(updateInstallLock)) {
+      updateStatus.set("ready");
+      updateError.set("Update downloaded. Wait for the Pi update to finish before installing.");
+      return;
+    }
     updateInstallLock.set(true);
+    ownsUpdateLock = true;
     const blockers = collectUpdateInstallBlockers();
     if (blockers.length > 0) {
       updateInstallLock.set(false);
+      ownsUpdateLock = false;
       updateStatus.set("ready");
       updateError.set(blockerMessage(blockers));
       return;
@@ -148,13 +156,17 @@ async function runApplyUpdate(): Promise<void> {
     await api.cancelUpdateShutdown();
     nativePrepared = false;
     updateInstallLock.set(false);
+    ownsUpdateLock = false;
   } catch (error) {
     if (nativePrepared) {
       try { await api.cancelUpdateShutdown(); } catch { /* preserve the installer error */ }
     }
-    updateInstallLock.set(false);
     updateStatus.set("error");
     updateError.set(`Update installation failed: ${errorText(error)}`);
+  } finally {
+    // A failed download never acquired the lock and must not unlock the
+    // startup Pi updater while its npm pass is still running.
+    if (ownsUpdateLock) updateInstallLock.set(false);
   }
 }
 

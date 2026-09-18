@@ -51,6 +51,9 @@ fn read_text_file_enforces_containment_tracked_and_binary_gates() {
     fs::write(outside.join("secret.md"), "x").unwrap();
     let err = leftleg_lib::read_text_file_checked(&app, outside.to_str().unwrap(), "secret.md").unwrap_err();
     assert!(err.contains("outside"), "{err}");
+    let err = leftleg_lib::project_dir_allowed(&app, outside.to_str().unwrap()).unwrap_err();
+    assert!(err.contains("outside"), "{err}");
+    assert!(leftleg_lib::project_dir_allowed(&app, repo_root.to_str().unwrap()).is_ok());
 
     // A read is not a run: tracked source with an OS-open-denied extension
     // (.js opens WScript with no prompt) must still be viewable text, while

@@ -335,6 +335,10 @@ impl PiProcess {
     pub fn send_line(&self, line: &str) -> Result<(), String> {
         if self.exited.load(Ordering::SeqCst) { return Err(self.exit_error.lock().unwrap().clone().unwrap_or("pi process exited".into())); }
         let mut guard = self.stdin.lock().unwrap();
+        // A writer can wait behind another blocked write. Recheck after taking
+        // the lock so a request whose deadline poisoned the transport cannot
+        // dispatch later when that older writer finally releases it.
+        if self.exited.load(Ordering::SeqCst) { return Err(self.exit_error.lock().unwrap().clone().unwrap_or("pi process exited".into())); }
         if let Some(stdin) = guard.as_mut() {
             stdin
                 .write_all(line.as_bytes())
@@ -348,6 +352,25 @@ impl PiProcess {
 
     pub fn is_alive(&self) -> bool {
         !self.exited.load(Ordering::SeqCst) && matches!(self.child.lock().unwrap().try_wait(), Ok(None))
+    }
+
+    /// Make a stalled stdin transport unavailable and stop its process tree
+    /// without waiting for the stdin mutex. A queued writer may own or be
+    /// waiting on that mutex; send_line's post-lock check prevents it from
+    /// delivering after the caller has timed out.
+    fn poison_transport(&self, error: &str) {
+        *self.exit_error.lock().unwrap() = Some(error.to_string());
+        self.exited.store(true, Ordering::SeqCst);
+        self.pending.clear();
+        if let Ok(mut child) = self.child.lock() {
+            #[cfg(windows)]
+            {
+                let _ = Command::new("taskkill.exe").args(["/PID", &child.id().to_string(), "/T", "/F"])
+                    .creation_flags(CREATE_NO_WINDOW).stdout(Stdio::null()).stderr(Stdio::null()).status();
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 
     pub fn kill(&self) {
@@ -395,8 +418,9 @@ pub fn wait_response(
 /// deadline covers the write phase too: pi that stopped reading stdin would
 /// otherwise block the send forever and the response timeout would never even
 /// start. The write runs on its own thread; if it is still blocked at expiry
-/// the pending entry is dropped and only a deliberate stop/kill (which closes
-/// the pipes) can free that pinned writer.
+/// the transport is poisoned and its process tree is stopped. This is stricter
+/// than a response timeout: once write delivery is ambiguous, keeping the
+/// process alive could execute the command after the UI reports failure.
 pub fn request(
     proc: &Arc<PiProcess>,
     mut cmd: Value,
@@ -434,7 +458,9 @@ pub fn request(
         }
         Err(_) => {
             proc.pending.remove(&id);
-            return Err("timed out writing to pi (process may be stalled)".into());
+            let error = "timed out writing to pi (process was stopped to prevent delayed delivery)";
+            proc.poison_transport(error);
+            return Err(error.into());
         }
     }
     match wait_response(rx, deadline.saturating_duration_since(std::time::Instant::now())) {
@@ -471,6 +497,39 @@ mod tests {
         assert!(result.unwrap_err().contains("stdin closed"));
         assert!(proc.pending.remove("test").is_none());
         assert!(request(&proc, Value::Null, Duration::from_millis(10)).unwrap_err().contains("object"));
+    }
+
+    #[test]
+    fn write_timeout_never_dispatches_a_queued_prompt_later() {
+        use std::io::BufRead;
+        let marker = std::env::temp_dir().join(format!("leftleg-late-rpc-{}", uuid::Uuid::new_v4()));
+        let mut command = Command::new("node");
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+        let mut child = command.args(["-e", "process.stdout.write('ready\\n'); require('readline').createInterface({input:process.stdin}).on('line',line=>require('fs').writeFileSync(process.argv[1],line));"])
+            .arg(&marker).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+        let mut ready = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready).unwrap();
+        assert_eq!(ready, "ready\n");
+        let stdin = child.stdin.take();
+        let proc = Arc::new(PiProcess {
+            id: 1, cwd: String::new(), child: Arc::new(Mutex::new(child)),
+            stdin: Arc::new(Mutex::new(stdin)), pending: Arc::new(PendingMap::default()),
+            seq: AtomicU64::new(1), expecting_exit: AtomicBool::new(false), exited: AtomicBool::new(false), exit_error: Mutex::new(None),
+        });
+        // Simulate another writer holding the pipe until after this request's
+        // deadline. A timed-out queued prompt must never reach the child.
+        let held_stdin = proc.stdin.lock().unwrap();
+        let result = request(&proc, serde_json::json!({"type":"prompt","message":"side effect"}), Duration::from_millis(50));
+        let rejected_further_work = proc.exited.load(Ordering::SeqCst);
+        drop(held_stdin);
+        std::thread::sleep(Duration::from_millis(200));
+        proc.kill();
+        let dispatched = marker.exists();
+        let _ = std::fs::remove_file(&marker);
+        assert!(result.unwrap_err().contains("timed out writing"));
+        assert!(!dispatched, "timed-out prompt was dispatched after its caller received failure");
+        assert!(rejected_further_work, "stalled transport must reject later work");
     }
 
     #[test]

@@ -48,10 +48,12 @@
   // null and would corrupt the config file. Mirror SettingsWorkspace's
   // setFieldNum guard — refuse non-finite values with a visible note and skip
   // the write entirely. Returns true when the value was rejected.
-  function rejectBadNumber(label: string, raw: string): boolean {
-    const v = raw.trim();
-    if (v === "" || Number.isFinite(Number(v))) return false;
-    statusNote.set(`⚠ "${v}" is not a number for ${label} — value kept`);
+  function rejectBadNumber(label: string, input: HTMLInputElement): boolean {
+    const v = input.value.trim();
+    // Bad numeric typing is exposed as value=""; only a genuinely empty
+    // control may be interpreted as removing the configured value.
+    if (!input.validity.badInput && (v === "" || Number.isFinite(Number(v)))) return false;
+    statusNote.set(`Invalid number for ${label} — value kept`);
     setTimeout(() => statusNote.set(""), 6000);
     return true;
   }
@@ -290,7 +292,7 @@
       <div class="frow">
         <span class="flabel">{f.label}</span>
         {#if f.type === "number"}
-          <input class="num" type="number" value={String(nsValue("settings-global", "pi-plan", f.path) ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (rejectBadNumber(f.label, v)) return; void savePlanField(f.path, v === "" ? undefined : Number(v)); }} />
+          <input class="num" type="number" value={String(nsValue("settings-global", "pi-plan", f.path) ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (rejectBadNumber(f.label, e.currentTarget)) return; void savePlanField(f.path, v === "" ? undefined : Number(v)); }} />
         {:else}
           <input class="grow mono" value={String(nsValue("settings-global", "pi-plan", f.path) ?? "")} onchange={(e) => void savePlanField(f.path, e.currentTarget.value)} placeholder="(absent)" />
         {/if}
@@ -361,7 +363,7 @@
     <div class="frow wrap">
       {#each lensNumbers as n (n)}
         <span class="flabel">{n}</span>
-        <input class="num" type="number" value={String(files["lens-project"]?.data?.[n] ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (rejectBadNumber(n, v)) return; void saveLensField(n, v === "" ? undefined : Number(v)); }} />
+        <input class="num" type="number" value={String(files["lens-project"]?.data?.[n] ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (rejectBadNumber(n, e.currentTarget)) return; void saveLensField(n, v === "" ? undefined : Number(v)); }} />
       {/each}
     </div>
     <p class="hint">includePatterns/excludePatterns and the separate piLensRenderer TUI switch: pending (coverage matrix). The renderer switch affects terminal Lens, not Leftleg.</p>
@@ -387,7 +389,7 @@
     <div class="frow wrap">
       {#each distillNumbers as n (n)}
         <span class="flabel">{n}</span>
-        <input class="num" type="number" value={String(files["distill-config"]?.data?.[n] ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (rejectBadNumber(n, v)) return; void saveDistillField(n, v === "" ? undefined : Number(v)); }} />
+        <input class="num" type="number" value={String(files["distill-config"]?.data?.[n] ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (rejectBadNumber(n, e.currentTarget)) return; void saveDistillField(n, v === "" ? undefined : Number(v)); }} />
       {/each}
       <label class="check"><input type="checkbox" checked={(files["distill-config"]?.data?.summarizeErrors as boolean) ?? false} onchange={(e) => void saveDistillField("summarizeErrors", e.currentTarget.checked)} /> summarizeErrors</label>
     </div>
@@ -461,7 +463,7 @@
       <div class="frow">
         <span class="flabel">{f.label}</span>
         {#if f.type === "number"}
-          <input class="num" type="number" value={String(nsValue("settings-global", "pi-ref-tools", f.path) ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (rejectBadNumber(f.label, v)) return; void nsSave("settings-global", "pi-ref-tools", { [f.path]: v === "" ? undefined : Number(v) }); }} />
+          <input class="num" type="number" value={String(nsValue("settings-global", "pi-ref-tools", f.path) ?? "")} onchange={(e) => { const v = e.currentTarget.value; if (rejectBadNumber(f.label, e.currentTarget)) return; void nsSave("settings-global", "pi-ref-tools", { [f.path]: v === "" ? undefined : Number(v) }); }} />
         {:else}
           <input class="grow mono" value={String(nsValue("settings-global", "pi-ref-tools", f.path) ?? "")} onchange={(e) => void nsSave("settings-global", "pi-ref-tools", { [f.path]: e.currentTarget.value || undefined })} placeholder={f.hint} />
         {/if}

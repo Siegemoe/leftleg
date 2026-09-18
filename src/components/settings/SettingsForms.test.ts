@@ -102,3 +102,56 @@ it("sends the actual typed runtime session name", async () => {
   await vi.advanceTimersByTimeAsync(701);
   expect(api.piRequest).toHaveBeenCalledWith({ type: "set_session_name", name: "new title" }, 30, "/project", undefined);
 });
+
+it("keeps tracking the runtime session after a refresh during rename debounce", async () => {
+  instance = mount(SettingsWorkspace, { target: host }); await settle();
+  button(host, "Current runtime").click(); flushSync();
+  const input = host.querySelector<HTMLInputElement>('input[placeholder="session name"]')!;
+  vi.useFakeTimers();
+  input.value = "new title";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+  rpcState.set({ sessionFile: "/session", sessionName: "old", thinkingLevel: "high" } as never);
+  flushSync();
+  expect(input.value).toBe("new title");
+  await vi.advanceTimersByTimeAsync(701);
+  rpcState.set({ sessionFile: "/other-session", sessionName: "Other session" } as never);
+  flushSync();
+  expect(input.value).toBe("Other session");
+});
+
+// WebView2 exposes incomplete numeric typing (for example `1e`) as an empty
+// value with badInput=true. JSDOM cannot type that state, so preserve the
+// browser's value/validity contract explicitly.
+function badNumericInput(input: HTMLInputElement) {
+  input.value = "";
+  Object.defineProperty(input, "validity", { configurable: true, value: { badInput: true } });
+}
+
+it("does not clear a runtime setting for invalid numeric typing, but allows deliberate clearing", async () => {
+  doc.compaction = { reserveTokens: 1234 };
+  instance = mount(SettingsWorkspace, { target: host }); await settle();
+  const input = host.querySelector<HTMLInputElement>('input[title="reserveTokens"]')!;
+  badNumericInput(input);
+  input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  expect(button(host, "Apply & verify").disabled).toBe(true);
+  expect(doc.compaction.reserveTokens).toBe(1234);
+  Object.defineProperty(input, "validity", { configurable: true, value: { badInput: false } });
+  input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  expect(button(host, "Apply & verify").disabled).toBe(false);
+});
+
+it("does not write a package numeric reset for invalid typing, but allows deliberate clearing", async () => {
+  doc["pi-plan"] = { goal: { maxTurns: 12 } };
+  instance = mount(PackageForms, { target: host });
+  const detail = await openPackage("Plan");
+  const input = detail.querySelector<HTMLInputElement>('input[type="number"]')!;
+  expect(input.value).toBe("12");
+  mocks.request.mockClear();
+  badNumericInput(input);
+  input.dispatchEvent(new Event("change", { bubbles: true })); await settle();
+  expect(mocks.request.mock.calls.some(([op]) => op === "write")).toBe(false);
+  Object.defineProperty(input, "validity", { configurable: true, value: { badInput: false } });
+  input.dispatchEvent(new Event("change", { bubbles: true })); await settle();
+  expect(mocks.request.mock.calls.some(([op]) => op === "write")).toBe(true);
+});

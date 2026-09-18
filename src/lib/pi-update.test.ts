@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writable } from "svelte/store";
 
 const mocks = vi.hoisted(() => {
   // Minimal writable stand-in for the navigating store so tests can put the
@@ -30,7 +31,7 @@ vi.mock("./stores", () => ({
   guiStateValue: mocks.guiStateValue,
   collectUpdateInstallBlockers: mocks.collectUpdateInstallBlockers,
   navigating: mocks.navigating,
-  updateInstallLock: { subscribe: (fn: (v: boolean) => void) => { fn(false); return () => {}; } },
+  updateInstallLock: writable(false),
 }));
 
 import { integrityGate, runStartupPiUpdate, summarizeUpdateOutput } from "./pi-update";

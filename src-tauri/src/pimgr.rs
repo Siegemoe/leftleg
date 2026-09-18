@@ -10,10 +10,69 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 #[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const UPDATE_TIMEOUT_SECS: u64 = 600;
+
+/// Own every process spawned by the updater. This remains a usable kill
+/// handle after the direct Node child exits while an npm grandchild still
+/// holds stdout/stderr open.
+#[cfg(windows)]
+struct UpdateJob(windows_sys::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl UpdateJob {
+    fn attach(child: &std::process::Child) -> Result<Self, String> {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, HANDLE},
+            System::JobObjects::{
+                AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+                SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            },
+        };
+        unsafe {
+            let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if handle.is_null() {
+                return Err(format!("creating pi update job: {}", std::io::Error::last_os_error()));
+            }
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            if SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                (&info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            ) == 0 {
+                let error = std::io::Error::last_os_error();
+                CloseHandle(handle);
+                return Err(format!("configuring pi update job: {error}"));
+            }
+            if AssignProcessToJobObject(handle, child.as_raw_handle() as HANDLE) == 0 {
+                let error = std::io::Error::last_os_error();
+                CloseHandle(handle);
+                return Err(format!("assigning pi update job: {error}"));
+            }
+            Ok(Self(handle))
+        }
+    }
+
+    fn terminate(&self) {
+        unsafe {
+            let _ = windows_sys::Win32::System::JobObjects::TerminateJobObject(self.0, 1);
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for UpdateJob {
+    fn drop(&mut self) {
+        unsafe { let _ = windows_sys::Win32::Foundation::CloseHandle(self.0); }
+    }
+}
 
 /// Flags the webview may pass to `pi update`. Kept minimal: the startup
 /// updater uses `--all`; the others cover narrower passes we may drive later.
@@ -93,7 +152,6 @@ pub fn run_pi_manager_impl(flags: Vec<String>) -> Result<PiManagerResult, String
 /// full pipe; on timeout the whole tree is killed, which closes the pipe write
 /// ends and lets the readers finish before we report.
 fn run_pi_update(flags: Vec<String>) -> Result<PiManagerResult, String> {
-    use std::io::Read;
     validate_update_flags(&flags)?;
     let shim = resolve_pi_shim()?;
     let entry = crate::pi::pi_entry_from_shim(&shim)?;
@@ -102,66 +160,75 @@ fn run_pi_update(flags: Vec<String>) -> Result<PiManagerResult, String> {
     cmd.arg(entry).arg("update").args(&flags);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
+    run_update_command(cmd, Duration::from_secs(UPDATE_TIMEOUT_SECS))
+}
+
+fn run_update_command(mut cmd: Command, timeout: Duration) -> Result<PiManagerResult, String> {
+    use std::io::Read;
     let mut child = cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("spawning pi update: {e}"))?;
-    // The child holds its own process handle, so its PID cannot be reused
-    // before we reap it — taskkill by PID below is safe.
-    let pid = child.id();
+    #[cfg(windows)]
+    let job = match UpdateJob::attach(&child) {
+        Ok(job) => job,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
     let mut stdout_pipe = child.stdout.take().ok_or("pi update stdout unavailable")?;
     let mut stderr_pipe = child.stderr.take().ok_or("pi update stderr unavailable")?;
-    let out_reader = std::thread::spawn(move || {
+    let (out_tx, out_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = stdout_pipe.read_to_end(&mut buf);
-        buf
+        let _ = out_tx.send(buf);
     });
-    let err_reader = std::thread::spawn(move || {
+    let (err_tx, err_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = stderr_pipe.read_to_end(&mut buf);
-        buf
+        let _ = err_tx.send(());
     });
-    let deadline = std::time::Instant::now() + Duration::from_secs(UPDATE_TIMEOUT_SECS);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if std::time::Instant::now() >= deadline {
-                    // Tree-kill first: npm grandchildren can outlive a plain
-                    // kill and would keep the pipe readers blocked forever.
+    let deadline = std::time::Instant::now() + timeout;
+    let mut status = None;
+    let mut output = None;
+    let mut stderr_closed = false;
+    loop {
+        if status.is_none() {
+            match child.try_wait() {
+                Ok(found) => status = found,
+                Err(e) => {
                     #[cfg(windows)]
-                    {
-                        let _ = Command::new("taskkill.exe")
-                            .args(["/PID", &pid.to_string(), "/T", "/F"])
-                            .creation_flags(CREATE_NO_WINDOW)
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .status();
-                    }
+                    job.terminate();
                     let _ = child.kill();
                     let _ = child.wait();
-                    break None;
+                    return Err(format!("pi update: {e}"));
                 }
-                std::thread::sleep(Duration::from_millis(200));
-            }
-            Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!("pi update: {e}"));
             }
         }
-    };
-    let out = out_reader.join().unwrap_or_default();
-    let _ = err_reader.join();
-    let status = match status {
-        Some(status) => status,
-        None => {
-            return Err(format!(
-                "pi update timed out after {UPDATE_TIMEOUT_SECS}s and was stopped"
-            ))
+        if output.is_none() {
+            if let Ok(bytes) = out_rx.try_recv() { output = Some(bytes); }
         }
-    };
+        if !stderr_closed && err_rx.try_recv().is_ok() { stderr_closed = true; }
+        if status.is_some() && output.is_some() && stderr_closed { break; }
+        if std::time::Instant::now() >= deadline {
+            // The direct process may already be reaped, so taskkill by its PID
+            // cannot reliably find descendants. The job retains ownership of
+            // the complete tree and closes inherited pipe handles on kill.
+            #[cfg(windows)]
+            job.terminate();
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("pi update timed out after {}s and was stopped", timeout.as_secs_f64()));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let status = status.expect("loop exits only with child status");
+    let out = output.unwrap_or_default();
     Ok(PiManagerResult {
         exit_code: status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&out).into_owned(),
@@ -225,6 +292,18 @@ pub async fn pi_integrity_report() -> Result<PiIntegrityReport, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_deadline_includes_inherited_pipes_after_parent_exit() {
+        let mut command = Command::new("node");
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+        command.args(["-e", "const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},1200)'],{stdio:'inherit',windowsHide:true,detached:true}); c.unref(); process.exit(0);"]);
+        let started = std::time::Instant::now();
+        let result = run_update_command(command, Duration::from_millis(300));
+        assert!(started.elapsed() < Duration::from_millis(1000), "pipe drain outlived update deadline");
+        assert!(result.is_err(), "inherited pipes must not turn a deadline into success");
+    }
 
     #[test]
     fn update_guard_clears_flag_on_drop() {

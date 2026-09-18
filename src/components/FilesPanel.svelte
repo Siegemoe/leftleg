@@ -19,7 +19,9 @@
   // Expanded dirs + per-file stats cache (repo-relative path → stat).
   let expanded = $state<Set<string>>(new Set());
   let stats = $state<Map<string, FileStat>>(new Map());
-  let statsInFlight = new Set<string>();
+  // Path -> tree revision. Keeping the revision prevents an older refresh's
+  // finally block from clearing ownership of a newer request for the same path.
+  let statsInFlight = new Map<string, number>();
 
   async function refresh(dir: string = $projectDir) {
     const revision = ++refreshRevision;
@@ -80,25 +82,27 @@
     return path.split("/").length - 1;
   }
 
-  async function loadStatsFor(nodes: FileTreeNode[]) {
+  async function loadStatsFor(nodes: FileTreeNode[], revision: number = refreshRevision) {
     const dir = $projectDir;
-    const wanted = nodes.filter((n) => !n.dir && !stats.has(n.path) && !statsInFlight.has(n.path));
+    const wanted = nodes.filter((n) => !n.dir && !stats.has(n.path) && statsInFlight.get(n.path) !== revision);
     if (!dir || wanted.length === 0) return;
-    for (const n of wanted) statsInFlight.add(n.path);
+    for (const n of wanted) statsInFlight.set(n.path, revision);
     try {
       // The backend caps a batch at 200 paths and drops the tail, so big
       // directories chunk here to still get their numbers.
       const chunks: string[][] = [];
       for (let i = 0; i < wanted.length; i += 200) chunks.push(wanted.slice(i, i + 200).map((n) => n.path));
       const groups = await Promise.all(chunks.map((paths) => fileStats(dir, paths)));
-      if (dir !== $projectDir) return;
+      if (dir !== $projectDir || revision !== refreshRevision) return;
       const next = new Map(stats);
       for (const group of groups) for (const s of group) next.set(s.path, s);
       stats = next;
     } catch {
       // Stats are decorative; failures just leave rows without numbers.
     } finally {
-      for (const n of wanted) statsInFlight.delete(n.path);
+      for (const n of wanted) {
+        if (statsInFlight.get(n.path) === revision) statsInFlight.delete(n.path);
+      }
     }
   }
 

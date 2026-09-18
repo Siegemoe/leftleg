@@ -8,6 +8,8 @@ pub use sessions::open_path_allowed;
 /// read_text_file's command pipeline, re-exported alongside the open boundary
 /// so its integration test drives the same containment path.
 pub use sessions::read_text_file_checked;
+/// Containment check shared by renderer-supplied repository commands.
+pub use sessions::project_dir_allowed;
 
 use pi::PiProcess;
 use serde_json::Value;

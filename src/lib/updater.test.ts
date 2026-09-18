@@ -54,6 +54,19 @@ afterEach(async () => {
 });
 
 describe("safe update installation", () => {
+  it("does not release the Pi updater's lock when an app download fails", async () => {
+    const update = fakeUpdate();
+    update.download.mockRejectedValue(new Error("download failed"));
+    updateAvailable.set(update as never);
+    updateInstallLock.set(true);
+
+    await applyUpdate();
+
+    expect(get(updateInstallLock)).toBe(true);
+    expect(mocks.prepareForUpdate).not.toHaveBeenCalled();
+    expect(update.install).not.toHaveBeenCalled();
+  });
+
   it("waits for an ongoing check before selecting the update to install", async () => {
     const previous = fakeUpdate();
     const fresh = fakeUpdate();

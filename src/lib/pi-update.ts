@@ -68,6 +68,7 @@ export function runStartupPiUpdate(): void {
     if (get(updateInstallLock)) return;
     if (Date.now() - lastRunMs() < UPDATE_DEBOUNCE_MS) return;
     inFlight = true;
+    let ownsUpdateLock = false;
     try {
       // Wait out boot/project-switch navigation before gating on activity.
       if (!(await navigatingSettled())) return;
@@ -87,7 +88,13 @@ export function runStartupPiUpdate(): void {
       // pi is the one thing this runner must never do. Blockers here exclude
       // navigating itself (settled above); a navigation racing back in is
       // re-tested explicitly and retried next launch.
-      if (get(navigating) || get(updateInstallLock) || collectUpdateInstallBlockers({ ignoreNavigating: true }).length > 0) return;
+      if (get(navigating) || get(updateInstallLock)) return;
+      // Hold the same lock as app installation before sampling blockers. New
+      // prompts, management writes, navigation, and app installation must stay
+      // excluded until npm finishes rewriting Pi's package, not just at entry.
+      updateInstallLock.set(true);
+      ownsUpdateLock = true;
+      if (collectUpdateInstallBlockers({ ignoreNavigating: true }).length > 0) return;
       const res = await runPiManager(["--all"]);
       await setGuiStateValue("piUpdateLastRun", Date.now());
       const upgraded = summarizeUpdateOutput(res.stdout);
@@ -101,6 +108,7 @@ export function runStartupPiUpdate(): void {
     } catch (e) {
       pushNotification("error", `pi update couldn't run: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      if (ownsUpdateLock) updateInstallLock.set(false);
       inFlight = false;
     }
   })();

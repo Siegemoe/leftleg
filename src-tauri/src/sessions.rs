@@ -630,7 +630,7 @@ pub struct GitRepoInfo {
 #[cfg(windows)]
 use std::os::windows::process::CommandExt as _GitCommandExt;
 
-fn run_git(dir: &str, args: &[&str]) -> Result<String, String> {
+fn run_git_bytes(dir: &str, args: &[&str]) -> Result<Vec<u8>, String> {
     let mut cmd = std::process::Command::new("git");
     cmd.arg("-C").arg(dir).args(args);
     #[cfg(windows)]
@@ -639,7 +639,12 @@ fn run_git(dir: &str, args: &[&str]) -> Result<String, String> {
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Ok(out.stdout)
+}
+
+fn run_git(dir: &str, args: &[&str]) -> Result<String, String> {
+    run_git_bytes(dir, args)
+        .map(|out| String::from_utf8_lossy(&out).trim().to_string())
 }
 
 /// Inspect the project's git checkout: current branch, uncommitted-entry
@@ -772,6 +777,10 @@ fn parse_numstat_row(record: &str) -> Option<GitDiffFile> {
     })
 }
 
+fn nul_records(output: &str) -> impl Iterator<Item = &str> {
+    output.split('\0').filter(|record| !record.is_empty())
+}
+
 /// Working-tree vs HEAD change counts per file. Like git_repo_info, any git
 /// failure (including not-a-repo) reads as "no git" — repo: false with an
 /// empty list — because the UI treats that as "no data", not an error. A
@@ -781,14 +790,11 @@ pub fn git_diff_summary_impl(project_dir: &str) -> GitDiffSummary {
     if run_git(project_dir, &["rev-parse", "--is-inside-work-tree"]).is_err() {
         return GitDiffSummary { repo: false, files: Vec::new(), truncated: false };
     }
-    let Ok(out) = run_git(project_dir, &["diff", "HEAD", "--numstat", "--no-renames", "-z"]) else {
+    let Ok(out) = run_git_bytes(project_dir, &["diff", "HEAD", "--numstat", "--no-renames", "-z"]) else {
         return GitDiffSummary { repo: true, files: Vec::new(), truncated: false };
     };
-    let mut files: Vec<GitDiffFile> = out
-        .split('\0')
-        .filter(|record| !record.is_empty())
-        .filter_map(parse_numstat_row)
-        .collect();
+    let out = String::from_utf8_lossy(&out);
+    let mut files: Vec<GitDiffFile> = nul_records(&out).filter_map(parse_numstat_row).collect();
     let truncated = files.len() > MAX_DIFF_FILES;
     files.truncate(MAX_DIFF_FILES);
     GitDiffSummary { repo: true, files, truncated }
@@ -796,8 +802,14 @@ pub fn git_diff_summary_impl(project_dir: &str) -> GitDiffSummary {
 
 /// Per-file working-tree diff summary for a project directory.
 #[tauri::command]
-pub async fn git_diff_summary(project_dir: String) -> Result<GitDiffSummary, String> {
-    tauri::async_runtime::spawn_blocking(move || Ok(git_diff_summary_impl(&project_dir)))
+pub async fn git_diff_summary(
+    app: tauri::AppHandle,
+    project_dir: String,
+) -> Result<GitDiffSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        project_dir_allowed(&app, &project_dir)?;
+        Ok(git_diff_summary_impl(&project_dir))
+    })
         .await
         .map_err(|e| e.to_string())?
 }
@@ -821,13 +833,14 @@ pub struct RepoFileList {
 /// lists viewable text) and unstattable ones report size 0. Git failure
 /// (including not-a-repo) reads as repo: false, same as git_repo_info.
 pub fn repo_files_impl(project_dir: &str) -> RepoFileList {
-    let Ok(out) = run_git(project_dir, &["ls-files", "-z"]) else {
+    let Ok(out) = run_git_bytes(project_dir, &["ls-files", "-z"]) else {
         return RepoFileList { repo: false, files: Vec::new(), truncated: false };
     };
-    // -z separates entries with NUL; newline is a defensive second separator
-    // in case a git build ignores it. Paths are relative to project_dir, so
-    // they join straight onto it for statting.
-    let mut paths: Vec<&str> = out.split(['\0', '\n']).filter(|p| !p.is_empty()).collect();
+    let out = String::from_utf8_lossy(&out);
+    // With -z, NUL is the only separator. A newline can legally be part of a
+    // Git path on platforms that permit it, so treating it as a separator
+    // invents two files. Paths are relative to project_dir.
+    let mut paths: Vec<&str> = nul_records(&out).collect();
     let truncated = paths.len() > MAX_REPO_FILES;
     paths.truncate(MAX_REPO_FILES);
     let files = paths
@@ -845,8 +858,14 @@ pub fn repo_files_impl(project_dir: &str) -> RepoFileList {
 
 /// Tracked-file listing with sizes for a project directory.
 #[tauri::command]
-pub async fn repo_files(project_dir: String) -> Result<RepoFileList, String> {
-    tauri::async_runtime::spawn_blocking(move || Ok(repo_files_impl(&project_dir)))
+pub async fn repo_files(
+    app: tauri::AppHandle,
+    project_dir: String,
+) -> Result<RepoFileList, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        project_dir_allowed(&app, &project_dir)?;
+        Ok(repo_files_impl(&project_dir))
+    })
         .await
         .map_err(|e| e.to_string())?
 }
@@ -958,8 +977,15 @@ pub fn file_stats_batch_impl(project_dir: &str, paths: &[String]) -> Vec<FileSta
 
 /// Size/line-count/textness for a batch of repo-relative paths.
 #[tauri::command]
-pub async fn file_stats_batch(project_dir: String, paths: Vec<String>) -> Result<Vec<FileStat>, String> {
-    tauri::async_runtime::spawn_blocking(move || Ok(file_stats_batch_impl(&project_dir, &paths)))
+pub async fn file_stats_batch(
+    app: tauri::AppHandle,
+    project_dir: String,
+    paths: Vec<String>,
+) -> Result<Vec<FileStat>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        project_dir_allowed(&app, &project_dir)?;
+        Ok(file_stats_batch_impl(&project_dir, &paths))
+    })
         .await
         .map_err(|e| e.to_string())?
 }
@@ -983,8 +1009,12 @@ fn read_tracked_text(project_dir: &str, path: &str) -> Result<TextFileContent, S
     // echoed paths verbatim, and requiring an exact match (not just
     // pathspec-matched) rejects directory paths like "src" that ls-files
     // would otherwise satisfy — the read below wants a file, not a folder.
-    if run_git(project_dir, &["ls-files", "-z", "--", path])
-        .map(|out| out.split('\0').all(|listed| listed != path))
+    if run_git_bytes(project_dir, &["ls-files", "-z", "--", path])
+        .map(|out| {
+            String::from_utf8_lossy(&out)
+                .split('\0')
+                .all(|listed| listed != path)
+        })
         .unwrap_or(true)
     {
         return Err("file is not tracked in this repository".into());
@@ -1004,6 +1034,20 @@ fn read_tracked_text(project_dir: &str, path: &str) -> Result<TextFileContent, S
         size: original_len,
         truncated: original_len > TEXT_READ_CAP,
     })
+}
+
+/// Require renderer-supplied repository roots to use the same containment
+/// boundary as file reads. This prevents the diff/tree/stat commands from
+/// becoming arbitrary filesystem probes if the webview is compromised.
+pub fn project_dir_allowed<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    project_dir: &str,
+) -> Result<PathBuf, String> {
+    let resolved = path_containment_allowed(app, project_dir)?;
+    if !resolved.is_dir() {
+        return Err("project directory not found".into());
+    }
+    Ok(resolved)
 }
 
 /// Full read path for a renderer-supplied repo-relative path: shape check,
@@ -1265,6 +1309,12 @@ mod tests {
     }
 
     #[test]
+    fn nul_output_keeps_newlines_inside_paths() {
+        let records: Vec<&str> = nul_records("line\nbreak.txt\0 leading.txt\0").collect();
+        assert_eq!(records, vec!["line\nbreak.txt", " leading.txt"]);
+    }
+
+    #[test]
     fn diff_summary_real_repo_and_nonrepo() {
         // The build directory lives inside this repo, so the checkout is real.
         let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
@@ -1316,6 +1366,21 @@ mod tests {
         assert!(l2.files.is_empty());
         assert!(!l2.truncated);
         fs::remove_dir_all(nonrepo).unwrap();
+    }
+
+    #[test]
+    fn repo_files_and_reader_preserve_a_leading_space_path() {
+        let dir = temp_dir("files-whitespace");
+        run_git(dir.to_str().unwrap(), &["init"]).unwrap();
+        fs::write(dir.join(" leading.txt"), "kept\n").unwrap();
+        run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
+        run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
+
+        let list = repo_files_impl(dir.to_str().unwrap());
+        assert!(list.files.iter().any(|file| file.path == " leading.txt"));
+        let read = read_tracked_text(dir.to_str().unwrap(), " leading.txt").unwrap();
+        assert_eq!(read.content, "kept\n");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
