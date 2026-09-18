@@ -46,6 +46,11 @@ The Rust layer (`src-tauri/`) spawns `pi --mode rpc` as a subprocess rooted at t
   `src-tauri/tauri.conf.json` (canonical build identity), `package.json`,
   `package-lock.json` (both `version` fields), `src-tauri/Cargo.toml` (run
   `cargo check` to sync `Cargo.lock`) — plus the `CHANGELOG.md` entry.
+- Bump at release prep, not per working batch. The patch digit STACKS across
+  feature bumps (0.4.1 → 0.5.2 → 0.6.3); only majors reset it — a 0.6.1-style
+  reset on a feature bump is a policy violation. An in-repo bump that was
+  never tagged is superseded by the next bump commit (0.6.1 → 0.6.2 happened
+  exactly this way; nothing ever shipped as 0.6.1).
 - Release = push tag `vX.Y.Z` → `.github/workflows/release.yml` validates
   tag == manifest versions, builds the signed NSIS updater, and creates a
   **draft** release; the draft must be published for the updater feed to

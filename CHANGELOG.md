@@ -5,7 +5,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning
 follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 `src-tauri/tauri.conf.json`.
 
-## [0.6.1] — 2026-09-18
+## [0.6.2] — 2026-09-18
 
 ### Added
 - Diff and Files docks with guarded native Git summaries, a tracked-source
