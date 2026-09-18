@@ -37,6 +37,13 @@ describe("matchKeybinding", () => {
     const junk = { ...defaults, bogus: "Ctrl+J" } as Record<ActionId, string | null>;
     expect(matchKeybinding(ev({ key: "j", ctrlKey: true }), junk)).toBeNull();
   });
+
+  it("round-trips the plus key through capture and matching", () => {
+    // "Ctrl++" can't survive parseBinding's "+"-split; the canonical
+    // "Ctrl+Plus" form does, and a real "+" keydown matches it.
+    const rebound = { ...defaults, newSession: "Ctrl+Plus" };
+    expect(matchKeybinding(ev({ key: "+", ctrlKey: true }), rebound)).toBe("newSession");
+  });
 });
 
 describe("parseCapture", () => {
@@ -44,6 +51,7 @@ describe("parseCapture", () => {
     expect(parseCapture(ev({ key: "j", ctrlKey: true }))).toBe("Ctrl+J");
     expect(parseCapture(ev({ key: "7", ctrlKey: true, shiftKey: true }))).toBe("Ctrl+Shift+7");
     expect(parseCapture(ev({ key: " ", ctrlKey: true }))).toBe("Ctrl+Space");
+    expect(parseCapture(ev({ key: "+", ctrlKey: true }))).toBe("Ctrl+Plus");
     expect(parseCapture(ev({ key: "J", metaKey: true }))).toBe("Ctrl+J");
   });
 
@@ -52,6 +60,9 @@ describe("parseCapture", () => {
     expect(parseCapture(ev({ key: "k", altKey: true, ctrlKey: true }))).toBeNull(); // alt chord
     expect(parseCapture(ev({ key: "Escape", ctrlKey: true }))).toBeNull(); // reserved for cancel
     expect(parseCapture(ev({ key: "Control", ctrlKey: true }))).toBeNull(); // lone modifier
+    expect(parseCapture(ev({ key: "Dead", ctrlKey: true }))).toBeNull(); // IME/dead-key token
+    expect(parseCapture(ev({ key: "Process", ctrlKey: true }))).toBeNull(); // IME composition
+    expect(parseCapture(ev({ key: "Unidentified", ctrlKey: true }))).toBeNull(); // unknown key
   });
 });
 

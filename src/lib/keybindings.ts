@@ -33,17 +33,22 @@ export const DEFAULT_BINDINGS: Record<ActionId, string | null> = Object.fromEntr
   ACTIONS.map((a) => [a.id, a.defaultBinding]),
 ) as Record<ActionId, string | null>;
 
-/** Bare modifier toggles and lock keys never form a binding on their own. */
+/** Bare modifier toggles and lock keys never form a binding on their own,
+ * and IME/dead-key tokens the webview synthesizes never name a real key. */
 const NON_KEY_NAMES = new Set([
   "Control", "Shift", "Meta", "Alt",
   "CapsLock", "NumLock", "ScrollLock",
+  "Dead", "Process", "Unidentified",
 ]);
 
 /** Canonical key token: single characters uppercase, " " becomes "Space",
- * named keys pass through. Shared by parsing, formatting, and matching so a
- * stored "Ctrl+Space" matches a keydown of e.key === " ". */
+ * "+" (or the word "plus") becomes "Plus" so it survives parseBinding's
+ * "+"-split round-trip, named keys pass through. Shared by parsing,
+ * formatting, and matching so a stored "Ctrl+Space" matches a keydown of
+ * e.key === " ". */
 function keyToken(key: string): string {
   if (key === " " || key.toLowerCase() === "space") return "Space";
+  if (key === "+" || key.toLowerCase() === "plus") return "Plus";
   if (key.length === 1) return key.toUpperCase();
   return /^f\d{1,2}$/.test(key) ? key.toUpperCase() : key;
 }

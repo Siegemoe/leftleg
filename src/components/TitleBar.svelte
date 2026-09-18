@@ -10,7 +10,8 @@
   import {
     sidebarOpen, settingsOpen, settingsProject, theme, extDialog,
     chooseProject, newSession, applyTheme, transientNote, goHome,
-    openRightPanel, rightPanelOpen, rightPanelTab, openNewProject,
+    openRightPanel, rightPanelOpen, rightPanelTab, homePanelCollapsed,
+    openNewProject, projectSettingsDir,
     keybindings,
   } from "../lib/stores";
   import { matchKeybinding, effectiveBindings } from "../lib/keybindings";
@@ -29,10 +30,16 @@
   // the File/View menus.
   const bindings = $derived(effectiveBindings($keybindings));
 
+  // Dock buttons claim "open" only when the panel is actually visible: at
+  // the start view homePanelCollapsed hides it even though rightPanelOpen
+  // still holds the user's last choice.
+  const panelShown = $derived($rightPanelOpen && !$homePanelCollapsed);
+
   // Status/Artifacts (and the Diff/Files docks) open as cards in the right
   // panel (openRightPanel toggles the active tab); menu items force the
-  // panel open.
+  // panel open, clearing the start-view collapse too.
   function openPanelTab(tab: "status" | "artifacts" | "diff" | "files") {
+    homePanelCollapsed.set(false);
     rightPanelTab.set(tab);
     rightPanelOpen.set(true);
   }
@@ -56,7 +63,7 @@
     // Registry-driven accelerators (defaults + user overrides from Settings →
     // Key bindings). These keys are free in this webview, so they work while
     // typing too; step aside when a modal owns the keyboard.
-    if (e.defaultPrevented || $settingsOpen || $extDialog) return;
+    if (e.defaultPrevented || $settingsOpen || $extDialog || $projectSettingsDir) return;
     const action = matchKeybinding(e, bindings);
     if (!action) return;
     e.preventDefault();
@@ -156,10 +163,10 @@
       {#if openMenu === "view"}
         <div class="dropdown">
           <button onclick={() => run(() => sidebarOpen.update((v) => !v))}>{"Toggle Sidebar"}{#if bindings.toggleSidebar}<span class="hint-key">{bindings.toggleSidebar}</span>{/if}</button>
-          <button onclick={() => run(() => openPanelTab("artifacts"))}>Artifacts…</button>
-          <button onclick={() => run(() => openPanelTab("status"))}>Status…</button>
-          <button onclick={() => run(() => openPanelTab("diff"))}>Diff…</button>
-          <button onclick={() => run(() => openPanelTab("files"))}>Files…</button>
+          <button onclick={() => run(() => openPanelTab("artifacts"))}>Artifacts…{#if bindings.openArtifacts}<span class="hint-key">{bindings.openArtifacts}</span>{/if}</button>
+          <button onclick={() => run(() => openPanelTab("status"))}>Status…{#if bindings.openStatus}<span class="hint-key">{bindings.openStatus}</span>{/if}</button>
+          <button onclick={() => run(() => openPanelTab("diff"))}>Diff…{#if bindings.openDiff}<span class="hint-key">{bindings.openDiff}</span>{/if}</button>
+          <button onclick={() => run(() => openPanelTab("files"))}>Files…{#if bindings.openFiles}<span class="hint-key">{bindings.openFiles}</span>{/if}</button>
           <div class="sep"></div>
           <button onclick={() => run(() => applyTheme("light"))}>{$theme === "light" ? "✓ " : ""}Light Theme</button>
           <button onclick={() => run(() => applyTheme("dark"))}>{$theme === "dark" ? "✓ " : ""}Dark Theme</button>
@@ -186,7 +193,7 @@
 
   <button
     class="tb-btn artifacts"
-    class:open={$rightPanelOpen && $rightPanelTab === "artifacts"}
+    class:open={panelShown && $rightPanelTab === "artifacts"}
     title="Project artifacts — images and docs (right panel)"
     onclick={() => openRightPanel("artifacts")}
   >
@@ -196,7 +203,7 @@
 
   <button
     class="tb-btn"
-    class:open={$rightPanelOpen && $rightPanelTab === "status"}
+    class:open={panelShown && $rightPanelTab === "status"}
     title="Todos and pi module (right panel)"
     onclick={() => openRightPanel("status")}
   >
@@ -207,7 +214,7 @@
   <!-- Placeholder docks: views arrive over time; buttons keep them visible. -->
   <button
     class="tb-btn soon"
-    class:open={$rightPanelOpen && $rightPanelTab === "subagents"}
+    class:open={panelShown && $rightPanelTab === "subagents"}
     title="Subagent thread inspector — coming soon"
     onclick={() => openRightPanel("subagents")}
   >
@@ -216,7 +223,7 @@
   </button>
   <button
     class="tb-btn"
-    class:open={$rightPanelOpen && $rightPanelTab === "diff"}
+    class:open={panelShown && $rightPanelTab === "diff"}
     title="Working-tree diff vs HEAD (right panel)"
     onclick={() => openRightPanel("diff")}
   >
@@ -225,7 +232,7 @@
   </button>
   <button
     class="tb-btn soon"
-    class:open={$rightPanelOpen && $rightPanelTab === "browser"}
+    class:open={panelShown && $rightPanelTab === "browser"}
     title="Browser view — coming soon"
     onclick={() => openRightPanel("browser")}
   >
@@ -234,7 +241,7 @@
   </button>
   <button
     class="tb-btn soon"
-    class:open={$rightPanelOpen && $rightPanelTab === "terminal"}
+    class:open={panelShown && $rightPanelTab === "terminal"}
     title="Terminal view — coming soon"
     onclick={() => openRightPanel("terminal")}
   >
@@ -243,7 +250,7 @@
   </button>
   <button
     class="tb-btn"
-    class:open={$rightPanelOpen && $rightPanelTab === "files"}
+    class:open={panelShown && $rightPanelTab === "files"}
     title="Repo file tree — opens code files in the viewer (right panel)"
     onclick={() => openRightPanel("files")}
   >

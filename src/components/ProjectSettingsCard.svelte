@@ -12,7 +12,7 @@
   import { projectDisplayName } from "../lib/sidebar-model";
   import { openPathLocal } from "../lib/api";
   import {
-    extDialog, forgetProject, projectDir, projectMeta, projectSettingsDir,
+    extDialog, forgetProject, lastProcByProject, projectDir, projectMeta, projectSettingsDir,
     restoreProject, settingsOpen, settingsProject, transientNote, updateProjectMeta,
   } from "../lib/stores";
 
@@ -109,7 +109,7 @@
           <div class="icon-grid">
             {#each PROJECT_ICON_CHOICES as icon (icon)}
               <button
-                class="icon-pick"
+                class="ghost icon-pick"
                 class:active={meta.icon === icon}
                 title={projectIconLabel(icon)}
                 aria-label={projectIconLabel(icon)}
@@ -161,8 +161,8 @@
           {:else}
             <button
               class="rowbtn"
-              disabled={dir === $projectDir}
-              title={dir === $projectDir ? "The active project can't be hidden" : undefined}
+              disabled={dir === $projectDir || !!$lastProcByProject[dir]}
+              title={dir === $projectDir ? "The active project can't be hidden" : $lastProcByProject[dir] ? "Stop the project's pi process before hiding it" : undefined}
               onclick={() => forgetProject(dir)}
             >
               <EyeOff size={13} strokeWidth={2} />
@@ -262,11 +262,20 @@
     flex-wrap: wrap;
     gap: 2px;
   }
-  .icon-pick {
+  /* The ghost prefix out-ranks the card's own .ghost pill styling so the
+     picks match the identical Settings → Project presentation picker:
+     transparent, borderless, active-only highlight. */
+  .ghost.icon-pick,
+  .ghost.icon-pick:hover {
     font-size: 14px;
     padding: 3px 6px;
+    color: var(--text);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
   }
-  .icon-pick.active { background: var(--accent-soft); color: var(--accent); }
+  .ghost.icon-pick:hover { background: var(--bg-hover); }
+  .icon-pick.active,
+  .icon-pick.active:hover { background: var(--accent-soft); color: var(--accent); }
   .color-grid {
     display: flex;
     flex-wrap: wrap;

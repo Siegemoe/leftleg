@@ -8,7 +8,7 @@
     theme, applyTheme, compact, renameSession, setModel, setThinkingLevel,
     setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, abortRetry,
     exportSessionHtml, cloneSession, projectMeta, sessions, updateProjectMeta,
-    forgetProject, restoreProject, chooseProject, autoRetry, refreshCommands,
+    forgetProject, restoreProject, chooseProject, lastProcByProject, autoRetry, refreshCommands,
     statusNote, transientNote, navigating, updateInstallLock, openNewProject,
     keybindings, setKeybinding,
   } from "../../lib/stores";
@@ -424,6 +424,15 @@
   // The settings panel can unmount mid-capture (project switch re-keys the
   // workspace, ✕ closes it) — never leave a window listener behind.
   onDestroy(() => stopCapture());
+
+  // Leaving the Key bindings section must disarm the capture — the listener
+  // would otherwise swallow every keydown app-wide with no visible row.
+  // stopCapture only writes captureAction/captureNote, never section, so the
+  // effect can't re-trigger itself.
+  $effect(() => {
+    void section;
+    stopCapture();
+  });
 
   // ---- model catalog ----
   let modelFilter = $state("");
@@ -1000,7 +1009,7 @@
               {/each}
             </div>
             <div class="inline">
-              <label class="check"><input type="checkbox" checked={!!meta.forgotten && dir !== $projectDir} disabled={dir === $projectDir} onchange={(e) => (e.currentTarget.checked ? forgetProject(dir) : restoreProject(dir))} /> hidden from sidebar</label>
+              <label class="check" title={dir === $projectDir ? "The active project can't be hidden" : $lastProcByProject[dir] ? "Stop the project's pi process before hiding it" : undefined}><input type="checkbox" checked={!!meta.forgotten && dir !== $projectDir} disabled={dir === $projectDir || !!$lastProcByProject[dir]} onchange={(e) => (e.currentTarget.checked ? forgetProject(dir) : restoreProject(dir))} /> hidden from sidebar</label>
             </div>
           </div>
         {:else}

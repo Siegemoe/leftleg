@@ -31,14 +31,19 @@ export const rightPanelWidth = writable<number>(420);
 /** Start view collapses the right panel. It's a default, not a lock: a dock
  * button reopens the panel manually, and choosing a project clears it. */
 export const homePanelCollapsed = writable<boolean>(false);
-/** Open the right panel on a tab; re-triggering the active tab closes it. */
+/** Open the right panel on a tab; re-triggering the active tab closes it.
+ * The close check is collapse-aware: at the start view homePanelCollapsed
+ * hides the panel while rightPanelOpen keeps "what the user last had" (a
+ * project entry restores it), so a dock click there must reveal the tab
+ * rather than close an already-invisible panel. */
 export function openRightPanel(tab: RightPanelTab) {
-  homePanelCollapsed.set(false);
-  if (get(rightPanelOpen) && get(rightPanelTab) === tab) rightPanelOpen.set(false);
+  const collapsed = get(homePanelCollapsed);
+  if (!collapsed && get(rightPanelOpen) && get(rightPanelTab) === tab) rightPanelOpen.set(false);
   else {
     rightPanelTab.set(tab);
     rightPanelOpen.set(true);
   }
+  homePanelCollapsed.set(false);
 }
 
 // ---------- key bindings ----------
@@ -1077,7 +1082,16 @@ export async function abort() {
 /** Model pinned for every new session — the stack's default (AGENTS.md rule 7). */
 export const DEFAULT_MODEL = { provider: "openrouter", id: "z-ai/glm-5.3-flash" };
 
-export function newSession() { return navigate(() => newSessionImpl()); }
+export function newSession() {
+  // At the start view a background pi process can still be live (goHome
+  // preserves it); a new_session with no project would resolve to that
+  // process and create the session invisibly in the background project.
+  if (!get(projectDir)) {
+    transientNote("No project is open — open one from the start view first.");
+    return Promise.resolve();
+  }
+  return navigate(() => newSessionImpl());
+}
 
 async function newSessionImpl() {
   try {
@@ -1610,6 +1624,11 @@ async function bootImpl() {
   rightPanelOpen.set((gui.rightPanelOpen as boolean) ?? false);
   rightPanelTab.set((gui.rightPanelTab as RightPanelTab) ?? "status");
   rightPanelWidth.set((gui.rightPanelWidth as number) ?? 420);
+  // Boot always lands on the start view, so arrive collapsed like goHome
+  // leaves it. The collapse is a default, not persisted — rightPanelOpen
+  // keeps the user's last choice for the restore-on-project-enter, and a
+  // dock button still reopens the panel.
+  homePanelCollapsed.set(true);
   // Key-binding overrides: gui state is schema-less JSON, so keep only known
   // action ids with non-empty string values — foreign junk never reaches the
   // registry or the menus.

@@ -5,7 +5,7 @@
   // File menu.
   import { X } from "@lucide/svelte";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-  import { newProjectOpen, createProject, extDialog } from "../lib/stores";
+  import { newProjectOpen, createProject, extDialog, projectSettingsDir } from "../lib/stores";
 
   let name = $state("");
   let parent = $state("");
@@ -31,8 +31,9 @@
   function onKeydown(e: KeyboardEvent) {
     if (!$newProjectOpen) return;
     // The card sits ABOVE the settings modal (z-150 vs z-100), so Esc closes
-    // the card even when settings is open — only ExtDialog (z-200) outranks it.
-    if (e.key === "Escape" && !$extDialog) {
+    // the card even when settings is open — only ExtDialog (z-200) and the
+    // per-project settings card (same z, mounted after) outrank it.
+    if (e.key === "Escape" && !$extDialog && !$projectSettingsDir) {
       e.preventDefault();
       close();
     }

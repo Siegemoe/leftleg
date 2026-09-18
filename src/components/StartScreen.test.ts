@@ -177,7 +177,7 @@ describe("startup project prompt", () => {
     expect(document.body.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
   });
 
-  it("sends text and attachments through the folder-picker flow via the send arrow", async () => {
+  it("sends text and attachments through the folder-picker flow via the send button", async () => {
     mocks.pickAttachments.mockResolvedValue([{ name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" }]);
     instance = mount(StartScreen, { target: document.body });
     flushSync();
