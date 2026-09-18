@@ -1,0 +1,148 @@
+// Pure key-binding registry for Leftleg's webview accelerators. Deliberately
+// store-free (no svelte imports) so it stays unit-testable — stores.ts owns
+// the user-override store (the `keybindings` writable) and persists it in
+// GUI state; TitleBar dispatches through matchKeybinding.
+
+/** Every action that can carry a keyboard shortcut. */
+export type ActionId =
+  | "newSession" | "newProject" | "toggleSidebar"
+  | "openArtifacts" | "openStatus" | "openDiff" | "openFiles";
+
+export interface ActionDef {
+  id: ActionId;
+  label: string;
+  /** Canonical default binding ("Ctrl+N"), or null when listed but unbound. */
+  defaultBinding: string | null;
+}
+
+/** Registry order is also dispatch order: first match wins. */
+export const ACTIONS: readonly ActionDef[] = [
+  { id: "newSession", label: "New session", defaultBinding: "Ctrl+N" },
+  { id: "newProject", label: "New project", defaultBinding: "Ctrl+Shift+N" },
+  { id: "toggleSidebar", label: "Toggle sidebar", defaultBinding: "Ctrl+B" },
+  { id: "openArtifacts", label: "Open Artifacts dock", defaultBinding: null },
+  { id: "openStatus", label: "Open Status dock", defaultBinding: null },
+  { id: "openDiff", label: "Open Diff dock", defaultBinding: null },
+  { id: "openFiles", label: "Open Files dock", defaultBinding: null },
+];
+
+export const ACTION_IDS: readonly ActionId[] = ACTIONS.map((a) => a.id);
+
+/** null = listed but unbound by default (still assignable in Settings). */
+export const DEFAULT_BINDINGS: Record<ActionId, string | null> = Object.fromEntries(
+  ACTIONS.map((a) => [a.id, a.defaultBinding]),
+) as Record<ActionId, string | null>;
+
+/** Bare modifier toggles and lock keys never form a binding on their own. */
+const NON_KEY_NAMES = new Set([
+  "Control", "Shift", "Meta", "Alt",
+  "CapsLock", "NumLock", "ScrollLock",
+]);
+
+/** Canonical key token: single characters uppercase, " " becomes "Space",
+ * named keys pass through. Shared by parsing, formatting, and matching so a
+ * stored "Ctrl+Space" matches a keydown of e.key === " ". */
+function keyToken(key: string): string {
+  if (key === " " || key.toLowerCase() === "space") return "Space";
+  if (key.length === 1) return key.toUpperCase();
+  return /^f\d{1,2}$/.test(key) ? key.toUpperCase() : key;
+}
+
+interface ParsedBinding { ctrl: boolean; shift: boolean; key: string }
+
+/** Tolerant parse of a stored binding. Requires a Ctrl/Cmd modifier (every
+ * binding needs one, mirroring the accelerators this registry replaces) and
+ * rejects Alt chords. Returns null when the string cannot be a binding. */
+function parseBinding(binding: string): ParsedBinding | null {
+  const parts = binding.split("+").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  const out: ParsedBinding = { ctrl: false, shift: false, key: "" };
+  for (const part of parts) {
+    const lower = part.toLowerCase();
+    if (lower === "ctrl" || lower === "control" || lower === "meta" || lower === "cmd") out.ctrl = true;
+    else if (lower === "shift") out.shift = true;
+    else if (lower === "alt") return null;
+    else out.key = keyToken(part);
+  }
+  if (!out.ctrl || !out.key) return null;
+  return out;
+}
+
+/** Canonical display form ("Ctrl+Shift+N"). Modifier order and key casing are
+ * normalized; unrecognized input passes through unchanged so a malformed
+ * saved value stays visible rather than silently disappearing. */
+export function formatBinding(binding: string): string {
+  const parsed = parseBinding(binding);
+  if (!parsed) return binding;
+  const parts = ["Ctrl"];
+  if (parsed.shift) parts.push("Shift");
+  parts.push(parsed.key);
+  return parts.join("+");
+}
+
+/** Effective bindings = user overrides over the defaults. A null entry is
+ * listed-but-unbound: it never matches and shows no menu hint. */
+export function effectiveBindings(
+  overrides: Partial<Record<ActionId, string>>,
+): Record<ActionId, string | null> {
+  const out = {} as Record<ActionId, string | null>;
+  for (const a of ACTIONS) out[a.id] = overrides[a.id] ?? DEFAULT_BINDINGS[a.id];
+  return out;
+}
+
+/** Event shape needed for matching — a real KeyboardEvent satisfies it, and
+ * tests can pass plain objects. */
+export type KeyEventLike = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">;
+
+/** Match a keydown against the effective bindings. Requires Ctrl or Cmd
+ * (treated as equivalent — the app is Windows-first but webview Cmd users
+ * keep working), excludes Alt, distinguishes Shift, and compares e.key
+ * case-insensitively. Entries that are absent/null/unknown are ignored.
+ * Returns the first match in registry order, or null. */
+export function matchKeybinding(e: KeyEventLike, bindings: Partial<Record<ActionId, string | null>>): ActionId | null {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
+  if (!e.key) return null;
+  const key = keyToken(e.key).toLowerCase();
+  for (const a of ACTIONS) {
+    const binding = bindings[a.id];
+    if (!binding) continue;
+    const parsed = parseBinding(binding);
+    if (!parsed || parsed.key.toLowerCase() !== key || parsed.shift !== e.shiftKey) continue;
+    return a.id;
+  }
+  return null;
+}
+
+/** Normalize a captured keydown into a canonical binding string, or null when
+ * the key cannot qualify: bare modifiers, Escape (reserved for cancel), keys
+ * without Ctrl/Cmd, and Alt chords. Mirrors matchKeybinding's qualification
+ * rules so anything capturable is matchable. */
+export function parseCapture(e: KeyEventLike): string | null {
+  if (!e.key) return null;
+  if (e.key === "Escape") return null;
+  if (e.altKey) return null;
+  if (!(e.ctrlKey || e.metaKey)) return null;
+  if (NON_KEY_NAMES.has(e.key)) return null;
+  const parts = ["Ctrl"]; // meta is canonicalized to Ctrl (matched equivalently)
+  if (e.shiftKey) parts.push("Shift");
+  parts.push(keyToken(e.key));
+  return parts.join("+");
+}
+
+/** Which action (other than `exclude`) already owns `binding` in the effective
+ * map — the duplicate warning behind the Settings capture UI. Comparison is
+ * normalized, so "ctrl+n" and "Ctrl+N" count as the same binding. */
+export function conflictingAction(
+  bindings: Partial<Record<ActionId, string | null>>,
+  binding: string,
+  exclude: ActionId,
+): ActionId | null {
+  const want = formatBinding(binding).toLowerCase();
+  if (!want) return null;
+  for (const a of ACTIONS) {
+    if (a.id === exclude) continue;
+    const have = bindings[a.id];
+    if (have && formatBinding(have).toLowerCase() === want) return a.id;
+  }
+  return null;
+}
