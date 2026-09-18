@@ -52,9 +52,36 @@ fn read_text_file_enforces_containment_tracked_and_binary_gates() {
     let err = leftleg_lib::read_text_file_checked(&app, outside.to_str().unwrap(), "secret.md").unwrap_err();
     assert!(err.contains("outside"), "{err}");
 
+    // A read is not a run: tracked source with an OS-open-denied extension
+    // (.js opens WScript with no prompt) must still be viewable text, while
+    // the same file stays refused for OS-open.
+    let jsrepo = temp_dir("jsrepo");
+    fs::create_dir_all(&jsrepo).unwrap();
+    fs::write(jsrepo.join("tool.js"), "console.log('hi');\n").unwrap();
+    let git = |args: &[&str]| {
+        let ok = std::process::Command::new("git")
+            .current_dir(&jsrepo)
+            .args(["-c", "user.name=test", "-c", "user.email=test@leftleg"])
+            .args(args)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "git {args:?} failed");
+    };
+    git(&["init"]);
+    git(&["add", "-A"]);
+    git(&["commit", "-m", "init"]);
+    std::env::set_var("PI_CODING_AGENT_DIR", &jsrepo);
+    let ok = leftleg_lib::read_text_file_checked(&app, jsrepo.to_str().unwrap(), "tool.js").unwrap();
+    assert_eq!(ok.content, "console.log('hi');\n");
+    assert_eq!(ok.loc, 1);
+    let err = leftleg_lib::open_path_allowed(&app, jsrepo.join("tool.js").to_str().unwrap()).unwrap_err();
+    assert!(err.contains("refusing to open executable file"), "{err}");
+
     match previous {
         Some(v) => std::env::set_var("PI_CODING_AGENT_DIR", v),
         None => std::env::remove_var("PI_CODING_AGENT_DIR"),
     }
     fs::remove_dir_all(&outside).unwrap();
+    fs::remove_dir_all(&jsrepo).unwrap();
 }

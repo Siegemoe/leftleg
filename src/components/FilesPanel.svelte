@@ -86,10 +86,14 @@
     if (!dir || wanted.length === 0) return;
     for (const n of wanted) statsInFlight.add(n.path);
     try {
-      const found = await fileStats(dir, wanted.map((n) => n.path));
+      // The backend caps a batch at 200 paths and drops the tail, so big
+      // directories chunk here to still get their numbers.
+      const chunks: string[][] = [];
+      for (let i = 0; i < wanted.length; i += 200) chunks.push(wanted.slice(i, i + 200).map((n) => n.path));
+      const groups = await Promise.all(chunks.map((paths) => fileStats(dir, paths)));
       if (dir !== $projectDir) return;
       const next = new Map(stats);
-      for (const s of found) next.set(s.path, s);
+      for (const group of groups) for (const s of group) next.set(s.path, s);
       stats = next;
     } catch {
       // Stats are decorative; failures just leave rows without numbers.
@@ -117,6 +121,7 @@
       tree = buildFileTree([]);
       isRepo = false;
       loadError = "";
+      truncated = false;
       stats = new Map();
       expanded = new Set();
       lastSeenDir = dir;
@@ -143,7 +148,7 @@
     <div class="tree">
       {#each visible as node (node.path)}
         {#if node.dir}
-          <button class="row dir" style="padding-left: {8 + depthOf(node.path) * 14}px" onclick={() => toggleDir(node)}>
+          <button class="row dir" style="padding-left: {8 + depthOf(node.path) * 14}px" aria-expanded={expanded.has(node.path)} onclick={() => toggleDir(node)}>
             {#if expanded.has(node.path)}<ChevronDown size={13} strokeWidth={2} />{:else}<ChevronRight size={13} strokeWidth={2} />{/if}
             <span class="name">{node.name}</span>
           </button>

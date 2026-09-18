@@ -68,9 +68,12 @@
   }
 
   /** Shared pointer-capture drag/resize: mutate the local rect live, commit
-   * once on release (gui-state writes are per-commit, not per-move). */
+   * once on release (gui-state writes are per-commit, not per-move). A
+   * pointerdown on a header button (the close X) is a click, not a grab —
+   * and capturing it would swallow the click — but the resize corner is
+   * itself a button, so only the move path bails. */
   function startDrag(e: PointerEvent, mode: "move" | "resize") {
-    if (!(e.target as Element | null)?.closest("button")) return;
+    if (mode === "move" && (e.target as Element | null)?.closest("button")) return;
     const handle = e.currentTarget as HTMLElement;
     handle.setPointerCapture(e.pointerId);
     const start = { x: e.clientX, y: e.clientY };

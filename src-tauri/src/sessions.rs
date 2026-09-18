@@ -377,30 +377,23 @@ pub async fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String
         .map_err(|e| e.to_string())?
 }
 
-/// Validate an open request against the containment roots. Split from
-/// `open_path_checked` so tests can exercise the boundary without opening
-/// anything. Returns the resolved path to hand to the OS. Generic over the
-/// runtime so the mock-runtime test can drive it.
-pub fn open_path_allowed<R: tauri::Runtime>(
+/// Validate a local path against the containment roots: live project
+/// directories, the pi agent dir, and Leftleg's app-data dir. Split from
+/// `open_path_allowed` so tests can exercise the boundary without opening
+/// anything, and so the text reader can share containment without inheriting
+/// the OS-open denylist — a read is not a run, and tracked source like .js
+/// must stay viewable. Returns the resolved path. Generic over the runtime
+/// so the mock-runtime test can drive it.
+fn path_containment_allowed<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     path: &str,
 ) -> Result<PathBuf, String> {
     use tauri::Manager;
     let target = std::path::Path::new(path);
     if !target.is_absolute() {
-        return Err("open path must be absolute".into());
+        return Err("path must be absolute".into());
     }
-    if is_denied_executable(target) {
-        let name = target.file_name().and_then(|n| n.to_str()).unwrap_or(path);
-        return Err(format!("refusing to open executable file: {name}"));
-    }
-    let resolved = canonical_ancestor(target).ok_or_else(|| "open path not found".to_string())?;
-    // The requested name may lie (a symlink named "helper" can resolve to
-    // evil.exe), so the denylist also runs on the canonical name.
-    if is_denied_executable(&resolved) {
-        let name = resolved.file_name().and_then(|n| n.to_str()).unwrap_or(path);
-        return Err(format!("refusing to open executable file: {name}"));
-    }
+    let resolved = canonical_ancestor(target).ok_or_else(|| "path not found".to_string())?;
     // Containment probe: the canonical file when it exists, else its canonical
     // parent. All sides go through canonicalize so verbatim (\\?\) forms and
     // symlinks compare consistently.
@@ -424,7 +417,33 @@ pub fn open_path_allowed<R: tauri::Runtime>(
         }
     }
     if !roots.iter().any(|root| probe.starts_with(root)) {
-        return Err("open path is outside the allowed directories".into());
+        return Err("path is outside the allowed directories".into());
+    }
+    Ok(resolved)
+}
+
+/// Open a local path with the OS default handler. Guarded three ways: the
+/// path must resolve inside a live project directory, the pi agent dir, or
+/// Leftleg's app-data dir; executables are refused outright (an "open" on
+/// those is a run, not a view); and check+open both run natively so a
+/// compromised webview has no arbitrary-open primitive. Web URLs keep using
+/// the opener plugin from the webview (its default permission allows
+/// http/https only).
+pub fn open_path_allowed<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    path: &str,
+) -> Result<PathBuf, String> {
+    let target = std::path::Path::new(path);
+    if is_denied_executable(target) {
+        let name = target.file_name().and_then(|n| n.to_str()).unwrap_or(path);
+        return Err(format!("refusing to open executable file: {name}"));
+    }
+    let resolved = path_containment_allowed(app, path)?;
+    // The requested name may lie (a symlink named "helper" can resolve to
+    // evil.exe), so the denylist also runs on the canonical name.
+    if is_denied_executable(&resolved) {
+        let name = resolved.file_name().and_then(|n| n.to_str()).unwrap_or(path);
+        return Err(format!("refusing to open executable file: {name}"));
     }
     Ok(resolved)
 }
@@ -733,11 +752,13 @@ pub struct GitDiffSummary {
     pub truncated: bool,
 }
 
-/// One numstat row ("added<TAB>deleted<TAB>path"). Binary rows report "-" in
-/// both count columns and are dropped; malformed rows are dropped too so a
-/// stray git notice can't poison the list.
-fn parse_numstat_row(line: &str) -> Option<GitDiffFile> {
-    let mut parts = line.splitn(3, '\t');
+/// One `-z` numstat record ("added<TAB>deleted<TAB>path"; the caller splits
+/// records on NUL). Binary rows report "-" in both count columns and are
+/// dropped; malformed rows are dropped too so a stray git notice can't
+/// poison the list. -z (no quotepath) keeps paths verbatim — a quoted
+/// `"caf\303\251.txt"` form could never be handed back to read_text_file.
+fn parse_numstat_row(record: &str) -> Option<GitDiffFile> {
+    let mut parts = record.splitn(3, '\t');
     let added = parts.next()?;
     let deleted = parts.next()?;
     let path = parts.next()?;
@@ -753,12 +774,21 @@ fn parse_numstat_row(line: &str) -> Option<GitDiffFile> {
 
 /// Working-tree vs HEAD change counts per file. Like git_repo_info, any git
 /// failure (including not-a-repo) reads as "no git" — repo: false with an
-/// empty list — because the UI treats that as "no data", not an error.
+/// empty list — because the UI treats that as "no data", not an error. A
+/// worktree whose HEAD is unborn (no commits yet) is a repo with an empty
+/// diff, not "no git".
 pub fn git_diff_summary_impl(project_dir: &str) -> GitDiffSummary {
-    let Ok(out) = run_git(project_dir, &["diff", "HEAD", "--numstat", "--no-renames"]) else {
+    if run_git(project_dir, &["rev-parse", "--is-inside-work-tree"]).is_err() {
         return GitDiffSummary { repo: false, files: Vec::new(), truncated: false };
+    }
+    let Ok(out) = run_git(project_dir, &["diff", "HEAD", "--numstat", "--no-renames", "-z"]) else {
+        return GitDiffSummary { repo: true, files: Vec::new(), truncated: false };
     };
-    let mut files: Vec<GitDiffFile> = out.lines().filter_map(parse_numstat_row).collect();
+    let mut files: Vec<GitDiffFile> = out
+        .split('\0')
+        .filter(|record| !record.is_empty())
+        .filter_map(parse_numstat_row)
+        .collect();
     let truncated = files.len() > MAX_DIFF_FILES;
     files.truncate(MAX_DIFF_FILES);
     GitDiffSummary { repo: true, files, truncated }
@@ -860,11 +890,16 @@ fn read_capped(path: &std::path::Path, cap: u64) -> std::io::Result<(Vec<u8>, u6
 }
 
 /// Reject every path shape that does not name a file relative to the project
-/// root: absolute, drive-relative, rooted (`/x` would replace the root on a
-/// Windows join), and `..` — even when `..` would stay inside the root.
+/// root: empty, bare `.` (ls-files would match the whole repo), a trailing
+/// separator (a directory, not a file), absolute, drive-relative, rooted
+/// (`/x` would replace the root on a Windows join), and `..` — even when
+/// `..` would stay inside the root.
 fn repo_relative_path(path: &str) -> Result<PathBuf, String> {
     let p = std::path::Path::new(path);
-    let bad = p.is_absolute()
+    let bad = path.is_empty()
+        || path == "."
+        || path.ends_with(['/', '\\'])
+        || p.is_absolute()
         || p.components().any(|c| {
             matches!(
                 c,
@@ -944,9 +979,12 @@ pub struct TextFileContent {
 /// the caps without an app handle.
 fn read_tracked_text(project_dir: &str, path: &str) -> Result<TextFileContent, String> {
     // Only repo-tracked files are readable: agent-dir and app-data paths can
-    // never pass this even when containment would allow them.
-    if run_git(project_dir, &["ls-files", "--", path])
-        .map(|out| out.is_empty())
+    // never pass this even when containment would allow them. -z keeps the
+    // echoed paths verbatim, and requiring an exact match (not just
+    // pathspec-matched) rejects directory paths like "src" that ls-files
+    // would otherwise satisfy — the read below wants a file, not a folder.
+    if run_git(project_dir, &["ls-files", "-z", "--", path])
+        .map(|out| out.split('\0').all(|listed| listed != path))
         .unwrap_or(true)
     {
         return Err("file is not tracked in this repository".into());
@@ -969,8 +1007,9 @@ fn read_tracked_text(project_dir: &str, path: &str) -> Result<TextFileContent, S
 }
 
 /// Full read path for a renderer-supplied repo-relative path: shape check,
-/// then the same containment boundary (and executable denylist) that governs
-/// "open", then the tracked/denylist/read gates.
+/// the containment boundary (shared with "open" — but without its executable
+/// denylist, since a read is not a run and tracked source like .js must stay
+/// viewable), then the tracked/denylist/read gates.
 pub fn read_text_file_checked<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     project_dir: &str,
@@ -978,7 +1017,7 @@ pub fn read_text_file_checked<R: tauri::Runtime>(
 ) -> Result<TextFileContent, String> {
     let rel = repo_relative_path(path)?;
     let joined = std::path::Path::new(project_dir).join(&rel);
-    open_path_allowed(app, &joined.to_string_lossy())?;
+    path_containment_allowed(app, &joined.to_string_lossy())?;
     read_tracked_text(project_dir, path)
 }
 
@@ -1345,8 +1384,10 @@ mod tests {
     fn repo_relative_path_rejects_non_relative_shapes() {
         assert!(repo_relative_path("src/main.rs").is_ok());
         assert!(repo_relative_path("./src/main.rs").is_ok());
-        for bad in ["C:\\Windows\\evil.txt", "/etc/passwd", "..\\evil.txt", "src/../../../etc/passwd", "a/../b", "C:relative.txt"] {
-            assert!(repo_relative_path(bad).is_err(), "{bad} must be rejected");
+        for bad in ["C:\\Windows\\evil.txt", "/etc/passwd", "..\\evil.txt", "src/../../../etc/passwd", "a/../b", "C:relative.txt",
+            // not files: empty, the repo itself, and trailing separators
+            "", ".", "src/", "src\\", "./"] {
+            assert!(repo_relative_path(bad).is_err(), "{bad:?} must be rejected");
         }
     }
 
@@ -1358,6 +1399,8 @@ mod tests {
         fs::write(dir.join("fake.png"), [0u8, 1, 2]).unwrap();
         let big = b"a\n".repeat(300 * 1024); // 600 KiB, past the 512 KiB cap
         fs::write(dir.join("big.txt"), &big).unwrap();
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        fs::write(dir.join("sub").join("inner.txt"), "x\n").unwrap();
         run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
         run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
 
@@ -1366,6 +1409,9 @@ mod tests {
         assert_eq!(small.loc, 1);
         assert!(!small.truncated);
         assert_eq!(small.size, 2);
+
+        let inner = read_tracked_text(dir.to_str().unwrap(), "sub/inner.txt").unwrap();
+        assert_eq!(inner.content, "x\n");
 
         let big = read_tracked_text(dir.to_str().unwrap(), "big.txt").unwrap();
         assert!(big.truncated);
@@ -1377,6 +1423,46 @@ mod tests {
         assert!(err.contains("binary file type"), "{err}");
         let err = read_tracked_text(dir.to_str().unwrap(), "never-committed.txt").unwrap_err();
         assert!(err.contains("not tracked"), "{err}");
+        // A directory path satisfies the ls-files pathspec but is not a file:
+        // exact-match on the echoed listing must refuse it.
+        let err = read_tracked_text(dir.to_str().unwrap(), "sub").unwrap_err();
+        assert!(err.contains("not tracked"), "{err}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn diff_summary_keeps_special_paths_verbatim() {
+        // Default core.quotepath would escape non-ASCII names as
+        // "caf\303\251.txt"; -z output must arrive unquoted so the path can be
+        // handed straight back to read_text_file.
+        let dir = temp_dir("diff-quote");
+        run_git(dir.to_str().unwrap(), &["init"]).unwrap();
+        fs::write(dir.join("café.txt"), "v1\n").unwrap();
+        run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
+        run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
+        fs::write(dir.join("café.txt"), "v2\n").unwrap();
+        let summary = git_diff_summary_impl(dir.to_str().unwrap());
+        assert!(summary.repo);
+        assert!(
+            summary.files.iter().any(|f| f.path == "café.txt"),
+            "non-ASCII path must not be quoted, got {:?}",
+            summary.files.iter().map(|f| &f.path).collect::<Vec<_>>(),
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn diff_summary_unborn_head_is_a_repo_with_empty_diff() {
+        // `git diff HEAD` is fatal before the first commit; the sidebar chip
+        // (rev-parse-based) already calls this a repo, so the Diff dock must
+        // agree instead of reporting "not a git repository".
+        let dir = temp_dir("diff-unborn");
+        run_git(dir.to_str().unwrap(), &["init"]).unwrap();
+        fs::write(dir.join("seed.txt"), "x\n").unwrap();
+        let summary = git_diff_summary_impl(dir.to_str().unwrap());
+        assert!(summary.repo, "no commits yet is still a repo");
+        assert!(summary.files.is_empty());
+        assert!(!summary.truncated);
         fs::remove_dir_all(dir).unwrap();
     }
 

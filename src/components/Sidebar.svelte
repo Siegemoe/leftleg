@@ -270,21 +270,25 @@
   interface DiffHover { added: number; deleted: number; files: number }
   let diffHover = $state<DiffHover | null>(null);
   let diffHoverTimer: ReturnType<typeof setTimeout> | null = null;
+  let diffHoverSeq = 0;
   let diffCache: { at: number; dir: string; data: DiffHover } | null = null;
   function onChipEnter() {
     if (diffHoverTimer) return;
     diffHoverTimer = setTimeout(async () => {
       diffHoverTimer = null;
+      const seq = ++diffHoverSeq;
       const dir = $projectDir;
       if (!dir) return;
       const now = Date.now();
       if (diffCache && diffCache.dir === dir && now - diffCache.at < 5000) {
-        diffHover = diffCache.data;
+        if (seq === diffHoverSeq) diffHover = diffCache.data;
         return;
       }
       try {
         const summary = await gitDiffSummary(dir);
-        if (dir !== $projectDir) return;
+        // A leave after hover-open bumped the seq: the popover must not
+        // resurrect when the in-flight summary lands.
+        if (seq !== diffHoverSeq || dir !== $projectDir) return;
         const data: DiffHover = {
           added: summary.files.reduce((n, f) => n + f.added, 0),
           deleted: summary.files.reduce((n, f) => n + f.deleted, 0),
@@ -297,6 +301,7 @@
   }
   function onChipLeave() {
     if (diffHoverTimer) { clearTimeout(diffHoverTimer); diffHoverTimer = null; }
+    diffHoverSeq++;
     diffHover = null;
   }
 

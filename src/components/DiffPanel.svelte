@@ -57,6 +57,7 @@
       files = [];
       isRepo = false;
       loadError = "";
+      truncated = false;
       lastSeenDir = dir;
       void refresh(dir);
       return;
