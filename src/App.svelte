@@ -14,7 +14,7 @@
   import RightPanel from "./components/RightPanel.svelte";
   import FileCard from "./components/FileCard.svelte";
   import NewProjectCard from "./components/NewProjectCard.svelte";
-  import SessionRail from "./components/SessionRail.svelte";
+  import PromptRail from "./components/PromptRail.svelte";
   import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
@@ -85,7 +85,7 @@
   <div class="right-col">
     <div class="content">
   {#if $projectDir}
-    <SessionRail />
+    <PromptRail />
   {/if}
   <main>
     {#if $updateAvailable}

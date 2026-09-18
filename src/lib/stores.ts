@@ -72,6 +72,9 @@ export async function createProject(parent: string, name: string): Promise<strin
 export const connected = writable<boolean>(false);
 export const rpcState = writable<RpcState | null>(null);
 export const items = writable<UiItem[]>([]);
+/** The user prompt sitting at the top of the chat viewport (scroll-spy,
+ * published by Chat) — powers the prompt rail's active tick. */
+export const activePromptId = writable<string | null>(null);
 export const streaming = writable<boolean>(false);
 export const queue = writable<{ steering: string[]; followUp: string[] }>({ steering: [], followUp: [] });
 export const sessions = writable<SessionInfo[]>([]);

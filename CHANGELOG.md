@@ -11,9 +11,12 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 - Diff and Files docks with guarded native Git summaries, a tracked-source
   browser, lazy file statistics, and a movable code-viewer card.
 - Branch-hover diff totals and a subagents dock for current agent activity.
-- T3-style session rail that rides the sidebar's edge (travels to the window
-  edge when the sidebar hides), and a capped, centered chat column (~60% of
-  the window) shared by the transcript and the composer.
+- T3-style prompt rail riding the sidebar's edge (travels to the window edge
+  when the sidebar hides): one tick per user prompt in the session in view —
+  click jumps the chat to that prompt, and the active tick follows the scroll
+  position. The chat column is capped at 50% of the window (transcript and
+  composer share it), and the status bar's left edge follows the sidebar's
+  edge (full width only when the sidebar is hidden).
 - New-project card — folder name plus a native parent picker — reachable
   from the sidebar scope picker, the settings project manager, and
   File → New Project… (Ctrl+Shift+N), backed by a validated

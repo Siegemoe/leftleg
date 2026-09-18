@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { items, streaming, rpcState, projectDir, activeSessionPath, chooseProject, disconnected } from "../lib/stores";
+  import { items, streaming, rpcState, projectDir, activeSessionPath, chooseProject, disconnected, activePromptId } from "../lib/stores";
   import MessageView from "./MessageView.svelte";
   import Composer from "./Composer.svelte";
   import mark from "../assets/leftleg-mark.png";
@@ -7,11 +7,37 @@
   let scroller: HTMLDivElement | null = $state(null);
   let stick = $state(true);
 
+  /** Scroll-spy for the prompt rail: the last user prompt whose anchor has
+   * reached the top region of the viewport reads as "where you are". */
+  function updateActivePrompt() {
+    if (!scroller) { activePromptId.set(null); return; }
+    const top = scroller.getBoundingClientRect().top;
+    let active: string | null = null;
+    for (const el of scroller.querySelectorAll<HTMLElement>("[data-prompt]")) {
+      if (el.getBoundingClientRect().top <= top + 120) active = el.getAttribute("data-prompt");
+      else break;
+    }
+    activePromptId.set(active);
+  }
+
   function onScroll() {
     if (!scroller) return;
     const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
     stick = nearBottom;
+    updateActivePrompt();
   }
+
+  // Prompts appearing/vanishing (send, retry, session switch) re-seat the
+  // scroll-spy synchronously — but only when the prompt-id set actually
+  // changed, so streaming appends (same prompts) never force layout here.
+  let promptIdsKey = "";
+  $effect(() => {
+    const key = $items.filter((i) => i.kind === "user").map((i) => i.id).join(",");
+    if (key !== promptIdsKey) {
+      promptIdsKey = key;
+      updateActivePrompt();
+    }
+  });
 
   $effect(() => {
     // scroll on new items or streaming growth
@@ -46,7 +72,14 @@
       </div>
     {:else}
       {#each $items as item (item.id)}
-        <MessageView {item} />
+        {#if item.kind === "user"}
+          <!-- Anchor for the prompt rail: jump target + scroll-spy marker. -->
+          <div class="anchor" data-prompt={item.id} id={"prompt-" + item.id}>
+            <MessageView {item} />
+          </div>
+        {:else}
+          <MessageView {item} />
+        {/if}
       {/each}
     {/if}
   </div>
