@@ -5,6 +5,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning
 follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 `src-tauri/tauri.conf.json`.
 
+## [0.5.1] — 2026-09-17
+
+### Added
+- System tray with close-to-tray: the X button (and Alt+F4) now parks the app
+  to the tray instead of exiting, so background pi projects keep streaming;
+  File → Exit and the tray's Quit are the real exits and still kill pi
+  cleanly. Left-click toggles the window — hides one in active use, raises
+  one parked a while (a Windows tray-click defocus quirk is explicitly
+  handled) — and double-clicks are debounced. A single-instance guard turns
+  Start-menu relaunches of the hidden app into focus-the-existing-window.
+- pi processes are killed in parallel on quit (scoped threads): closing out
+  many background projects takes about one taskkill span instead of N
+  serialized ones.
+
+### Changed
+- New app icon set: bold monochrome mirrored-LL (thin L left, extra-bold
+  mirrored L right, dark tile, legible at 16 px); unused android/ios icon
+  variants dropped (Windows-only bundle).
+- Docs currency pass across README, CONTRIBUTING (Node 22, CI-driven release
+  flow, commit conventions), ROADMAP (0.3–0.4 record + next-sweep framing),
+  SECURITY (audit pointer, supported versions, media companion scope), and
+  GAP-ANALYSIS (session-refresh mechanism wording).
+
 ## [0.4.1] — 2026-09-17
 
 ### Fixed
