@@ -59,13 +59,13 @@
 <style>
   /* One column owns the chat's width: transcript and composer share its
    * edges, and the auto margins let it ride the space left over from the
-   * side panels (capped at ~60% of the window). */
+   * side panels (half of the available width). */
   .col {
     flex: 1;
     min-height: 0;
     min-width: 0;
     width: 100%;
-    max-width: 60vw;
+    max-width: 50%;
     margin-inline: auto;
     display: flex;
     flex-direction: column;

@@ -2,13 +2,16 @@
   // T3-style session rail: an always-on thin strip riding the sidebar's
   // edge (it travels to the window edge when the sidebar hides) — one tick
   // per session of the scoped project (newest first), hover previews via
-  // title, click switches sessions, + starts a new one. Same data pipeline
+  // title, click switches sessions. Visuals are chat-space, not a third
+  // panel; the + new-chat button shows only while the sidebar is collapsed
+  // (the sidebar owns that affordance when it's open). Same data pipeline
   // as the sidebar (toSidebarSessions / resolveThreadPill), so ticks and
   // rows never disagree.
   import { Plus } from "@lucide/svelte";
   import {
     activeSessionPath, newSession, openSession, pins, projectDir,
-    projectScope, sessionStates, sessions, settled, switchToProject, visitedAt,
+    projectScope, sessionStates, sessions, settled, sidebarOpen,
+    switchToProject, visitedAt,
   } from "../lib/stores";
   import {
     formatRelativeTime, resolveThreadPill, toSidebarSessions,
@@ -49,9 +52,11 @@
 </script>
 
 <aside class="rail" aria-label="Session rail">
-  <button class="rail-btn" title="New session" onclick={() => void railNewSession()}>
-    <Plus size={13} strokeWidth={2.4} />
-  </button>
+  {#if !$sidebarOpen}
+    <button class="rail-btn" title="New session" onclick={() => void railNewSession()}>
+      <Plus size={13} strokeWidth={2.4} />
+    </button>
+  {/if}
   <div class="ticks">
     {#each railSessions as s (s.path)}
       {@const pill = resolveThreadPill(s)}
@@ -79,8 +84,9 @@
     align-items: center;
     gap: 6px;
     padding: 8px 0;
-    background: var(--bg-surface);
-    border-right: 1px solid var(--border);
+    /* Reads as part of the chat space, not a third panel: transparent on
+     * the shell background, no border. */
+    background: transparent;
     overflow: hidden;
   }
   .rail-btn {
