@@ -1,13 +1,21 @@
 **A note from the creator**
 Hi, I’m Zack, also known as Siegemoe.
+
 I created Leftleg to satisfy my curiosity. AI agents have been an incredibly interesting development, and I’ve been fortunate enough to spend the past two years exploring their progress. I plan to continue doing so while building a deeper understanding of the software development lifecycle and the security required to protect users and their data.
 Leftleg originally began as its own agent harness and runtime. I eventually ran into a problem familiar to many people building these tools: subscription access to certain models could not be used inside it.
+
 A few months ago, I tried T3 Code and found the answer I had been missing. Instead of working around model providers, use their supported harnesses, remain within their terms of service, and build a wrapper that adapts the runtime to your preferred workflows.
+
 Watching Theo and the T3 Code team turn an idea that was once dismissed as “just a wrapper” into a refined workspace changed how I thought about the problem. I had allowed my curiosity to lead me toward a solution far more complicated than necessary.
+
 The T3 Code team deserves credit for demonstrating a practical way to bring different model experiences into one workspace. I do not know whether this will remain the best approach forever, but it works today and was thoughtfully designed. Leftleg’s current left panel draws clear inspiration from T3 Code, and its future approach to models, providers, and harnesses will likely continue learning from their work. I’m a fan.
+
 Leftleg will carve out its own path as its foundations mature. There is still a mountain of work ahead before it reaches a broadly serviceable state, but I believe it will begin to shine as its own UI and workflow ideas take shape.
+
 Current status
+
 Leftleg is an expanding prototype. I would not call it an alpha yet, and it has not received a comprehensive security audit. It can launch coding agents with access to your files and development environment, so use it only in projects and environments where you understand that risk. Avoid sensitive, customer, or production data.
+
 My goal is to keep building Leftleg, pushing it to become my preferred agent surface. I've made it public so others could use it, or be inspired to create their own surface.
 
 **Leftleg is an independent project and is not affiliated with T3 Code, Pi, or any model provider.**
