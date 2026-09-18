@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("../../lib/settings/mgmt", () => ({
   companionAvailable: () => true,
   bindManagement: () => mocks.request,
+  setManagementScope: () => {},
+  clearManagementScope: () => {},
   handleMgmtNotify: () => false,
   abortPendingMgmt: () => {},
   primeAgentDir: () => {},
@@ -24,7 +26,7 @@ vi.mock("../../lib/api", () => ({
 }));
 
 import SettingsWorkspace from "./SettingsWorkspace.svelte";
-import { keybindings } from "../../lib/stores";
+import { keybindings, projectDir } from "../../lib/stores";
 
 let host: HTMLDivElement;
 let instance: ReturnType<typeof mount> | null = null;
@@ -34,6 +36,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   keybindings.set({});
+  projectDir.set("");
   mocks.request.mockReset().mockResolvedValue({ exists: false, data: null, revision: null });
 });
 
@@ -41,6 +44,7 @@ afterEach(async () => {
   if (instance) await unmount(instance); // onDestroy removes the capture listener
   instance = null;
   document.body.replaceChildren();
+  projectDir.set("");
 });
 
 function button(root: Element, text: string): HTMLButtonElement {
@@ -81,5 +85,41 @@ describe("key binding capture wiring", () => {
     expect(get(keybindings)["openArtifacts"]).toBe("Ctrl+Y");
     expect(row.textContent).toContain("Ctrl+Y");
     expect(row.textContent).not.toContain("Press a key combination");
+  });
+});
+
+describe("runtime section gating (B2)", () => {
+  // At the start view every runtime action would throw "No project is open"
+  // with its refusal note rendered invisibly behind the Settings overlay —
+  // the controls must be dead with a visible reason instead.
+  it("disables project-scoped runtime controls at the start view and says why", async () => {
+    projectDir.set("");
+    instance = mount(SettingsWorkspace, { target: host });
+    await settle();
+    button(host, "Current runtime").click();
+    await settle();
+    const model = host.querySelector("#rt-model") as HTMLSelectElement;
+    expect(model.disabled).toBe(true);
+    expect(model.title).toContain("Open a project");
+    const compactNow = button(host, "Compact now");
+    expect(compactNow.disabled).toBe(true);
+    expect(compactNow.title).toContain("Open a project");
+    expect(button(host, "Abort running retry").disabled).toBe(true);
+    expect(button(host, "Export as HTML").disabled).toBe(true);
+    expect(button(host, "Clone").disabled).toBe(true);
+    // Opening a project is not project-scoped — the picker stays usable at home.
+    expect(button(host, "Change…").disabled).toBe(false);
+  });
+
+  it("re-enables runtime controls once a project is open", async () => {
+    projectDir.set("");
+    instance = mount(SettingsWorkspace, { target: host });
+    await settle();
+    button(host, "Current runtime").click();
+    await settle();
+    expect((host.querySelector("#rt-model") as HTMLSelectElement).disabled).toBe(true);
+    projectDir.set("/proj");
+    await settle();
+    expect((host.querySelector("#rt-model") as HTMLSelectElement).disabled).toBe(false);
   });
 });

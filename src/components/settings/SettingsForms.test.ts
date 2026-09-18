@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("../../lib/settings/mgmt", () => ({
   companionAvailable: () => true,
   bindManagement: () => mocks.request,
+  setManagementScope: () => {},
+  clearManagementScope: () => {},
   handleMgmtNotify: () => false,
   abortPendingMgmt: () => {},
   primeAgentDir: () => {},

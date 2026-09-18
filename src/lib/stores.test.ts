@@ -17,12 +17,21 @@ vi.mock("./api", () => ({
   pendingGuiWriteCount: vi.fn().mockReturnValue(0),
 }));
 
+// stores.ts pulls the native save dialog directly from the plugin; pin it so
+// exportSessionHtml's dialog usage is assertable without a Tauri runtime.
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn().mockResolvedValue(null),
+  save: vi.fn().mockResolvedValue(null),
+}));
+
 import * as api from "./api";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
-  activeSessionPath, compact, connected, extDialog, goHome, handleEvent, homePanelCollapsed, items,
-  newSession, openRightPanel, projectDir, queue, rebuildFromMessages, refreshStats, rightPanelOpen,
-  rightPanelTab, rpcState, sessionStates, sendPrompt, stats, statusNote, streaming, switchToProject,
-  collectUpdateInstallBlockers, handlePiExit, recordProcess, updateInstallLock,
+  activeSessionByProject, activeSessionPath, compact, connected, exportSessionHtml, extDialog,
+  forgetProject, goHome, handleEvent, homePanelCollapsed, items, newSession, openRightPanel,
+  projectDir, projectMeta, projectScope, queue, rebuildFromMessages, refreshStats, restartPi,
+  rightPanelOpen, rightPanelTab, rpcState, sessionStates, sendPrompt, stats, statusNote, streaming,
+  switchToProject, collectUpdateInstallBlockers, handlePiExit, recordProcess, updateInstallLock,
 } from "./stores";
 import { composerDraftFor } from "./composer-drafts";
 
@@ -34,10 +43,13 @@ function resetStores() {
   stats.set(null);
   rpcState.set(null);
   activeSessionPath.set(null);
+  activeSessionByProject.set({});
   statusNote.set("");
   extDialog.set(null);
   connected.set(false);
   projectDir.set("");
+  projectScope.set(null);
+  projectMeta.set({});
   updateInstallLock.set(false);
 }
 
@@ -520,6 +532,83 @@ describe("start view guards", () => {
     await newSession();
     expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
     expect(get(statusNote)).toContain("project");
+  });
+});
+
+describe("handlePiExit: session chip on process death", () => {
+  it("an unexpected foreground exit leaves no 'active'-rendering status on the session", () => {
+    projectDir.set("C:\\work\\front");
+    recordProcess("C:\\work\\front", 1);
+    activeSessionPath.set("/s1.jsonl");
+    sessionStates.set({ "/s1.jsonl": { status: "active", note: "working" } });
+
+    handlePiExit("C:\\work\\front", 1, false);
+
+    // "Needs attention" instead of the pulsing Working chip.
+    expect(get(sessionStates)["/s1.jsonl"]).toEqual({ status: "attention", note: "process exited" });
+  });
+
+  it("an expected background exit settles the owning session's chip too", () => {
+    projectDir.set("C:\\work\\front");
+    recordProcess("C:\\work\\front", 1);
+    recordProcess("C:\\work\\bg", 2);
+    activeSessionByProject.set({ "C:\\work\\bg": "/bg.jsonl" });
+    sessionStates.set({ "/bg.jsonl": { status: "active", note: "working" } });
+
+    handlePiExit("C:\\work\\bg", 2, true);
+
+    // idle (with an empty note) renders no Working chip (resolveThreadPill).
+    expect(get(sessionStates)["/bg.jsonl"]).toEqual({ status: "idle", note: "" });
+  });
+
+  it("restartPi starts the resumed session's status clean", async () => {
+    projectDir.set("C:\\work\\front");
+    activeSessionPath.set("/s1.jsonl");
+    sessionStates.set({ "/s1.jsonl": { status: "attention", note: "process exited" } });
+    vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: { sessionFile: "/s1.jsonl" } } as never);
+
+    try {
+      await restartPi();
+      expect(get(sessionStates)["/s1.jsonl"]).toEqual({ status: "idle", note: "" });
+    } finally {
+      vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: {} } as never);
+    }
+  });
+});
+
+describe("exportSessionHtml", () => {
+  it("refuses at the start view before opening the save dialog", async () => {
+    vi.mocked(saveDialog).mockClear();
+
+    await exportSessionHtml();
+
+    expect(saveDialog).not.toHaveBeenCalled();
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
+    expect(get(statusNote)).toContain("No project is open");
+  });
+
+  it("surfaces a failed export instead of dying silently in the catch", async () => {
+    projectDir.set("/proj");
+    vi.mocked(saveDialog).mockResolvedValueOnce("/tmp/session.html");
+    vi.mocked(api.piRequest).mockRejectedValueOnce(new Error("export blew up"));
+
+    const res = await exportSessionHtml();
+
+    expect(res.ok).toBe(false);
+    expect(get(statusNote)).toContain("Couldn't export session");
+  });
+});
+
+describe("forgetProject", () => {
+  it("resets the scope filter when it pointed at the forgotten project", () => {
+    projectScope.set("/proj");
+    forgetProject("/proj");
+    expect(get(projectScope)).toBeNull();
+
+    // An unrelated scope survives the forget.
+    projectScope.set("/other");
+    forgetProject("/proj");
+    expect(get(projectScope)).toBe("/other");
   });
 });
 

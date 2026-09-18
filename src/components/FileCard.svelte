@@ -6,7 +6,7 @@
   // open in case the window shrank while it was hidden).
   import { X } from "@lucide/svelte";
   import {
-    fileCardOpen, fileCardFile, fileCardRect, settingsOpen, extDialog,
+    fileCardOpen, fileCardFile, fileCardRect, settingsOpen, extDialog, aboutOpen,
     projectSettingsDir, newProjectOpen, type FileCardRect,
   } from "../lib/stores";
   import { readTextFile, type TextFileContent } from "../lib/api";
@@ -61,7 +61,10 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && $fileCardOpen && !$settingsOpen && !$extDialog && !$projectSettingsDir && !$newProjectOpen) {
+    // Esc closes the card only when it is the topmost overlay: stand down for
+    // the modals above it (Settings z-100+, About z-150, ExtDialog z-200) so
+    // one keypress dismisses exactly one layer.
+    if (e.key === "Escape" && $fileCardOpen && !$settingsOpen && !$extDialog && !$aboutOpen && !$projectSettingsDir && !$newProjectOpen) {
       e.preventDefault();
       close();
     }

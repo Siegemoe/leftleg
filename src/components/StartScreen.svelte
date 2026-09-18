@@ -6,7 +6,7 @@
   // runs the same flow through the folder picker for brand-new projects.
   import { fade } from "svelte/transition";
   import { ArrowRight, FileText, Folder, Paperclip, Send } from "@lucide/svelte";
-  import { projectMeta, projectDir, activeSessionPath, sessions, statusNote, transientNote, switchToProject, sendPrompt, lastSessionFor } from "../lib/stores";
+  import { projectMeta, projectDir, activeSessionPath, sessions, statusNote, transientNote, switchToProject, sendPrompt, lastSessionFor, updateInstallLock } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { projectIconStyle } from "../lib/project-icons";
   import ProjectIcon from "./ProjectIcon.svelte";
@@ -17,11 +17,12 @@
   import { untrack } from "svelte";
 
   const startupDraft = untrack(() => composerDraftFor("startup project"));
+  // Attachments share the startup text's draft store: same in-memory-only
+  // lifetime (drafts are never persisted), so a goHome round-trip keeps
+  // staged chips and the updater's blocker audit sees them. A rejected first
+  // prompt hands them to the destination composer draft together with the
+  // text, same as the text recovery in sendFirstPrompt below.
   let busy = $state(false);
-  // Attachments stay in component state (heavy base64 blobs, no editor
-  // semantics); a rejected first prompt hands them to the destination
-  // composer draft together with the text, same as the text recovery below.
-  let attachments = $state<ComposerAttachment[]>([]);
 
   const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
 
@@ -40,6 +41,9 @@
   }
 
   async function addFiles() {
+    // Same stand-down as the active composer: under the update install lock
+    // the dialog would stage attachments into a dead-end interaction.
+    if ($updateInstallLock) return;
     let picked: PickedAttachment[];
     try {
       picked = await pickAttachments();
@@ -56,12 +60,17 @@
         continue;
       }
       const isImage = IMAGE_TYPES.has(ext(f.name));
-      attachments = [...attachments, { name: f.name, mimeType: isImage ? mimeFor(f.name) : "text/plain", data: f.data, isImage }];
+      const data = f.data; // narrowed to string above; property narrowing doesn't reach the update callback
+      startupDraft.update((draft) => ({ ...draft, attachments: [...draft.attachments, { name: f.name, mimeType: isImage ? mimeFor(f.name) : "text/plain", data, isImage }] }));
     }
   }
 
   function removeAttachment(i: number) {
-    attachments = attachments.filter((_, idx) => idx !== i);
+    // Mid-flight removal would leave the chip inside `sent` — delivered (or
+    // recovered) anyway while the UI showed it gone. A disabled button never
+    // reaches this in a real browser; the guard also covers synthetic events.
+    if (busy) return;
+    startupDraft.update((draft) => ({ ...draft, attachments: draft.attachments.filter((_, idx) => idx !== i) }));
   }
 
   function dataUrlOf(a: ComposerAttachment): string {
@@ -70,6 +79,7 @@
 
   // Paste images directly from the clipboard (screenshots, copied files).
   async function onPaste(e: ClipboardEvent) {
+    if (busy) return; // a paste during the open window would miss `sent` entirely
     const items = e.clipboardData?.items;
     if (!items) return;
     const files: File[] = [];
@@ -91,12 +101,12 @@
         r.readAsDataURL(f);
       });
       const b64 = dataUrl.split(",")[1] ?? "";
-      attachments = [...attachments, {
+      startupDraft.update((draft) => ({ ...draft, attachments: [...draft.attachments, {
         name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
         mimeType: f.type || "image/png",
         data: b64,
         isImage: true,
-      }];
+      }] }));
     }
   }
 
@@ -121,8 +131,10 @@
       ...draft, text: draft.text.startsWith(text) ? draft.text.slice(text.length) : draft.text,
     }));
     // The submitted attachments leave this composer either way: delivered on
-    // accept, recovered into the destination composer on rejection.
-    attachments = attachments.filter((a) => !sent.includes(a));
+    // accept, recovered into the destination composer on rejection. A store
+    // update (not $startupDraft) stays correct even when the open flow
+    // resolves after the start view has unmounted.
+    startupDraft.update((draft) => ({ ...draft, attachments: draft.attachments.filter((a) => !sent.includes(a)) }));
   }
 
   // Every non-forgotten project we know about: union of session history and
@@ -147,7 +159,7 @@
     busy = true;
     try {
       const text = $startupDraft.text;
-      const sent = attachments;
+      const sent = $startupDraft.attachments;
       // Resume the project's remembered/most-recent session when it has one.
       const opened = await switchToProject(dir, lastSessionFor(dir));
       if (!opened || $projectDir !== dir) return;
@@ -164,7 +176,7 @@
     busy = true;
     try {
       const text = $startupDraft.text;
-      const sent = attachments;
+      const sent = $startupDraft.attachments;
       const opened = await chooseProject();
       if (!opened || $projectDir !== opened) return;
       await sendFirstPrompt(text, sent);
@@ -199,9 +211,9 @@
     </div>
 
     <div class="composerbox">
-      {#if attachments.length > 0}
+      {#if $startupDraft.attachments.length > 0}
         <div class="attachments">
-          {#each attachments as a, i}
+          {#each $startupDraft.attachments as a, i}
             <div class="chip">
               {#if a.isImage}
                 <img src={dataUrlOf(a)} alt={a.name} />
@@ -209,7 +221,7 @@
                 <FileText size={14} strokeWidth={2} />
               {/if}
               <span class="chipname" title={a.name}>{a.name}</span>
-              <button class="ghost rm" onclick={() => removeAttachment(i)} title="Remove">×</button>
+              <button class="ghost rm" disabled={busy} onclick={() => removeAttachment(i)} title="Remove">×</button>
             </div>
           {/each}
         </div>
@@ -219,6 +231,7 @@
         bind:value={$startupDraft.text}
         rows={3}
         spellcheck="false"
+        disabled={busy}
         onkeydown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -228,12 +241,12 @@
         onpaste={onPaste}
       ></textarea>
       <div class="actions">
-        <button class="ghost add" disabled={busy} onclick={addFiles} title="Attach images or files">
+        <button class="ghost add" disabled={busy || $updateInstallLock} onclick={addFiles} title="Attach images or files">
           <Paperclip size={18} strokeWidth={2} />
         </button>
         <button
           class="primary send"
-          disabled={busy || (!$startupDraft.text.trim() && attachments.length === 0)}
+          disabled={busy || (!$startupDraft.text.trim() && $startupDraft.attachments.length === 0)}
           onclick={() => void openFolder()}
           title="Send to a new folder"
         >

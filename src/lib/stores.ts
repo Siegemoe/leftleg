@@ -23,6 +23,9 @@ export const theme = writable<"light" | "dark" | "system">("system");
 export const projectDir = writable<string>("");
 export const sidebarOpen = writable<boolean>(true);
 export const settingsOpen = writable<boolean>(false);
+/** About card overlay (Help → About Leftleg). A store, not TitleBar-local
+ * state, so the Esc ladder's lower layers (FileCard) can stand down for it. */
+export const aboutOpen = writable<boolean>(false);
 /** Right panel (Status / Artifacts / placeholder docks beside the chat). */
 export type RightPanelTab = "status" | "subagents" | "artifacts" | "diff" | "browser" | "terminal" | "files";
 export const rightPanelOpen = writable<boolean>(false);
@@ -252,6 +255,9 @@ export function updateProjectMeta(dir: string, patch: ProjectMeta) {
 
 export function forgetProject(dir: string) {
   projectMeta.update((m) => ({ ...m, [dir]: { ...m[dir], forgotten: true } }));
+  // A scope filter pointing at the hidden project would outlive its picker
+  // row (the sidebar excludes forgotten projects) — fall back to all projects.
+  if (get(projectScope) === dir) projectScope.set(null);
 }
 
 export function restoreProject(dir: string) {
@@ -932,6 +938,11 @@ function navigate<T>(work: () => Promise<T>): Promise<T> {
   });
 }
 
+/** A request's view died mid-flight (the user navigated away); its response
+ * is dead on arrival. Thrown by requestForView, ignored where staleness is
+ * expected (transientNote also filters it out of the status line). */
+const VIEW_CHANGED_MSG = "View changed while the request was pending";
+
 /** An RPC response may only update the view that issued it. */
 async function requestForView<T = unknown>(command: Record<string, unknown>, timeout = 120): Promise<T> {
   const project = get(projectDir);
@@ -943,7 +954,7 @@ async function requestForView<T = unknown>(command: Record<string, unknown>, tim
   const revision = viewRevision;
   const res = await api.piRequest<T>(command, timeout, project || null, proc);
   if (project !== get(projectDir) || proc !== get(lastProcByProject)[project] || revision !== viewRevision) {
-    throw new Error("View changed while the request was pending");
+    throw new Error(VIEW_CHANGED_MSG);
   }
   return res;
 }
@@ -1317,7 +1328,7 @@ export async function renameSession(name: string, path = get(activeSessionPath) 
   }
   if (!name.trim()) return;
   if (!await rpcAction({ type: "set_session_name", name: name.trim() })) return;
-  await refreshRpcState();
+  await refreshRpcStateForView();
   await refreshSessions();
 }
 
@@ -1326,22 +1337,46 @@ async function rpcAction(command: Record<string, unknown>, timeout = 30): Promis
     const res = await requestForView<{ success: boolean; error?: string }>(command, timeout);
     if (!res.success) throw new Error(res.error ?? `${command.type} rejected by pi`);
     return true;
-  } catch (e) { transientNote(`Error: ${e}`); return false; }
+  } catch (e) {
+    // String(e) keeps string throws readable and avoids a doubled prefix on
+    // Errors ("Error: Error: …") — an Error's toString already carries it.
+    transientNote(String(e));
+    return false;
+  }
+}
+/** Refresh rpc state, tolerant of a stale view: a view-changed rejection
+ * means the user navigated away mid-request, so the response belongs to a
+ * view that no longer exists — there is nothing left to refresh and nothing
+ * to surface (refreshRpcState itself keeps rejecting, which other callers
+ * rely on). Any other error still surfaces. */
+async function refreshRpcStateForView() {
+  try {
+    await refreshRpcState();
+  } catch (e) {
+    if (e instanceof Error && e.message === VIEW_CHANGED_MSG) return;
+    throw e;
+  }
+}
+/** rpcAction + follow-up state refresh (the standard model/level/mode switch
+ * shape), with the stale-view tolerance above so an action that races the
+ * user's navigation can't land in the global error banner via `void`. */
+async function rpcActionThenRefresh(command: Record<string, unknown>, timeout = 30): Promise<void> {
+  if (await rpcAction(command, timeout)) await refreshRpcStateForView();
 }
 export async function setModel(provider: string, modelId: string) {
-  if (await rpcAction({ type: "set_model", provider, modelId }, 60)) await refreshRpcState();
+  await rpcActionThenRefresh({ type: "set_model", provider, modelId }, 60);
 }
 export async function setThinkingLevel(level: ThinkingLevel) {
-  if (await rpcAction({ type: "set_thinking_level", level })) await refreshRpcState();
+  await rpcActionThenRefresh({ type: "set_thinking_level", level });
 }
 export async function setSteeringMode(mode: "all" | "one-at-a-time") {
-  if (await rpcAction({ type: "set_steering_mode", mode })) await refreshRpcState();
+  await rpcActionThenRefresh({ type: "set_steering_mode", mode });
 }
 export async function setFollowUpMode(mode: "all" | "one-at-a-time") {
-  if (await rpcAction({ type: "set_follow_up_mode", mode })) await refreshRpcState();
+  await rpcActionThenRefresh({ type: "set_follow_up_mode", mode });
 }
 export async function setAutoCompaction(enabled: boolean) {
-  if (await rpcAction({ type: "set_auto_compaction", enabled })) await refreshRpcState();
+  await rpcActionThenRefresh({ type: "set_auto_compaction", enabled });
 }
 export async function setAutoRetry(enabled: boolean) {
   if (await rpcAction({ type: "set_auto_retry", enabled })) autoRetry.set(enabled);
@@ -1359,6 +1394,13 @@ export async function clearQueue() { await rpcAction({ type: "clear_queue" }); }
 
 /** Export the active session to a user-chosen HTML file (pi renders it). */
 export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string; error?: string }> {
+  // Stand down before the dialog, newSession-style: at the start view the
+  // request below would hit the view guard and die in the catch unsurfaced —
+  // after the user had already looked at a real save dialog.
+  if (!get(projectDir)) {
+    transientNote("No project is open — open one from the start view first.");
+    return { ok: false, error: "No project is open" };
+  }
   try {
     const target = await saveFileDialog({
       title: "Export session as HTML",
@@ -1378,6 +1420,8 @@ export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string;
     transientNote(`Session exported: ${path}`, 6000);
     return { ok: true, path };
   } catch (e) {
+    // The caller ignores the return value, so every failure path must surface.
+    transientNote(`Couldn't export session: ${e}`);
     return { ok: false, error: String(e) };
   }
 }
@@ -1479,6 +1523,19 @@ export async function refreshCommands() {
   }
 }
 
+/** Process death settles the owning session's pill: an expected stop behaves
+ * like agent_end (idle — but an attention mark survives for the user), an
+ * unexpected death demands attention. Without this a dead process would keep
+ * its session "Working" until a full agent_start→agent_end cycle ran again. */
+function settleSessionOnProcessExit(session: string | null, expected: boolean) {
+  if (!expected) {
+    setSessionStatus(session, "attention", "process exited");
+    return;
+  }
+  const cur = get(sessionStates)[session ?? ""];
+  if (cur?.status !== "attention") setSessionStatus(session, "idle");
+}
+
 /**
  * A pi process died. For the active project this is the crash-banner path;
  * background projects just lose their liveness pill. `pid` filters stale
@@ -1497,8 +1554,7 @@ export function handlePiExit(project: string, pid: number, expected: boolean, er
     return next;
   });
   if (project !== get(projectDir)) {
-    const session = get(activeSessionByProject)[project];
-    if (!expected) setSessionStatus(session, "attention", "process exited");
+    settleSessionOnProcessExit(get(activeSessionByProject)[project], expected);
     abortPendingMgmt("pi process exited before the management reply", project, pid);
     return;
   }
@@ -1511,6 +1567,10 @@ export function handlePiExit(project: string, pid: number, expected: boolean, er
   extWidgets.set({});
   extDialog.set(null);
   finalizeStreaming();
+  // The dead process's session stops pulsing "Working": settle it like
+  // agent_end (expected) or flag it (unexpected) — the disconnect banner
+  // alone doesn't touch the sidebar chip.
+  settleSessionOnProcessExit(get(activeSessionPath), expected);
   // The process is gone, so tool_execution_end will never arrive: close out
   // any tool cards still showing a spinner, otherwise they run forever.
   items.update((a) => {
@@ -1568,6 +1628,9 @@ async function restartPiImpl() {
     connected.set(true);
     if (resumed) transientNote("pi restarted — session resumed", 5000);
     await refreshRpcState();
+    // A restart (resumed or fresh) starts the session clean: any leftover
+    // "Working"/attention pill from the dead process must not outlive it.
+    setSessionStatus(get(activeSessionPath), "idle");
     if (get(activeSessionPath)) await reloadMessages();
     await refreshStats();
     await refreshSessions();

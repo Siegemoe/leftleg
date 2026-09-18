@@ -8,7 +8,7 @@
   import { appDataDir } from "@tauri-apps/api/path";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import {
-    sidebarOpen, settingsOpen, settingsProject, theme, extDialog,
+    aboutOpen, sidebarOpen, settingsOpen, settingsProject, theme, extDialog,
     chooseProject, newSession, applyTheme, transientNote, goHome,
     openRightPanel, rightPanelOpen, rightPanelTab, homePanelCollapsed,
     openNewProject, newProjectOpen, projectSettingsDir,
@@ -23,7 +23,8 @@
 
   type MenuId = "file" | "edit" | "view" | "help";
   let openMenu: MenuId | null = $state(null);
-  let aboutOpen = $state(false);
+  // The About card's open state lives in a store (aboutOpen) so the Esc
+  // ladder's lower layers — FileCard's gate — can stand down for it.
 
   // Effective bindings (defaults + user overrides from Settings → Key
   // bindings) drive both the global keydown dispatch and the hint spans in
@@ -57,7 +58,10 @@
   function onGlobalKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       openMenu = null;
-      aboutOpen = false;
+      // The About card is topmost only when no ExtDialog sits over it
+      // (ExtDialog is z-200 above the About card's z-150): with one up, Esc
+      // belongs to the ExtDialog layer and About stands down here.
+      if (!$extDialog) aboutOpen.set(false);
       return;
     }
     // Registry-driven accelerators (defaults + user overrides from Settings →
@@ -183,7 +187,7 @@
           <div class="sep"></div>
           <button onclick={() => run(() => openUrl(repoUrl))}>GitHub Repository</button>
           <div class="sep"></div>
-          <button onclick={() => run(() => { aboutOpen = true; })}>About Leftleg</button>
+          <button onclick={() => run(() => { aboutOpen.set(true); })}>About Leftleg</button>
         </div>
       {/if}
     </div>
@@ -265,15 +269,15 @@
   </div>
 </header>
 
-{#if aboutOpen}
-  <div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) aboutOpen = false; }} role="presentation">
+{#if $aboutOpen}
+  <div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) aboutOpen.set(false); }} role="presentation">
     <div class="about" role="dialog" aria-modal="true">
       <img class="about-mark" src={mark} alt="" draggable="false" />
       <h3>Leftleg</h3>
       <p class="ver">v{__APP_VERSION__}</p>
       <p class="desc">A control surface for the <a href="https://github.com/earendil-works/pi-mono" target="_blank" rel="noreferrer">Pi coding agent</a>.</p>
       <p class="desc"><a href={repoUrl} target="_blank" rel="noreferrer">GitHub repository</a></p>
-      <button class="closebtn" onclick={() => (aboutOpen = false)}>Close</button>
+      <button class="closebtn" onclick={() => aboutOpen.set(false)}>Close</button>
     </div>
   </div>
 {/if}
