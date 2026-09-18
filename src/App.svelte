@@ -15,7 +15,7 @@
   import FileCard from "./components/FileCard.svelte";
   import NewProjectCard from "./components/NewProjectCard.svelte";
   import PromptRail from "./components/PromptRail.svelte";
-  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
+  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, homePanelCollapsed, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
   import { reportError } from "./lib/errors";
@@ -122,7 +122,9 @@
         </div>
       {/if}
     </main>
-    {#if $rightPanelOpen}
+    <!-- The start view collapses the panel by default (homePanelCollapsed);
+         it is not locked — a dock button reopens it manually. -->
+    {#if $rightPanelOpen && !$homePanelCollapsed}
       <RightPanel />
     {/if}
     </div>
