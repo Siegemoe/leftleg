@@ -239,3 +239,9 @@ export interface TextFileContent {
 export function readTextFile(projectDir: string, path: string): Promise<TextFileContent> {
   return invoke("read_text_file", { projectDir, path });
 }
+
+/** Create a new project folder (one plain component under a user-picked
+ * absolute parent) and return its full path. */
+export function createProjectDir(parent: string, name: string): Promise<string> {
+  return invoke("create_project_dir", { parent, name });
+}

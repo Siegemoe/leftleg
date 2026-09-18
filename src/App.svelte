@@ -13,6 +13,8 @@
   import Notifications from "./components/Notifications.svelte";
   import RightPanel from "./components/RightPanel.svelte";
   import FileCard from "./components/FileCard.svelte";
+  import NewProjectCard from "./components/NewProjectCard.svelte";
+  import SessionRail from "./components/SessionRail.svelte";
   import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, statusNote, extDialog, connected, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
@@ -77,6 +79,8 @@
   <div class="content">
   {#if $sidebarOpen}
     <Sidebar />
+  {:else if $projectDir}
+    <SessionRail />
   {/if}
   <main>
     {#if $updateAvailable}
@@ -128,6 +132,7 @@
 
 <Notifications />
 <FileCard />
+<NewProjectCard />
 
 {#if $extDialog}
   <ExtDialog />

@@ -10,7 +10,7 @@
   import {
     sidebarOpen, settingsOpen, settingsProject, theme, extDialog,
     chooseProject, newSession, applyTheme, transientNote,
-    openRightPanel, rightPanelOpen, rightPanelTab,
+    openRightPanel, rightPanelOpen, rightPanelTab, openNewProject,
   } from "../lib/stores";
   import { checkForUpdates } from "../lib/updater";
   import { openPathLocal, quitApp } from "../lib/api";
@@ -22,9 +22,10 @@
   let openMenu: MenuId | null = $state(null);
   let aboutOpen = $state(false);
 
-  // Status/Artifacts now open as cards in the right panel (openRightPanel
-  // toggles the active tab); menu items force the panel open.
-  function openPanelTab(tab: "status" | "artifacts") {
+  // Status/Artifacts (and the Diff/Files docks) open as cards in the right
+  // panel (openRightPanel toggles the active tab); menu items force the
+  // panel open.
+  function openPanelTab(tab: "status" | "artifacts" | "diff" | "files") {
     rightPanelTab.set(tab);
     rightPanelOpen.set(true);
   }
@@ -49,13 +50,17 @@
     // free in this webview, so they work while typing too; step aside when a
     // modal owns the keyboard.
     if (e.defaultPrevented || $settingsOpen || $extDialog) return;
-    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const key = e.key.toLowerCase();
-    if (key === "n") {
+    if (key === "n" && e.shiftKey) {
+      e.preventDefault();
+      openMenu = null;
+      openNewProject();
+    } else if (key === "n") {
       e.preventDefault();
       openMenu = null;
       void newSession();
-    } else if (key === "b") {
+    } else if (key === "b" && !e.shiftKey) {
       e.preventDefault();
       openMenu = null;
       sidebarOpen.update((v) => !v);
@@ -119,6 +124,7 @@
       {#if openMenu === "file"}
         <div class="dropdown">
           <button onclick={() => run(() => newSession())}>New Session<span class="hint-key">Ctrl+N</span></button>
+          <button onclick={() => run(() => openNewProject())}>New Project…<span class="hint-key">Ctrl+Shift+N</span></button>
           <button onclick={() => run(() => chooseProject())}>Choose Project Folder…</button>
           <div class="sep"></div>
           <button onclick={() => run(() => { settingsProject.set(null); settingsOpen.set(true); })}>Settings…</button>
@@ -145,6 +151,8 @@
           <button onclick={() => run(() => sidebarOpen.update((v) => !v))}>{"Toggle Sidebar"}<span class="hint-key">Ctrl+B</span></button>
           <button onclick={() => run(() => openPanelTab("artifacts"))}>Artifacts…</button>
           <button onclick={() => run(() => openPanelTab("status"))}>Status…</button>
+          <button onclick={() => run(() => openPanelTab("diff"))}>Diff…</button>
+          <button onclick={() => run(() => openPanelTab("files"))}>Files…</button>
           <div class="sep"></div>
           <button onclick={() => run(() => applyTheme("light"))}>{$theme === "light" ? "✓ " : ""}Light Theme</button>
           <button onclick={() => run(() => applyTheme("dark"))}>{$theme === "dark" ? "✓ " : ""}Dark Theme</button>

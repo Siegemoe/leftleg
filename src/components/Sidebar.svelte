@@ -4,7 +4,7 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, switchToProject, applyTheme, connected, newSession, openSession, pins,
+    activeSessionPath, switchToProject, applyTheme, connected, newSession, openSession, openNewProject, pins,
     projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
     settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
@@ -390,6 +390,11 @@
             {:else}
               <div class="scope-empty">No matching projects.</div>
             {/each}
+            <div class="scope-sep"></div>
+            <button class="scope-item new-project" title="Create a new project folder" onclick={() => { scopeOpen = false; openNewProject(); }}>
+              <span class="scope-icon"><Plus size={13} strokeWidth={2} /></span>
+              <span class="scope-name">New project…</span>
+            </button>
           </div>
         {/if}
       </div>
@@ -759,10 +764,15 @@
   .scope-pop {
     position: absolute;
     top: calc(100% + 6px);
-    right: 0;
+    /* Left-anchored to the picker, not right: right-alignment pushed the pop
+     * past the window's left edge whenever the sidebar sat near its 208px
+     * minimum. The pop may now overlap the chat slightly instead of leaving
+     * the screen. */
+    left: 0;
     z-index: 50;
     width: 240px;
-    max-height: 300px;
+    max-width: calc(100vw - 24px);
+    max-height: min(300px, calc(100vh - 140px));
     overflow-y: auto;
     background: var(--bg-surface);
     border: 1px solid var(--border-strong);
@@ -800,6 +810,8 @@
   .scope-item:hover, .scope-item.selected { background: var(--bg-surface-2); color: var(--text); }
   .scope-icon { flex-shrink: 0; }
   .scope-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scope-sep { height: 1px; background: var(--border); margin: 4px 2px; flex-shrink: 0; }
+  .scope-item.new-project:hover { color: var(--accent); }
   .scope-tag {
     flex-shrink: 0;
     font-size: 9px;

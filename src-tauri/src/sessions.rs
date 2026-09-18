@@ -1078,6 +1078,49 @@ pub async fn read_text_file(
         .map_err(|e| e.to_string())?
 }
 
+/// Create a new project folder: one plain path component under an absolute
+/// parent the user just picked in the native folder dialog. Deliberately
+/// narrow — the webview gets no general directory-creation primitive, only
+/// this single-component create (name is validated to a safe Windows/POSIX
+/// folder name; the parent must already exist).
+#[tauri::command]
+pub async fn create_project_dir(parent: String, name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || create_project_dir_checked(&parent, &name))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn create_project_dir_checked(parent: &str, name: &str) -> Result<String, String> {
+    let parent_path = std::path::Path::new(parent);
+    if !parent_path.is_absolute() {
+        return Err("parent folder must be absolute".into());
+    }
+    if !parent_path.is_dir() {
+        return Err("parent folder does not exist".into());
+    }
+    let trimmed = name.trim();
+    let bad = trimmed.is_empty()
+        || trimmed == "."
+        || trimmed == ".."
+        || trimmed.contains(['/', '\\'])
+        || trimmed.chars().any(|c| {
+            matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') || (c as u32) < 0x20
+        })
+        || trimmed.ends_with(['.', ' ']);
+    if bad {
+        return Err("project name must be a plain folder name".into());
+    }
+    if trimmed.encode_utf16().count() > 200 {
+        return Err("project name is too long".into());
+    }
+    let target = parent_path.join(trimmed);
+    if target.exists() && !target.is_dir() {
+        return Err("a file with that name already exists".into());
+    }
+    fs::create_dir_all(&target).map_err(|e| format!("couldn't create folder: {e}"))?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1529,6 +1572,37 @@ mod tests {
         assert!(summary.files.is_empty());
         assert!(!summary.truncated);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn create_project_dir_validates_name_and_parent() {
+        let parent = temp_dir("proj-create");
+        fs::create_dir_all(&parent).unwrap();
+
+        // Happy path: single safe component, created and returned absolute.
+        let made = create_project_dir_checked(parent.to_str().unwrap(), " My Project ").unwrap();
+        assert_eq!(std::path::Path::new(&made).file_name().unwrap(), "My Project");
+        assert!(std::path::Path::new(&made).is_dir(), "{made} must exist");
+
+        // Existing directory is idempotent; existing file is refused.
+        assert_eq!(create_project_dir_checked(parent.to_str().unwrap(), "My Project").unwrap(), made);
+        fs::write(parent.join("taken.txt"), "x").unwrap();
+        assert!(create_project_dir_checked(parent.to_str().unwrap(), "taken.txt").is_err());
+
+        // Name must be one plain component. (Surrounding whitespace is
+        // trimmed by design — the happy path above accepts " My Project ".)
+        for bad in ["", "  ", ".", "..", "a/b", "a\\b", "evil:name", "wild*", "q?x", "trail.", "trail .", "a<b"] {
+            assert!(
+                create_project_dir_checked(parent.to_str().unwrap(), bad).is_err(),
+                "{bad:?} must be rejected",
+            );
+        }
+
+        // Parent must be absolute and existing.
+        assert!(create_project_dir_checked("relative-parent", "x").is_err());
+        assert!(create_project_dir_checked(parent.join("nope").to_str().unwrap(), "x").is_err());
+
+        fs::remove_dir_all(parent).unwrap();
     }
 
 }

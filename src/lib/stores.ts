@@ -46,6 +46,26 @@ export function openFileCard(projectDir: string, path: string) {
 /** Which project the settings modal is scoped to (null = general view). */
 export const settingsProject = writable<string | null>(null);
 
+// ---------- new-project card ----------
+
+/** The "create a new project" modal card, reachable from the sidebar scope
+ * picker, the settings project manager, and the File menu. */
+export const newProjectOpen = writable<boolean>(false);
+export function openNewProject() {
+  newProjectOpen.set(true);
+}
+
+/** Create the folder and make it the active project. Resolves to the new
+ * path; throws so the caller (the card) can show the error inline. */
+export async function createProject(parent: string, name: string): Promise<string> {
+  const dir = await api.createProjectDir(parent, name);
+  const ok = await switchToProject(dir);
+  if (!ok) throw new Error("couldn't start pi in the new folder");
+  newProjectOpen.set(false);
+  transientNote(`Project created: ${dir}`, 6000);
+  return dir;
+}
+
 export const connected = writable<boolean>(false);
 export const rpcState = writable<RpcState | null>(null);
 export const items = writable<UiItem[]>([]);

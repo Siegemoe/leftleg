@@ -9,7 +9,7 @@
     setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, abortRetry,
     exportSessionHtml, cloneSession, projectMeta, sessions, updateProjectMeta,
     forgetProject, restoreProject, chooseProject, autoRetry, refreshCommands,
-    statusNote, transientNote, navigating, updateInstallLock,
+    statusNote, transientNote, navigating, updateInstallLock, openNewProject,
   } from "../../lib/stores";
   import { companionAvailable, bindManagement, agentDirStore, isCompanionCommand } from "../../lib/settings/mgmt";
   import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle, projectIconLabel } from "../../lib/project-icons";
@@ -32,7 +32,7 @@
     BUILTIN_TOOLS, THINKING_LEVELS, type Scope,
   } from "../../lib/settings/state";
   import { writeAgentExtension, getAgentDir } from "../../lib/api";
-  import { Search, X, RotateCcw, FolderOpen, RefreshCw } from "@lucide/svelte";
+  import { Search, X, RotateCcw, FolderOpen, RefreshCw, Plus } from "@lucide/svelte";
   import PackageForms from "./PackageForms.svelte";
   import companionSource from "../../../companion/leftleg-settings/index.ts?raw";
   import mediaSource from "../../../companion/leftleg-media/index.ts?raw";
@@ -900,6 +900,7 @@
         {/each}
         <div class="row">
           <button onclick={chooseProject}><FolderOpen size={13} strokeWidth={2} /> Open another folder…</button>
+          <button onclick={() => openNewProject()}><Plus size={13} strokeWidth={2} /> New project…</button>
         </div>
       </div>
     {:else}
