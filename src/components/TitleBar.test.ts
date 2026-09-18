@@ -96,3 +96,14 @@ describe("status bar updater state", () => {
     expect(button.disabled).toBe(false);
   });
 });
+
+describe("status bar activity indicator", () => {
+  it("no longer renders the global idle/working streaming pill", () => {
+    instance = mount(StatusBar, { target: document.body });
+    flushSync();
+
+    // The activity cue moved into the per-session rows (SessionRow's working
+    // chip); the status bar must stay quiet about it.
+    expect(document.body.querySelector(".streaming")).toBeNull();
+  });
+});

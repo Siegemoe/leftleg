@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { rpcState, stats, streaming, queue, statusNote, transientNote, extStatuses, models, setModel, pinnedModels } from "../lib/stores";
+  import { rpcState, stats, queue, statusNote, transientNote, extStatuses, models, setModel, pinnedModels } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
   import { ChevronDown } from "@lucide/svelte";
   import { updateCheck, checkForUpdates, applyUpdate, updateAvailable, updateStatus } from "../lib/updater";
@@ -186,11 +186,6 @@
     <span class="note">{$statusNote}</span>
   {/if}
 
-  <span class="pill streaming" class:active={$streaming}>
-    <span class="dot"></span>
-    {$streaming ? "working" : "idle"}
-  </span>
-
   {#if $rpcState?.model}
     <div class="modelwrap">
       <button class="pill as-btn" title="Switch model — {$rpcState.model.provider} / {$rpcState.model.id}" onclick={() => { modelOpen = !modelOpen; if (modelOpen) { modelQuery = ""; modelHl = 0; modelKbd = false; } }}>
@@ -297,13 +292,6 @@
   }
   .as-btn { cursor: pointer; }
   .as-btn:hover { border-color: var(--border-strong); }
-  .dot {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: var(--text-3);
-  }
-  .streaming.active .dot { background: var(--accent); animation: pulse 1.1s infinite; }
-  @keyframes pulse { 50% { opacity: 0.3; } }
-  .streaming.active { color: var(--accent); border-color: var(--accent); }
   .ctxbar {
     width: 44px; height: 4px; border-radius: 3px;
     background: var(--bg-inset);
