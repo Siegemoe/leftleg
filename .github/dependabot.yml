@@ -11,6 +11,12 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
+    # @types/node majors track Node runtime release lines and would reopen a
+    # PR weekly; the ambient typings only need to match the Node CI builds
+    # with (see env.NODE_VERSION in ci.yml). Bump majors deliberately instead.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps(npm)
 
