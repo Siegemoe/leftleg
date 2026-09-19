@@ -7,12 +7,16 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import * as api from "./api";
 import { collectUpdateInstallBlockers, updateInstallLock } from "./stores";
 
-export type UpdateStatus = "idle" | "checking" | "downloading" | "ready" | "preparing" | "installing" | "error";
+export type UpdateStatus =
+  "idle" | "checking" | "downloading" | "ready" | "preparing" | "installing" | "error";
 
 export const updateAvailable = writable<Update | null>(null);
 export const updateStatus = writable<UpdateStatus>("idle");
 export const updateError = writable<string>("");
-export const updateProgress = writable<{ downloaded: number; total: number | null }>({ downloaded: 0, total: null });
+export const updateProgress = writable<{ downloaded: number; total: number | null }>({
+  downloaded: 0,
+  total: null,
+});
 
 export interface UpdateCheck {
   status: "idle" | "checking" | "current" | "available" | "failed";
@@ -42,7 +46,11 @@ function checkFailureMessage(error: unknown): string {
 
 async function closeUpdate(update: Update | null): Promise<void> {
   if (!update) return;
-  try { await update.close(); } catch { /* process exit and stale resources are harmless here */ }
+  try {
+    await update.close();
+  } catch {
+    /* process exit and stale resources are harmless here */
+  }
 }
 
 async function replaceAvailable(update: Update | null): Promise<void> {
@@ -68,7 +76,11 @@ async function runCheck(): Promise<Update | null> {
     if (revision !== checkRevision) return null;
     updateStatus.set("idle");
     if (update) {
-      updateCheck.set({ status: "available", at: Date.now(), message: `v${update.version} is available` });
+      updateCheck.set({
+        status: "available",
+        at: Date.now(),
+        message: `v${update.version} is available`,
+      });
     } else {
       updateCheck.set({ status: "current", at: Date.now(), message: "up to date" });
     }
@@ -88,7 +100,9 @@ async function runCheck(): Promise<Update | null> {
 /** Coalesce startup, Settings, and status-bar checks into one native request. */
 export function checkForUpdates(): Promise<Update | null> {
   if (checkInFlight) return checkInFlight;
-  checkInFlight = runCheck().finally(() => { checkInFlight = null; });
+  checkInFlight = runCheck().finally(() => {
+    checkInFlight = null;
+  });
   return checkInFlight;
 }
 
@@ -96,7 +110,10 @@ function recordProgress(event: DownloadEvent): void {
   if (event.event === "Started") {
     updateProgress.set({ downloaded: 0, total: event.data.contentLength ?? null });
   } else if (event.event === "Progress") {
-    updateProgress.update((value) => ({ ...value, downloaded: value.downloaded + event.data.chunkLength }));
+    updateProgress.update((value) => ({
+      ...value,
+      downloaded: value.downloaded + event.data.chunkLength,
+    }));
   }
 }
 
@@ -159,7 +176,11 @@ async function runApplyUpdate(): Promise<void> {
     ownsUpdateLock = false;
   } catch (error) {
     if (nativePrepared) {
-      try { await api.cancelUpdateShutdown(); } catch { /* preserve the installer error */ }
+      try {
+        await api.cancelUpdateShutdown();
+      } catch {
+        /* preserve the installer error */
+      }
     }
     updateStatus.set("error");
     updateError.set(`Update installation failed: ${errorText(error)}`);
@@ -173,7 +194,9 @@ async function runApplyUpdate(): Promise<void> {
 /** Serialize every install entry point; repeated clicks share one operation. */
 export function applyUpdate(): Promise<void> {
   if (applyInFlight) return applyInFlight;
-  applyInFlight = runApplyUpdate().finally(() => { applyInFlight = null; });
+  applyInFlight = runApplyUpdate().finally(() => {
+    applyInFlight = null;
+  });
   return applyInFlight;
 }
 

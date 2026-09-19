@@ -4,19 +4,64 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, applyTheme, connected, extDialog, newSession, newProjectOpen, nowTick, openSession, openNewProject,
-    openProjectSettingsCard, pins, projectSettingsDir,
-    projectDir, projectMeta, projectScope, renameSession, reorderPin, settled, fileCardOpen,
-    sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
-    settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
+    activeSessionPath,
+    applyTheme,
+    connected,
+    extDialog,
+    newSession,
+    newProjectOpen,
+    nowTick,
+    openSession,
+    openNewProject,
+    openProjectSettingsCard,
+    pins,
+    projectSettingsDir,
+    projectDir,
+    projectMeta,
+    projectScope,
+    renameSession,
+    reorderPin,
+    settled,
+    fileCardOpen,
+    sessionQuery,
+    sessionStates,
+    sessions,
+    settledView,
+    settleSession,
+    settingsOpen,
+    settingsProject,
+    sidebarWidth,
+    theme,
+    togglePin,
+    unsettleSession,
+    visitedAt,
   } from "../lib/stores";
   import {
-    filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, projectDisplayName,
-    resolveThreadPill, splitSections, toSidebarSessions, type SidebarSection, type SidebarSession,
+    filterSessionsByQuery,
+    formatRelativeTime,
+    groupSessionsByProject,
+    projectDisplayName,
+    resolveThreadPill,
+    splitSections,
+    toSidebarSessions,
+    type SidebarSection,
+    type SidebarSession,
   } from "../lib/sidebar-model";
   import { projectIconStyle } from "../lib/project-icons";
   import ProjectIcon from "./ProjectIcon.svelte";
-  import { ChevronRight, Folder, GitBranch, Layers, List, Monitor, Moon, Plus, Search, Settings, Sun } from "@lucide/svelte";
+  import {
+    ChevronRight,
+    Folder,
+    GitBranch,
+    Layers,
+    List,
+    Monitor,
+    Moon,
+    Plus,
+    Search,
+    Settings,
+    Sun,
+  } from "@lucide/svelte";
   import { gitRepoInfo, gitDiffSummary } from "../lib/api";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import SessionRow from "./SessionRow.svelte";
@@ -81,7 +126,9 @@
   const filteredScopeChoices = $derived.by(() => {
     const q = scopeQuery.trim().toLowerCase();
     if (!q) return scopeChoices;
-    return scopeChoices.filter(([dir]) => projectDisplayName(dir, $projectMeta[dir]?.name).toLowerCase().includes(q));
+    return scopeChoices.filter(([dir]) =>
+      projectDisplayName(dir, $projectMeta[dir]?.name).toLowerCase().includes(q),
+    );
   });
 
   // Close the project-scope popover on outside clicks or Escape, wherever
@@ -106,7 +153,9 @@
   /** Unified history: every project's settled sessions in one list. */
   const unifiedSettled = $derived.by(() => {
     if ($settledView !== "unified") return [];
-    const all = groups.flatMap((g) => splitSections({ sessions: g.sessions, pinOrder: $pins }).settled);
+    const all = groups.flatMap(
+      (g) => splitSections({ sessions: g.sessions, pinOrder: $pins }).settled,
+    );
     return all.sort((a, b) => b.timestampMs - a.timestampMs);
   });
   const unifiedVisible = $derived(
@@ -141,10 +190,19 @@
       items: [
         { label: "Open", action: () => void openSession(s.path) },
         { label: s.pinned ? "Unpin" : "Pin", action: () => togglePin(s.path) },
-        { label: s.settled ? "Unsettle" : "Settle", action: () => (s.settled ? unsettleSession(s.path) : settleSession(s.path)) },
+        {
+          label: s.settled ? "Unsettle" : "Settle",
+          action: () => (s.settled ? unsettleSession(s.path) : settleSession(s.path)),
+        },
         { label: "Rename…", action: () => beginRename(s) },
         { label: "Copy path", action: () => void navigator.clipboard.writeText(s.path) },
-        { label: "Copy session ID", action: () => void navigator.clipboard.writeText(($sessions.find((info) => info.path === s.path)?.sessionId ?? "")) },
+        {
+          label: "Copy session ID",
+          action: () =>
+            void navigator.clipboard.writeText(
+              $sessions.find((info) => info.path === s.path)?.sessionId ?? "",
+            ),
+        },
         { label: "Project settings…", action: () => openProjectSettingsCard(s.projectDir) },
       ],
     };
@@ -252,13 +310,21 @@
 
   // Git checkout state for the footer chip: current branch + uncommitted
   // count, refreshed on project switch and every 30s while mounted.
-  interface GitInfo { repo: boolean; branch: string; dirty: number; toplevel: string }
+  interface GitInfo {
+    repo: boolean;
+    branch: string;
+    dirty: number;
+    toplevel: string;
+  }
   let gitInfo = $state<GitInfo | null>(null);
   let gitRevision = 0;
   async function refreshGit(dir?: string) {
     const target = dir ?? $projectDir;
     const revision = ++gitRevision;
-    if (!target) { gitInfo = null; return; }
+    if (!target) {
+      gitInfo = null;
+      return;
+    }
     try {
       const result = await gitRepoInfo(target);
       if (revision === gitRevision && target === $projectDir) gitInfo = result;
@@ -270,7 +336,11 @@
   // Debounced on hover-open and cached 5 s so pointer travel doesn't re-run
   // git; the popover is pointer-events:none, so leaving the chip is the only
   // dismiss path (no focus-handlers needed on a passive tooltip).
-  interface DiffHover { added: number; deleted: number; files: number }
+  interface DiffHover {
+    added: number;
+    deleted: number;
+    files: number;
+  }
   let diffHover = $state<DiffHover | null>(null);
   let diffHoverTimer: ReturnType<typeof setTimeout> | null = null;
   let diffHoverSeq = 0;
@@ -299,11 +369,16 @@
         };
         diffCache = { at: Date.now(), dir, data };
         diffHover = data;
-      } catch { /* hover stats are best-effort */ }
+      } catch {
+        /* hover stats are best-effort */
+      }
     }, 250);
   }
   function onChipLeave() {
-    if (diffHoverTimer) { clearTimeout(diffHoverTimer); diffHoverTimer = null; }
+    if (diffHoverTimer) {
+      clearTimeout(diffHoverTimer);
+      diffHoverTimer = null;
+    }
     diffHoverSeq++;
     diffHover = null;
   }
@@ -320,7 +395,6 @@
     const next = themeCycle[(themeCycle.indexOf($theme) + 1) % themeCycle.length];
     applyTheme(next);
   }
-
 </script>
 
 <svelte:window onpointerdown={onScopePointerDown} onkeydown={onScopeWindowKeydown} />
@@ -330,11 +404,7 @@
     <div class="search-row">
       <div class="search">
         <Search size={13} strokeWidth={2} />
-        <input
-          placeholder="Search sessions…"
-          bind:value={$sessionQuery}
-          spellcheck="false"
-        />
+        <input placeholder="Search sessions…" bind:value={$sessionQuery} spellcheck="false" />
       </div>
       <button class="new-session-btn" title="New session" onclick={() => newSession()}>
         <Plus size={14} strokeWidth={2.4} />
@@ -346,11 +416,18 @@
         <button
           class="scope-btn wide"
           class:on={$projectScope !== null}
-          title={$projectScope ? "Filtering: " + displayName($projectScope) : "Filter threads by project"}
-          onclick={() => { scopeOpen = !scopeOpen; scopeQuery = ""; }}
+          title={$projectScope
+            ? "Filtering: " + displayName($projectScope)
+            : "Filter threads by project"}
+          onclick={() => {
+            scopeOpen = !scopeOpen;
+            scopeQuery = "";
+          }}
         >
           {#if $projectScope}
-            <span class="scope-icon" style={projectIconStyle($projectMeta[$projectScope]?.color)}><ProjectIcon icon={$projectMeta[$projectScope]?.icon} size={13} /></span>
+            <span class="scope-icon" style={projectIconStyle($projectMeta[$projectScope]?.color)}
+              ><ProjectIcon icon={$projectMeta[$projectScope]?.icon} size={13} /></span
+            >
             <span class="scope-name">{displayName($projectScope)}</span>
           {:else}
             <Folder size={13} strokeWidth={2} />
@@ -368,7 +445,10 @@
             <button
               class="scope-item"
               class:selected={$projectScope === null}
-              onclick={() => { projectScope.set(null); scopeOpen = false; }}
+              onclick={() => {
+                projectScope.set(null);
+                scopeOpen = false;
+              }}
             >
               <span class="scope-icon">✳</span>
               <span class="scope-name">All projects</span>
@@ -378,7 +458,10 @@
                 <button
                   class="scope-item"
                   class:selected={$projectScope === dir}
-                  onclick={() => { projectScope.set(dir); scopeOpen = false; }}
+                  onclick={() => {
+                    projectScope.set(dir);
+                    scopeOpen = false;
+                  }}
                   oncontextmenu={(e) => {
                     e.preventDefault();
                     scopeOpen = false;
@@ -386,14 +469,19 @@
                   }}
                   title="Right-click for project settings"
                 >
-                  <span class="scope-icon" style={projectIconStyle($projectMeta[dir]?.color)}><ProjectIcon icon={$projectMeta[dir]?.icon} size={13} /></span>
+                  <span class="scope-icon" style={projectIconStyle($projectMeta[dir]?.color)}
+                    ><ProjectIcon icon={$projectMeta[dir]?.icon} size={13} /></span
+                  >
                   <span class="scope-name">{displayName(dir)}</span>
                   {#if dir === $projectDir}<span class="scope-tag">active</span>{/if}
                 </button>
                 <button
                   class="scope-gear"
                   title="Project settings"
-                  onclick={() => { scopeOpen = false; openProjectSettingsCard(dir); }}
+                  onclick={() => {
+                    scopeOpen = false;
+                    openProjectSettingsCard(dir);
+                  }}
                 >
                   <Settings size={12} strokeWidth={2} />
                 </button>
@@ -402,7 +490,14 @@
               <div class="scope-empty">No matching projects.</div>
             {/each}
             <div class="scope-sep"></div>
-            <button class="scope-item new-project" title="Create a new project folder" onclick={() => { scopeOpen = false; openNewProject(); }}>
+            <button
+              class="scope-item new-project"
+              title="Create a new project folder"
+              onclick={() => {
+                scopeOpen = false;
+                openNewProject();
+              }}
+            >
               <span class="scope-icon"><Plus size={13} strokeWidth={2} /></span>
               <span class="scope-name">New project…</span>
             </button>
@@ -437,7 +532,7 @@
           projectLabel={displayName(s.projectDir)}
           timeLabel={timeOf(s)}
           renaming={renamingPath === s.path}
-          renameValue={renameValue}
+          {renameValue}
           dragging={dragPath === s.path}
           dropTarget={dropSection !== null}
           onopen={() => void openSession(s.path)}
@@ -457,7 +552,9 @@
       {#each groups as g (g.dir)}
         {#if $projectScope === null && groups.length > 1}
           <div class="group-header">
-            <span class="scope-icon" style={projectIconStyle($projectMeta[g.dir]?.color)}><ProjectIcon icon={g.icon} size={13} /></span>
+            <span class="scope-icon" style={projectIconStyle($projectMeta[g.dir]?.color)}
+              ><ProjectIcon icon={g.icon} size={13} /></span
+            >
             <span class="group-name" title={g.dir}>{g.displayName}</span>
             {#if g.pill}
               <span class="group-pill {g.pill.kind}">{g.pill.label}</span>
@@ -474,8 +571,14 @@
             type="button"
             class="section-label pinned-label"
             class:drop-active={dropSection === "pinned"}
-            ondragover={(e) => { e.preventDefault(); dropSection = "pinned"; }}
-            ondrop={(e) => { e.preventDefault(); dropOnSection("pinned"); }}
+            ondragover={(e) => {
+              e.preventDefault();
+              dropSection = "pinned";
+            }}
+            ondrop={(e) => {
+              e.preventDefault();
+              dropOnSection("pinned");
+            }}
           >
             Pinned
           </button>
@@ -488,7 +591,7 @@
             showProject={false}
             timeLabel={timeOf(s)}
             renaming={renamingPath === s.path}
-            renameValue={renameValue}
+            {renameValue}
             dragging={dragPath === s.path}
             dropTarget={dropSection === null && dragPath !== null && dragPath !== s.path}
             onopen={() => void openSession(s.path)}
@@ -505,7 +608,9 @@
         {#if sec.active.length > 0}
           <div class="section-label">Active</div>
         {/if}
-        {@const activeVisible = showAllActive[g.dir] ? sec.active : sec.active.slice(0, SETTLED_PREVIEW_COUNT)}
+        {@const activeVisible = showAllActive[g.dir]
+          ? sec.active
+          : sec.active.slice(0, SETTLED_PREVIEW_COUNT)}
         {#each activeVisible as s (s.path)}
           <SessionRow
             session={s}
@@ -514,7 +619,7 @@
             showProject={false}
             timeLabel={timeOf(s)}
             renaming={renamingPath === s.path}
-            renameValue={renameValue}
+            {renameValue}
             dragging={dragPath === s.path}
             dropTarget={dropSection !== null && dropSection !== "pinned"}
             onopen={() => void openSession(s.path)}
@@ -529,22 +634,37 @@
           />
         {/each}
         {#if sec.active.length > activeVisible.length}
-          <button class="ghost show-all" onclick={() => (showAllActive = { ...showAllActive, [g.dir]: true })}>
+          <button
+            class="ghost show-all"
+            onclick={() => (showAllActive = { ...showAllActive, [g.dir]: true })}
+          >
             Show all {sec.active.length}
           </button>
         {/if}
         {#if $settledView === "per-project" && (sec.settled.length > 0 || dragPath !== null)}
           {@const expanded = settledExpanded[g.dir] ?? true}
-          {@const visible = showAllSettled[g.dir] ? sec.settled : sec.settled.slice(0, SETTLED_PREVIEW_COUNT)}
+          {@const visible = showAllSettled[g.dir]
+            ? sec.settled
+            : sec.settled.slice(0, SETTLED_PREVIEW_COUNT)}
           <button
             class="section-label as-btn settled-label"
             class:drop-active={dropSection === "settled"}
             onclick={() => (settledExpanded = { ...settledExpanded, [g.dir]: !expanded })}
-            ondragover={(e) => { e.preventDefault(); dropSection = "settled"; }}
-            ondrop={(e) => { e.preventDefault(); dropOnSection("settled"); }}
+            ondragover={(e) => {
+              e.preventDefault();
+              dropSection = "settled";
+            }}
+            ondrop={(e) => {
+              e.preventDefault();
+              dropOnSection("settled");
+            }}
           >
             {expanded ? "Settled" : `Settled (${sec.settled.length})`}
-            <ChevronRight size={10} strokeWidth={2.4} style="transform: rotate({expanded ? 90 : 0}deg)" />
+            <ChevronRight
+              size={10}
+              strokeWidth={2.4}
+              style="transform: rotate({expanded ? 90 : 0}deg)"
+            />
           </button>
           {#if expanded}
             {#each visible as s (s.path)}
@@ -555,7 +675,7 @@
                 showProject={false}
                 timeLabel={timeOf(s)}
                 renaming={renamingPath === s.path}
-                renameValue={renameValue}
+                {renameValue}
                 dragging={dragPath === s.path}
                 dropTarget={dropSection !== null && dropSection !== "pinned"}
                 onopen={() => void openSession(s.path)}
@@ -570,7 +690,10 @@
               />
             {/each}
             {#if sec.settled.length > visible.length}
-              <button class="ghost show-all" onclick={() => (showAllSettled = { ...showAllSettled, [g.dir]: true })}>
+              <button
+                class="ghost show-all"
+                onclick={() => (showAllSettled = { ...showAllSettled, [g.dir]: true })}
+              >
                 Show all {sec.settled.length}
               </button>
             {/if}
@@ -585,11 +708,21 @@
           class="section-label as-btn settled-label unified"
           class:drop-active={dropSection === "settled"}
           onclick={() => (settledExpanded = { ...settledExpanded, __all__: !expanded })}
-          ondragover={(e) => { e.preventDefault(); dropSection = "settled"; }}
-          ondrop={(e) => { e.preventDefault(); dropOnSection("settled"); }}
+          ondragover={(e) => {
+            e.preventDefault();
+            dropSection = "settled";
+          }}
+          ondrop={(e) => {
+            e.preventDefault();
+            dropOnSection("settled");
+          }}
         >
           Settled ({unifiedSettled.length})
-          <ChevronRight size={10} strokeWidth={2.4} style="transform: rotate({expanded ? 90 : 0}deg)" />
+          <ChevronRight
+            size={10}
+            strokeWidth={2.4}
+            style="transform: rotate({expanded ? 90 : 0}deg)"
+          />
         </button>
         {#if expanded}
           {#each unifiedVisible as s (s.path)}
@@ -601,7 +734,7 @@
               projectLabel={displayName(s.projectDir)}
               timeLabel={timeOf(s)}
               renaming={renamingPath === s.path}
-              renameValue={renameValue}
+              {renameValue}
               dragging={dragPath === s.path}
               dropTarget={dropSection !== null && dropSection !== "pinned"}
               onopen={() => void openSession(s.path)}
@@ -616,7 +749,10 @@
             />
           {/each}
           {#if unifiedSettled.length > unifiedVisible.length}
-            <button class="ghost show-all" onclick={() => (showAllSettled = { ...showAllSettled, __all__: true })}>
+            <button
+              class="ghost show-all"
+              onclick={() => (showAllSettled = { ...showAllSettled, __all__: true })}
+            >
               Show all {unifiedSettled.length}
             </button>
           {/if}
@@ -625,11 +761,20 @@
     {/if}
   </div>
 
-  <button type="button" class="resize-handle" onpointerdown={startResize} aria-label="Resize sidebar"></button>
+  <button
+    type="button"
+    class="resize-handle"
+    onpointerdown={startResize}
+    aria-label="Resize sidebar"
+  ></button>
 
   <div class="footer">
     <div class="footer-row">
-      <button class="ghost icon-btn" title="Theme: {$theme} — click to cycle light / dark / system" onclick={cycleTheme}>
+      <button
+        class="ghost icon-btn"
+        title="Theme: {$theme} — click to cycle light / dark / system"
+        onclick={cycleTheme}
+      >
         {#if $theme === "light"}
           <Sun size={14} strokeWidth={2} />
         {:else if $theme === "dark"}
@@ -638,7 +783,14 @@
           <Monitor size={14} strokeWidth={2} />
         {/if}
       </button>
-      <button class="ghost icon-btn" title="Settings" onclick={() => { settingsProject.set(null); settingsOpen.set(true); }}>
+      <button
+        class="ghost icon-btn"
+        title="Settings"
+        onclick={() => {
+          settingsProject.set(null);
+          settingsOpen.set(true);
+        }}
+      >
         <Settings size={15} strokeWidth={2} />
       </button>
     </div>
@@ -650,7 +802,10 @@
         <div class="git-wrap">
           <button
             class="ghost git-chip"
-            title={"branch " + gitInfo.branch + (gitInfo.dirty ? ` · ${gitInfo.dirty} uncommitted` : " · clean") + (gitInfo.toplevel ? "\n" + gitInfo.toplevel : "")}
+            title={"branch " +
+              gitInfo.branch +
+              (gitInfo.dirty ? ` · ${gitInfo.dirty} uncommitted` : " · clean") +
+              (gitInfo.toplevel ? "\n" + gitInfo.toplevel : "")}
             onmouseenter={onChipEnter}
             onmouseleave={onChipLeave}
             onclick={() => void refreshGit()}
@@ -663,7 +818,11 @@
             <div class="diff-pop" role="status">
               <span class="pop-added">+{diffHover.added}</span>
               <span class="pop-deleted">−{diffHover.deleted}</span>
-              <span class="pop-hint">working tree vs HEAD · {diffHover.files} file{diffHover.files === 1 ? "" : "s"}</span>
+              <span class="pop-hint"
+                >working tree vs HEAD · {diffHover.files} file{diffHover.files === 1
+                  ? ""
+                  : "s"}</span
+              >
             </div>
           {/if}
         </div>
@@ -704,7 +863,10 @@
     cursor: pointer;
     flex-shrink: 0;
   }
-  .new-session-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .new-session-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
   .search-row {
     display: flex;
     gap: 6px;
@@ -716,8 +878,15 @@
     gap: 6px;
     padding: 0 2px;
   }
-  .filter-row .scope { flex: 1; min-width: 0; }
-  .scope-btn.wide { width: 100%; justify-content: flex-start; gap: 6px; }
+  .filter-row .scope {
+    flex: 1;
+    min-width: 0;
+  }
+  .scope-btn.wide {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 6px;
+  }
   .scope-btn.wide .scope-name {
     display: inline;
     overflow: hidden;
@@ -738,8 +907,13 @@
     flex-shrink: 0;
     white-space: nowrap;
   }
-  .view-toggle:hover { border-color: var(--accent); color: var(--accent); }
-  .settled-label.unified { margin-top: 4px; }
+  .view-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .settled-label.unified {
+    margin-top: 4px;
+  }
   .search {
     flex: 1;
     display: flex;
@@ -761,7 +935,9 @@
     font-size: 12px;
     outline: none;
   }
-  .scope { position: relative; }
+  .scope {
+    position: relative;
+  }
   .scope-btn {
     padding: 5px 7px;
     border: 1px solid var(--border);
@@ -771,7 +947,10 @@
     display: inline-flex;
     align-items: center;
   }
-  .scope-btn.on { border-color: var(--accent); color: var(--accent); }
+  .scope-btn.on {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
   .scope-pop {
     position: absolute;
     top: calc(100% + 6px);
@@ -818,7 +997,11 @@
     text-align: left;
     width: 100%;
   }
-  .scope-item:hover, .scope-item.selected { background: var(--bg-surface-2); color: var(--text); }
+  .scope-item:hover,
+  .scope-item.selected {
+    background: var(--bg-surface-2);
+    color: var(--text);
+  }
   /* Project rows carry a hover-revealed settings gear (same idiom as
    * SessionRow's pin/menu buttons): it opens the per-project settings card
    * without switching the active project. */
@@ -828,8 +1011,15 @@
     gap: 2px;
     border-radius: 6px;
   }
-  .scope-row .scope-item { flex: 1; min-width: 0; padding-right: 4px; }
-  .scope-row:hover .scope-item { background: var(--bg-surface-2); color: var(--text); }
+  .scope-row .scope-item {
+    flex: 1;
+    min-width: 0;
+    padding-right: 4px;
+  }
+  .scope-row:hover .scope-item {
+    background: var(--bg-surface-2);
+    color: var(--text);
+  }
   .scope-gear {
     flex-shrink: 0;
     display: inline-flex;
@@ -843,12 +1033,31 @@
     cursor: pointer;
     opacity: 0;
   }
-  .scope-row:hover .scope-gear, .scope-gear:focus-visible { opacity: 1; }
-  .scope-gear:hover { color: var(--text); }
-  .scope-icon { flex-shrink: 0; }
-  .scope-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .scope-sep { height: 1px; background: var(--border); margin: 4px 2px; flex-shrink: 0; }
-  .scope-item.new-project:hover { color: var(--accent); }
+  .scope-row:hover .scope-gear,
+  .scope-gear:focus-visible {
+    opacity: 1;
+  }
+  .scope-gear:hover {
+    color: var(--text);
+  }
+  .scope-icon {
+    flex-shrink: 0;
+  }
+  .scope-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scope-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 2px;
+    flex-shrink: 0;
+  }
+  .scope-item.new-project:hover {
+    color: var(--accent);
+  }
   .scope-tag {
     flex-shrink: 0;
     font-size: 9px;
@@ -859,7 +1068,11 @@
     border-radius: 99px;
     padding: 0 5px;
   }
-  .scope-empty { padding: 8px; font-size: 12px; color: var(--text-3); }
+  .scope-empty {
+    padding: 8px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
   .list {
     flex: 1;
     overflow-y: auto;
@@ -885,7 +1098,10 @@
     cursor: pointer;
     text-align: left;
   }
-  .pinned-label, .settled-label { border-radius: 6px; }
+  .pinned-label,
+  .settled-label {
+    border-radius: 6px;
+  }
   .drop-active {
     color: var(--accent);
     border-color: var(--accent);
@@ -900,13 +1116,33 @@
     font-weight: 700;
     color: var(--text-2);
   }
-  .group-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .group-pill { font-size: 10px; font-weight: 500; letter-spacing: 0.2px; }
-  .group-pill.needs-attention { color: orange; }
-  .group-pill.failed { color: var(--danger); }
-  .group-pill.working { color: var(--accent); }
-  .group-pill.completed { color: var(--ok); }
-  .pill-dot.inline { width: 6px; height: 6px; }
+  .group-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .group-pill {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+  }
+  .group-pill.needs-attention {
+    color: orange;
+  }
+  .group-pill.failed {
+    color: var(--danger);
+  }
+  .group-pill.working {
+    color: var(--accent);
+  }
+  .group-pill.completed {
+    color: var(--ok);
+  }
+  .pill-dot.inline {
+    width: 6px;
+    height: 6px;
+  }
   .show-all {
     width: 100%;
     text-align: center;
@@ -915,8 +1151,15 @@
     padding: 5px;
     margin-top: 2px;
   }
-  .show-all:hover { color: var(--text); }
-  .empty { padding: 24px 8px; font-size: 12.5px; color: var(--text-3); text-align: center; }
+  .show-all:hover {
+    color: var(--text);
+  }
+  .empty {
+    padding: 24px 8px;
+    font-size: 12.5px;
+    color: var(--text-3);
+    text-align: center;
+  }
   .resize-handle {
     position: absolute;
     top: 0;
@@ -929,10 +1172,22 @@
     padding: 0;
     background: transparent;
   }
-  .resize-handle:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
-  .footer { flex-shrink: 0; border-top: 1px solid var(--border); padding: 8px 10px; }
-  .footer-row { display: flex; align-items: center; gap: 6px; }
-  .footer-row + .footer-row { margin-top: 6px; }
+  .resize-handle:hover {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .footer {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    padding: 8px 10px;
+  }
+  .footer-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .footer-row + .footer-row {
+    margin-top: 6px;
+  }
   .project-btn {
     flex-shrink: 0;
     display: flex;
@@ -955,8 +1210,15 @@
     color: var(--text-3);
     flex-shrink: 0;
   }
-  .git-chip:hover { color: var(--accent); }
-  .git-branch { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .git-chip:hover {
+    color: var(--accent);
+  }
+  .git-branch {
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .git-dirty {
     background: color-mix(in srgb, var(--danger) 75%, transparent);
     color: #fff;
@@ -966,7 +1228,9 @@
     line-height: 14px;
     font-weight: 700;
   }
-  .git-wrap { position: relative; }
+  .git-wrap {
+    position: relative;
+  }
   .diff-pop {
     position: absolute;
     bottom: calc(100% + 8px);
@@ -985,9 +1249,24 @@
     font-size: 11px;
     color: var(--text-2);
   }
-  .pop-added { color: var(--ok); font-family: var(--font-mono); font-size: 11.5px; }
-  .pop-deleted { color: var(--danger); font-family: var(--font-mono); font-size: 11.5px; }
-  .pop-hint { color: var(--text-3); }
-  .conn { font-size: 10.5px; color: var(--text-3); }
-  .conn.on { color: var(--ok); }
+  .pop-added {
+    color: var(--ok);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .pop-deleted {
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .pop-hint {
+    color: var(--text-3);
+  }
+  .conn {
+    font-size: 10.5px;
+    color: var(--text-3);
+  }
+  .conn.on {
+    color: var(--ok);
+  }
 </style>

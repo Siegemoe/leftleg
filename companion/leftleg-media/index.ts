@@ -23,7 +23,16 @@
  * aborted generations are not billed.
  */
 
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -59,7 +68,12 @@ interface ImageGenParams {
 interface ImageApiResponse {
   created?: number;
   data?: Array<{ b64_json?: string; media_type?: string }>;
-  usage?: { cost?: number; total_tokens?: number; prompt_tokens?: number; completion_tokens?: number };
+  usage?: {
+    cost?: number;
+    total_tokens?: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
   error?: { message?: string };
 }
 
@@ -82,11 +96,16 @@ function timestamp(): string {
 
 function extFor(mediaType: string | undefined): string {
   switch (mediaType) {
-    case "image/jpeg": return "jpg";
-    case "image/webp": return "webp";
-    case "image/svg+xml": return "svg";
-    case "image/gif": return "gif";
-    default: return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/svg+xml":
+      return "svg";
+    case "image/gif":
+      return "gif";
+    default:
+      return "png";
   }
 }
 
@@ -95,12 +114,17 @@ function sniffMime(buf: Buffer): string | null {
   if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
   if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return "image/gif";
-  if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP")
+    return "image/webp";
   return null;
 }
 
 function writeFileAtomic(file: string, data: Buffer): void {
-  const tmp = join(file, "..", `.${file.split(/[\\/]/).pop() ?? "img"}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const tmp = join(
+    file,
+    "..",
+    `.${file.split(/[\\/]/).pop() ?? "img"}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   writeFileSync(tmp, data);
   try {
     renameSync(tmp, file);
@@ -112,7 +136,11 @@ function writeFileAtomic(file: string, data: Buffer): void {
       // is gone and the destination is authoritative. A surviving temp means
       // this write did not land; never mistake a pre-existing file for success.
       if (!existsSync(tmp) && existsSync(file)) return;
-      try { unlinkSync(tmp); } catch { /* best-effort cleanup before surfacing the write failure */ }
+      try {
+        unlinkSync(tmp);
+      } catch {
+        /* best-effort cleanup before surfacing the write failure */
+      }
       throw retryError instanceof Error ? retryError : e;
     }
   }
@@ -134,14 +162,18 @@ async function readCappedBody(res: Response): Promise<string> {
       if (done) break;
       total += value.byteLength;
       if (total > MAX_RESPONSE_BYTES) {
-        throw new Error(`OpenRouter response body exceeded ${MAX_RESPONSE_MB} MiB — refusing to buffer it.`);
+        throw new Error(
+          `OpenRouter response body exceeded ${MAX_RESPONSE_MB} MiB — refusing to buffer it.`,
+        );
       }
       chunks.push(value);
     }
   } catch (e) {
     try {
       await reader.cancel();
-    } catch { /* reader already tearing down */ }
+    } catch {
+      /* reader already tearing down */
+    }
     throw e;
   }
   const body = Buffer.concat(chunks).toString("utf8");
@@ -190,7 +222,10 @@ function decodeImage(item: { b64_json?: string; media_type?: string }) {
   }
   // The canonical-base64 re-encode check costs a full extra string round-trip;
   // only worth it on small buffers — large ones are gated by signature sniffing.
-  if (bytes.length <= BASE64_RECHECK_LIMIT && bytes.toString("base64").replace(/=+$/, "") !== encoded.replace(/=+$/, "")) {
+  if (
+    bytes.length <= BASE64_RECHECK_LIMIT &&
+    bytes.toString("base64").replace(/=+$/, "") !== encoded.replace(/=+$/, "")
+  ) {
     throw new Error("OpenRouter returned invalid base64 image data.");
   }
   // media_type is optional. Prefer raster signatures so JPEG/WebP responses
@@ -200,7 +235,8 @@ function decodeImage(item: { b64_json?: string; media_type?: string }) {
   // HTML wrapper embedding an <svg> must not land as .svg: a click opens it
   // in the OS browser, where embedded script executes.
   const text = item.media_type === "image/svg+xml" ? bytes.toString("utf8") : "";
-  const mime = sniffMime(bytes) ?? (/^\s*(?:<\?xml\s|<svg[\s/>])/i.test(text) ? "image/svg+xml" : null);
+  const mime =
+    sniffMime(bytes) ?? (/^\s*(?:<\?xml\s|<svg[\s/>])/i.test(text) ? "image/svg+xml" : null);
   if (!mime) throw new Error("OpenRouter returned unsupported or invalid image data.");
   return { bytes, mime };
 }
@@ -211,7 +247,9 @@ function readMediaConfig(): Partial<ImageGenParams> {
     const agentDir = envDir && envDir.trim() ? envDir : join(homedir(), ".pi", "agent");
     const raw = readFileSync(join(agentDir, "extensions", "leftleg-media", "config.json"), "utf-8");
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Partial<ImageGenParams>) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Partial<ImageGenParams>)
+      : {};
   } catch {
     return {}; // no config yet — built-in defaults apply
   }
@@ -230,14 +268,53 @@ export default function (pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       prompt: Type.String({ description: "Text description of the image to render." }),
-      model: Type.Optional(Type.String({ description: `OpenRouter image model slug (e.g. google/gemini-3.1-flash-image, openai/gpt-image-1, bytedance-seed/seedream-4.5). Default: ${DEFAULT_MODEL}.` })),
-      resolution: Type.Optional(Type.Union([Type.Literal("512"), Type.Literal("1K"), Type.Literal("2K"), Type.Literal("4K")], { description: "Resolution tier; providers clamp to what they support." })),
-      aspect_ratio: Type.Optional(Type.String({ description: "Aspect ratio like 1:1, 16:9, 9:16, 4:3, 3:2, 21:9 — or 'auto'. Providers clamp unsupported values." })),
-      quality: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")], { description: "Quality knob; providers without one ignore it." })),
-      output_format: Type.Optional(Type.Union([Type.Literal("png"), Type.Literal("jpeg"), Type.Literal("webp"), Type.Literal("svg")], { description: "Output format; provider default applies when omitted." })),
-      background: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("transparent"), Type.Literal("opaque")], { description: "'transparent' requires a png/webp-capable model." })),
-      n: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "Images to generate (1-10); single-image providers reject n > 1." })),
-      reference_images: Type.Optional(Type.Array(Type.String({ description: "Local image path to use as a reference (image-to-image)." }), { maxItems: MAX_REFERENCES, description: "Read inside pi and sent as base64 data URLs." })),
+      model: Type.Optional(
+        Type.String({
+          description: `OpenRouter image model slug (e.g. google/gemini-3.1-flash-image, openai/gpt-image-1, bytedance-seed/seedream-4.5). Default: ${DEFAULT_MODEL}.`,
+        }),
+      ),
+      resolution: Type.Optional(
+        Type.Union(
+          [Type.Literal("512"), Type.Literal("1K"), Type.Literal("2K"), Type.Literal("4K")],
+          { description: "Resolution tier; providers clamp to what they support." },
+        ),
+      ),
+      aspect_ratio: Type.Optional(
+        Type.String({
+          description:
+            "Aspect ratio like 1:1, 16:9, 9:16, 4:3, 3:2, 21:9 — or 'auto'. Providers clamp unsupported values.",
+        }),
+      ),
+      quality: Type.Optional(
+        Type.Union(
+          [Type.Literal("auto"), Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")],
+          { description: "Quality knob; providers without one ignore it." },
+        ),
+      ),
+      output_format: Type.Optional(
+        Type.Union(
+          [Type.Literal("png"), Type.Literal("jpeg"), Type.Literal("webp"), Type.Literal("svg")],
+          { description: "Output format; provider default applies when omitted." },
+        ),
+      ),
+      background: Type.Optional(
+        Type.Union([Type.Literal("auto"), Type.Literal("transparent"), Type.Literal("opaque")], {
+          description: "'transparent' requires a png/webp-capable model.",
+        }),
+      ),
+      n: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          maximum: 10,
+          description: "Images to generate (1-10); single-image providers reject n > 1.",
+        }),
+      ),
+      reference_images: Type.Optional(
+        Type.Array(
+          Type.String({ description: "Local image path to use as a reference (image-to-image)." }),
+          { maxItems: MAX_REFERENCES, description: "Read inside pi and sent as base64 data URLs." },
+        ),
+      ),
     }),
     async execute(_toolCallId, rawParams, signal, onUpdate, ctx) {
       const params = rawParams as ImageGenParams;
@@ -253,7 +330,9 @@ export default function (pi: ExtensionAPI) {
       const auth = await ctx.modelRegistry.getProviderAuth("openrouter");
       const apiKey = auth?.auth?.apiKey;
       if (!apiKey) {
-        throw new Error("No OpenRouter credential configured in pi — set one with /login (OpenRouter) or an OpenRouter API key, then retry.");
+        throw new Error(
+          "No OpenRouter credential configured in pi — set one with /login (OpenRouter) or an OpenRouter API key, then retry.",
+        );
       }
 
       const references = (params.reference_images ?? []).map((path) => readReference(path, cwd));
@@ -273,10 +352,15 @@ export default function (pi: ExtensionAPI) {
       if (params.n !== undefined) body.n = params.n;
       if (references.length > 0) {
         // OpenRouter's Image API expects chat-style reference entries, not bare strings.
-        body.input_references = references.map((url) => ({ type: "image_url", image_url: { url } }));
+        body.input_references = references.map((url) => ({
+          type: "image_url",
+          image_url: { url },
+        }));
       }
 
-      onUpdate?.({ content: [{ type: "text", text: `Rendering with ${model}… (typically 10-90s)` }] });
+      onUpdate?.({
+        content: [{ type: "text", text: `Rendering with ${model}… (typically 10-90s)` }],
+      });
 
       // Bounded request: hard timeout plus a streamed body read with a byte
       // ceiling — pi's signal only covers user cancel, and a compromised or
@@ -294,7 +378,10 @@ export default function (pi: ExtensionAPI) {
         text = await readCappedBody(res);
       } catch (e) {
         if (timeout.aborted) {
-          throw new Error(`OpenRouter images request exceeded ${REQUEST_TIMEOUT_MS / 1000}s and was aborted.`, { cause: e });
+          throw new Error(
+            `OpenRouter images request exceeded ${REQUEST_TIMEOUT_MS / 1000}s and was aborted.`,
+            { cause: e },
+          );
         }
         throw e;
       }
@@ -304,7 +391,9 @@ export default function (pi: ExtensionAPI) {
         try {
           const parsedErr = JSON.parse(text) as ImageApiResponse;
           if (parsedErr?.error?.message) message = parsedErr.error.message;
-        } catch { /* non-JSON error body */ }
+        } catch {
+          /* non-JSON error body */
+        }
         throw new Error(`OpenRouter images request failed (${res.status}): ${message}`);
       }
 
@@ -313,7 +402,9 @@ export default function (pi: ExtensionAPI) {
         throw new Error("OpenRouter returned no images for this request.");
       }
       if (parsed.data.length > MAX_IMAGES) {
-        throw new Error(`OpenRouter returned ${parsed.data.length} images — refusing to process more than ${MAX_IMAGES}.`);
+        throw new Error(
+          `OpenRouter returned ${parsed.data.length} images — refusing to process more than ${MAX_IMAGES}.`,
+        );
       }
       // Validate the entire response before creating files; a bad later entry
       // must not leave a partial batch while reporting total failure.
@@ -340,11 +431,18 @@ export default function (pi: ExtensionAPI) {
         `Saved ${saved.length} image${saved.length > 1 ? "s" : ""} (${model}):`,
         ...saved,
         cost !== undefined ? `Reported cost: $${cost.toFixed(4)}` : undefined,
-      ].filter((line) => line !== undefined).join("\n");
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n");
 
       return {
         content: [{ type: "text", text: summary }],
-        details: { paths: saved, model, usage: parsed.usage ?? null, references: references.length },
+        details: {
+          paths: saved,
+          model,
+          usage: parsed.usage ?? null,
+          references: references.length,
+        },
       };
     },
   });

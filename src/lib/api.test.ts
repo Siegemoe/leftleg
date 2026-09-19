@@ -4,7 +4,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { writeGuiState } from "./api";
 it("serializes immutable preference snapshots and recovers after a failed write", async () => {
   let release!: () => void;
-  vi.mocked(invoke).mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
+  vi.mocked(invoke).mockImplementationOnce(
+    () =>
+      new Promise<void>((r) => {
+        release = r;
+      }),
+  );
   vi.mocked(invoke).mockRejectedValueOnce(new Error("disk full"));
   vi.mocked(invoke).mockResolvedValueOnce(undefined);
   const prefs = { theme: "dark" };

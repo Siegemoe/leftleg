@@ -100,7 +100,7 @@ Expose install telemetry, analytics, update checking/offline controls and provid
 
 Keep Leftleg theme/fonts/icons/notifications separate from **Pi TUI preferences**. Include the TUI-only options from the full installed Settings type, terminal capabilities, rendering, fullscreen behavior, keybindings and custom themes; label that they affect terminal Pi rather than Leftleg. Existing GUI appearance work is outside this implementation except organization of settings.
 
-Advanced includes validated editors for supported native configs, session storage *configuration* (not session management), discovered relevant CLI/env options, resource diagnostics, and build identity: running Leftleg version/build revision/executable path plus actual Pi executable/version/agent directory. This must help detect an installer launching an older binary. Do not edit generated model caches, OAuth internals, checkpoint state, or transcripts as configuration.
+Advanced includes validated editors for supported native configs, session storage _configuration_ (not session management), discovered relevant CLI/env options, resource diagnostics, and build identity: running Leftleg version/build revision/executable path plus actual Pi executable/version/agent directory. This must help detect an installer launching an older binary. Do not edit generated model caches, OAuth internals, checkpoint state, or transcripts as configuration.
 
 ## Persistence and lifecycle requirements
 

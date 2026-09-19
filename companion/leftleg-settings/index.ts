@@ -13,7 +13,15 @@
  * fields; namespace mode replaces only the given top-level keys.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -31,27 +39,50 @@ export function resolveAgentDir(): string {
 }
 
 /** Registered configuration resources. Paths outside these are rejected. */
-export function resolveTarget(target: string, agentDir: string, projectDir: string | null): string | null {
+export function resolveTarget(
+  target: string,
+  agentDir: string,
+  projectDir: string | null,
+): string | null {
   switch (target) {
-    case "serena-global-yml": return join(homedir(), ".serena", "serena_config.yml");
-    case "serena-project-yml": return projectDir ? join(projectDir, ".serena", "project.yml") : null;
-    case "system-md": return join(agentDir, "SYSTEM.md");
-    case "append-system-md": return join(agentDir, "APPEND_SYSTEM.md");
-    case "system-md-project": return projectDir ? join(projectDir, ".pi", "SYSTEM.md") : null;
-    case "append-system-md-project": return projectDir ? join(projectDir, ".pi", "APPEND_SYSTEM.md") : null;
-    case "agents-md-project": return projectDir ? join(projectDir, "AGENTS.md") : null;
-    case "media-config": return join(agentDir, "extensions", "leftleg-media", "config.json");
-    case "settings-global": return join(agentDir, "settings.json");
-    case "settings-project": return projectDir ? join(projectDir, ".pi", "settings.json") : null;
-    case "trust": return join(agentDir, "trust.json");
-    case "models": return join(agentDir, "models.json");
-    case "models-store": return join(agentDir, "models-store.json"); // cache: read-only
-    case "99extensions": return join(agentDir, "99extensions.json");
-    case "distill-config": return join(agentDir, "extensions", "pi-distill", "config.json");
-    case "i18n-config": return join(agentDir, "extensions", "pi-extensions-i18n", "config.json");
-    case "tool-display-config": return join(agentDir, "extensions", "pi-tool-display", "config.json");
-    case "lens-project": return projectDir ? join(projectDir, ".pi-lens.json") : null;
-    default: return null;
+    case "serena-global-yml":
+      return join(homedir(), ".serena", "serena_config.yml");
+    case "serena-project-yml":
+      return projectDir ? join(projectDir, ".serena", "project.yml") : null;
+    case "system-md":
+      return join(agentDir, "SYSTEM.md");
+    case "append-system-md":
+      return join(agentDir, "APPEND_SYSTEM.md");
+    case "system-md-project":
+      return projectDir ? join(projectDir, ".pi", "SYSTEM.md") : null;
+    case "append-system-md-project":
+      return projectDir ? join(projectDir, ".pi", "APPEND_SYSTEM.md") : null;
+    case "agents-md-project":
+      return projectDir ? join(projectDir, "AGENTS.md") : null;
+    case "media-config":
+      return join(agentDir, "extensions", "leftleg-media", "config.json");
+    case "settings-global":
+      return join(agentDir, "settings.json");
+    case "settings-project":
+      return projectDir ? join(projectDir, ".pi", "settings.json") : null;
+    case "trust":
+      return join(agentDir, "trust.json");
+    case "models":
+      return join(agentDir, "models.json");
+    case "models-store":
+      return join(agentDir, "models-store.json"); // cache: read-only
+    case "99extensions":
+      return join(agentDir, "99extensions.json");
+    case "distill-config":
+      return join(agentDir, "extensions", "pi-distill", "config.json");
+    case "i18n-config":
+      return join(agentDir, "extensions", "pi-extensions-i18n", "config.json");
+    case "tool-display-config":
+      return join(agentDir, "extensions", "pi-tool-display", "config.json");
+    case "lens-project":
+      return projectDir ? join(projectDir, ".pi-lens.json") : null;
+    default:
+      return null;
   }
 }
 
@@ -68,12 +99,14 @@ export function computeRevision(file: string): string | null {
 }
 
 function assertSafeKey(key: string) {
-  if (["__proto__", "constructor", "prototype"].includes(key)) throw new Error("unsafe configuration key");
+  if (["__proto__", "constructor", "prototype"].includes(key))
+    throw new Error("unsafe configuration key");
 }
 
 /** Own-property traversal only; never mutate Object.prototype through a path. */
 function unsetPaths(doc: unknown, keys: unknown): number {
-  if (!Array.isArray(keys) || keys.some((k) => typeof k !== "string")) throw new Error("unset keys must be strings");
+  if (!Array.isArray(keys) || keys.some((k) => typeof k !== "string"))
+    throw new Error("unset keys must be strings");
   let removed = 0;
   for (const key of keys) {
     const parts = key.split(".");
@@ -81,10 +114,16 @@ function unsetPaths(doc: unknown, keys: unknown): number {
     let cur = doc as Record<string, unknown> | undefined;
     for (const part of parts.slice(0, -1)) {
       const next: unknown = cur && Object.hasOwn(cur, part) ? cur[part] : undefined;
-      cur = next && typeof next === "object" && !Array.isArray(next) ? next as Record<string, unknown> : undefined;
+      cur =
+        next && typeof next === "object" && !Array.isArray(next)
+          ? (next as Record<string, unknown>)
+          : undefined;
     }
     const leaf = parts[parts.length - 1];
-    if (cur && typeof cur === "object" && Object.hasOwn(cur, leaf)) { delete cur[leaf]; removed++; }
+    if (cur && typeof cur === "object" && Object.hasOwn(cur, leaf)) {
+      delete cur[leaf];
+      removed++;
+    }
   }
   return removed;
 }
@@ -103,21 +142,32 @@ export function applyMerge(base: unknown, patch: unknown): unknown {
 }
 
 /** Replace ONLY the top-level keys present in `patch` (namespace-safe save). */
-export function applyNamespaces(base: unknown, patch: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = (base && typeof base === "object" && !Array.isArray(base))
-    ? { ...(base as Record<string, unknown>) }
-    : {};
-  for (const [k, v] of Object.entries(patch)) { assertSafeKey(k); out[k] = v; }
+export function applyNamespaces(
+  base: unknown,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> =
+    base && typeof base === "object" && !Array.isArray(base)
+      ? { ...(base as Record<string, unknown>) }
+      : {};
+  for (const [k, v] of Object.entries(patch)) {
+    assertSafeKey(k);
+    out[k] = v;
+  }
   return out;
 }
 
 /** Namespace-merge: for each top-level key in `patch`, deep-merge INSIDE that
  * namespace — other sibling keys within it (e.g. pi-plan's btw/goal/plansDir
  * when editing planModel) survive untouched. Other namespaces also untouched. */
-export function applyNamespaceMerge(base: unknown, patch: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = (base && typeof base === "object" && !Array.isArray(base))
-    ? { ...(base as Record<string, unknown>) }
-    : {};
+export function applyNamespaceMerge(
+  base: unknown,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> =
+    base && typeof base === "object" && !Array.isArray(base)
+      ? { ...(base as Record<string, unknown>) }
+      : {};
   for (const [k, v] of Object.entries(patch)) {
     assertSafeKey(k);
     out[k] = applyMerge(out[k], v);
@@ -137,10 +187,25 @@ function atomicWrite(file: string, text: string): void {
   }
 }
 
-interface Request { v?: number; id?: string; op?: string; [k: string]: unknown }
+interface Request {
+  v?: number;
+  id?: string;
+  op?: string;
+  [k: string]: unknown;
+}
 
-function reply(ctx: { ui: { notify(message: string, level?: string): void } }, id: string | null, ok: boolean, payload: Record<string, unknown>): void {
-  const body = { v: COMPANION_VERSION, id, ok, ...(ok ? { data: payload } : { error: payload.error ?? "unknown error" }) };
+function reply(
+  ctx: { ui: { notify(message: string, level?: string): void } },
+  id: string | null,
+  ok: boolean,
+  payload: Record<string, unknown>,
+): void {
+  const body = {
+    v: COMPANION_VERSION,
+    id,
+    ok,
+    ...(ok ? { data: payload } : { error: payload.error ?? "unknown error" }),
+  };
   try {
     ctx.ui.notify(MGMT_MARKER + JSON.stringify(body), ok ? "info" : "error");
   } catch {
@@ -151,11 +216,14 @@ function reply(ctx: { ui: { notify(message: string, level?: string): void } }, i
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand(MGMT_COMMAND, {
     description: "Leftleg settings management channel (reserved; args are JSON requests)",
-    handler: async (args: string | undefined, ctx: {
-      cwd?: string;
-      ui: { notify(message: string, level?: string): void };
-      [k: string]: unknown;
-    }) => {
+    handler: async (
+      args: string | undefined,
+      ctx: {
+        cwd?: string;
+        ui: { notify(message: string, level?: string): void };
+        [k: string]: unknown;
+      },
+    ) => {
       let req: Request;
       try {
         req = JSON.parse((args ?? "").trim()) as Request;
@@ -170,7 +238,9 @@ export default function (pi: ExtensionAPI): void {
       const id = typeof req.id === "string" ? req.id : null;
       try {
         if (req.v !== COMPANION_VERSION) {
-          reply(ctx, id, false, { error: `version mismatch: companion ${COMPANION_VERSION}, request ${req.v}` });
+          reply(ctx, id, false, {
+            error: `version mismatch: companion ${COMPANION_VERSION}, request ${req.v}`,
+          });
           return;
         }
         const agentDir = resolveAgentDir();
@@ -187,18 +257,31 @@ export default function (pi: ExtensionAPI): void {
 
           case "read": {
             const file = resolveTarget(String(req.target ?? ""), agentDir, projectDir);
-            if (!file) { reply(ctx, id, false, { error: `unknown target: ${String(req.target)}` }); return; }
-            if (!existsSync(file)) { reply(ctx, id, true, { exists: false, data: null, raw: null, revision: null }); return; }
+            if (!file) {
+              reply(ctx, id, false, { error: `unknown target: ${String(req.target)}` });
+              return;
+            }
+            if (!existsSync(file)) {
+              reply(ctx, id, true, { exists: false, data: null, raw: null, revision: null });
+              return;
+            }
             const raw = readFileSync(file, "utf-8");
             let data: unknown = null;
-            try { data = JSON.parse(raw); } catch { data = null; }
+            try {
+              data = JSON.parse(raw);
+            } catch {
+              data = null;
+            }
             reply(ctx, id, true, { exists: true, data, raw, revision: computeRevision(file) });
             return;
           }
 
           case "write": {
             const file = resolveTarget(String(req.target ?? ""), agentDir, projectDir);
-            if (!file) { reply(ctx, id, false, { error: `unknown target: ${String(req.target)}` }); return; }
+            if (!file) {
+              reply(ctx, id, false, { error: `unknown target: ${String(req.target)}` });
+              return;
+            }
             if (READ_ONLY_TARGETS.has(String(req.target))) {
               reply(ctx, id, false, { error: `${req.target} is read-only (generated cache)` });
               return;
@@ -207,7 +290,10 @@ export default function (pi: ExtensionAPI): void {
             if (req.revision !== undefined) {
               const current = computeRevision(file);
               if (current !== req.revision) {
-                reply(ctx, id, false, { error: "conflict: file changed since read", currentRevision: current });
+                reply(ctx, id, false, {
+                  error: "conflict: file changed since read",
+                  currentRevision: current,
+                });
                 return;
               }
             }
@@ -215,25 +301,42 @@ export default function (pi: ExtensionAPI): void {
             let base: unknown = null;
             let baseIsJson = false;
             if (existing.trim()) {
-              try { base = JSON.parse(existing); baseIsJson = true; } catch { base = null; baseIsJson = false; }
+              try {
+                base = JSON.parse(existing);
+                baseIsJson = true;
+              } catch {
+                base = null;
+                baseIsJson = false;
+              }
             }
             let next: unknown;
             const mode = String(req.mode ?? "merge");
             if (mode === "merge" || mode === "namespace" || mode === "namespace-merge") {
               const patch = req.patch;
-              if (patch === undefined || patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+              if (
+                patch === undefined ||
+                patch === null ||
+                typeof patch !== "object" ||
+                Array.isArray(patch)
+              ) {
                 reply(ctx, id, false, { error: "patch must be an object" });
                 return;
               }
               if (existing.trim() && !baseIsJson) {
-                reply(ctx, id, false, { error: "existing file is not valid JSON — repair it manually before writing" });
+                reply(ctx, id, false, {
+                  error: "existing file is not valid JSON — repair it manually before writing",
+                });
                 return;
               }
               if (mode === "merge") next = baseIsJson ? applyMerge(base, patch) : patch;
-              else if (mode === "namespace") next = applyNamespaces(base, patch as Record<string, unknown>);
+              else if (mode === "namespace")
+                next = applyNamespaces(base, patch as Record<string, unknown>);
               else next = applyNamespaceMerge(base, patch as Record<string, unknown>);
             } else if (mode === "replace") {
-              if (typeof req.content !== "string") { reply(ctx, id, false, { error: "replace requires content string" }); return; }
+              if (typeof req.content !== "string") {
+                reply(ctx, id, false, { error: "replace requires content string" });
+                return;
+              }
               JSON.parse(req.content); // must be valid JSON
               next = JSON.parse(req.content);
             } else {
@@ -248,18 +351,31 @@ export default function (pi: ExtensionAPI): void {
 
           case "unset": {
             const file = resolveTarget(String(req.target ?? ""), agentDir, projectDir);
-            if (!file) { reply(ctx, id, false, { error: `unknown target: ${String(req.target)}` }); return; }
+            if (!file) {
+              reply(ctx, id, false, { error: `unknown target: ${String(req.target)}` });
+              return;
+            }
             if (READ_ONLY_TARGETS.has(String(req.target))) {
               reply(ctx, id, false, { error: `${req.target} is read-only (generated cache)` });
               return;
             }
             const keys = Array.isArray(req.keys) ? (req.keys as string[]) : [];
-            if (keys.length === 0) { reply(ctx, id, false, { error: "unset requires keys" }); return; }
-            if (!existsSync(file)) { reply(ctx, id, true, { removed: keys.length, file }); return; }
+            if (keys.length === 0) {
+              reply(ctx, id, false, { error: "unset requires keys" });
+              return;
+            }
+            if (!existsSync(file)) {
+              reply(ctx, id, true, { removed: keys.length, file });
+              return;
+            }
             const raw = readFileSync(file, "utf-8");
             let doc: Record<string, unknown>;
-            try { doc = JSON.parse(raw) as Record<string, unknown>; } catch {
-              reply(ctx, id, false, { error: "existing file is not valid JSON — repair it manually before writing" });
+            try {
+              doc = JSON.parse(raw) as Record<string, unknown>;
+            } catch {
+              reply(ctx, id, false, {
+                error: "existing file is not valid JSON — repair it manually before writing",
+              });
               return;
             }
             // Reset-to-inherit: REMOVE dotted paths so the value inherits from
@@ -276,9 +392,19 @@ export default function (pi: ExtensionAPI): void {
 
           case "read-raw": {
             const file = resolveTarget(String(req.target ?? ""), agentDir, projectDir);
-            if (!file) { reply(ctx, id, false, { error: `unknown target: ${String(req.target)}` }); return; }
-            if (!existsSync(file)) { reply(ctx, id, true, { exists: false, raw: null, revision: null }); return; }
-            reply(ctx, id, true, { exists: true, raw: readFileSync(file, "utf-8"), revision: computeRevision(file) });
+            if (!file) {
+              reply(ctx, id, false, { error: `unknown target: ${String(req.target)}` });
+              return;
+            }
+            if (!existsSync(file)) {
+              reply(ctx, id, true, { exists: false, raw: null, revision: null });
+              return;
+            }
+            reply(ctx, id, true, {
+              exists: true,
+              raw: readFileSync(file, "utf-8"),
+              revision: computeRevision(file),
+            });
             return;
           }
 
@@ -289,15 +415,23 @@ export default function (pi: ExtensionAPI): void {
             }
             const file = resolveTarget(String(req.target ?? ""), agentDir, projectDir);
             if (!file || !/\.(ya?ml|md|txt|json)$/i.test(file)) {
-              reply(ctx, id, false, { error: "raw writes are limited to registered YAML/MD/TXT/JSON resources" });
+              reply(ctx, id, false, {
+                error: "raw writes are limited to registered YAML/MD/TXT/JSON resources",
+              });
               return;
             }
-            if (typeof req.content !== "string") { reply(ctx, id, false, { error: "write-raw requires content string" }); return; }
+            if (typeof req.content !== "string") {
+              reply(ctx, id, false, { error: "write-raw requires content string" });
+              return;
+            }
             if (/\.json$/i.test(file)) JSON.parse(req.content);
             if (req.revision !== undefined) {
               const current = computeRevision(file);
               if (current !== req.revision) {
-                reply(ctx, id, false, { error: "conflict: file changed since read", currentRevision: current });
+                reply(ctx, id, false, {
+                  error: "conflict: file changed since read",
+                  currentRevision: current,
+                });
                 return;
               }
             }
@@ -315,32 +449,53 @@ export default function (pi: ExtensionAPI): void {
           case "env-check": {
             // Presence/source only — values are NEVER returned (secrets stay put).
             const wanted = [
-              "SEARXNG_BASE_URL", "BRAVE_API_KEY", "FIRECRAWL_API_URL", "FIRECRAWL_API_KEY",
-              "CRAWL4AI_API_URL", "CRAWL4AI_API_TOKEN", "REF_API_KEY", "PI_EXTENSIONS_LOCALE", "PI_WORKTREE_HOME",
+              "SEARXNG_BASE_URL",
+              "BRAVE_API_KEY",
+              "FIRECRAWL_API_URL",
+              "FIRECRAWL_API_KEY",
+              "CRAWL4AI_API_URL",
+              "CRAWL4AI_API_TOKEN",
+              "REF_API_KEY",
+              "PI_EXTENSIONS_LOCALE",
+              "PI_WORKTREE_HOME",
             ];
             const scan = (file: string): Record<string, boolean> => {
               const out: Record<string, boolean> = {};
               try {
                 const lines = readFileSync(file, "utf-8").split(/\r?\n/);
                 for (const name of wanted) {
-                  if (lines.some((l) => l.startsWith(`${name}=`) || l.startsWith(`${name} =`))) out[name] = true;
+                  if (lines.some((l) => l.startsWith(`${name}=`) || l.startsWith(`${name} =`)))
+                    out[name] = true;
                 }
-              } catch { /* missing file */ }
+              } catch {
+                /* missing file */
+              }
               return out;
             };
             const sources: Record<string, string> = {};
             for (const name of wanted) {
               if (process.env[name] !== undefined) sources[name] = "process env";
             }
-            const projectEnvFiles = projectDir ? [join(projectDir, ".env.local"), join(projectDir, ".env")] : [];
-            for (const f of [...projectEnvFiles, join(agentDir, ".env.local"), join(agentDir, ".env")]) {
+            const projectEnvFiles = projectDir
+              ? [join(projectDir, ".env.local"), join(projectDir, ".env")]
+              : [];
+            for (const f of [
+              ...projectEnvFiles,
+              join(agentDir, ".env.local"),
+              join(agentDir, ".env"),
+            ]) {
               const present = scan(f);
               for (const name of Object.keys(present)) {
                 if (!sources[name]) sources[name] = f;
               }
             }
             reply(ctx, id, true, {
-              vars: Object.fromEntries(wanted.map((name) => [name, { set: sources[name] !== undefined, source: sources[name] ?? null }])),
+              vars: Object.fromEntries(
+                wanted.map((name) => [
+                  name,
+                  { set: sources[name] !== undefined, source: sources[name] ?? null },
+                ]),
+              ),
             });
             return;
           }
@@ -351,9 +506,15 @@ export default function (pi: ExtensionAPI): void {
             try {
               const s = JSON.parse(readFileSync(settingsFile, "utf-8"));
               if (Array.isArray(s.packages)) packages = s.packages;
-            } catch { /* no settings yet */ }
+            } catch {
+              /* no settings yet */
+            }
             const listDir = (p: string): string[] => {
-              try { return readdirSync(p).filter((n) => !n.startsWith(".")); } catch { return []; }
+              try {
+                return readdirSync(p).filter((n) => !n.startsWith("."));
+              } catch {
+                return [];
+              }
             };
             const extRoot = join(agentDir, "extensions");
             reply(ctx, id, true, {
@@ -362,15 +523,22 @@ export default function (pi: ExtensionAPI): void {
               extensionDirs: listDir(extRoot),
               skillDirs: listDir(join(agentDir, "skills")),
               filesPresent: Object.fromEntries(
-                ["settings.json", "trust.json", "models.json", "models-store.json", "99extensions.json"]
-                  .map((f) => [f, existsSync(join(agentDir, f))]),
+                [
+                  "settings.json",
+                  "trust.json",
+                  "models.json",
+                  "models-store.json",
+                  "99extensions.json",
+                ].map((f) => [f, existsSync(join(agentDir, f))]),
               ),
             });
             return;
           }
 
           case "refresh-models": {
-            const registry = (ctx as unknown as { modelRegistry?: { refresh?: () => Promise<unknown> } }).modelRegistry;
+            const registry = (
+              ctx as unknown as { modelRegistry?: { refresh?: () => Promise<unknown> } }
+            ).modelRegistry;
             if (registry && typeof registry.refresh === "function") {
               await registry.refresh();
               reply(ctx, id, true, { refreshed: true });
@@ -385,23 +553,43 @@ export default function (pi: ExtensionAPI): void {
             const caps: Record<string, boolean> = {
               getActiveTools: typeof pi.getActiveTools === "function",
               setActiveTools: typeof pi.setActiveTools === "function",
-              modelRegistry: typeof anyCtx.modelRegistry === "object" && anyCtx.modelRegistry !== null,
-              sessionManager: typeof anyCtx.sessionManager === "object" && anyCtx.sessionManager !== null,
+              modelRegistry:
+                typeof anyCtx.modelRegistry === "object" && anyCtx.modelRegistry !== null,
+              sessionManager:
+                typeof anyCtx.sessionManager === "object" && anyCtx.sessionManager !== null,
             };
             let activeTools: unknown = null;
             if (caps.getActiveTools) {
-              try { activeTools = pi.getActiveTools(); } catch { activeTools = null; }
+              try {
+                activeTools = pi.getActiveTools();
+              } catch {
+                activeTools = null;
+              }
             }
             let sessionFile: unknown = null;
             if (caps.sessionManager) {
-              try { sessionFile = (anyCtx.sessionManager as { getSessionFile?: () => unknown }).getSessionFile?.() ?? null; } catch { sessionFile = null; }
+              try {
+                sessionFile =
+                  (
+                    anyCtx.sessionManager as { getSessionFile?: () => unknown }
+                  ).getSessionFile?.() ?? null;
+              } catch {
+                sessionFile = null;
+              }
             }
-            reply(ctx, id, true, { cwd: projectDir, agentDir, capabilities: caps, activeTools, sessionFile });
+            reply(ctx, id, true, {
+              cwd: projectDir,
+              agentDir,
+              capabilities: caps,
+              activeTools,
+              sessionFile,
+            });
             return;
           }
 
           case "set-active-tools": {
-            if (!Array.isArray(req.tools) || req.tools.some((t) => typeof t !== "string")) throw new Error("tools must be an array of names");
+            if (!Array.isArray(req.tools) || req.tools.some((t) => typeof t !== "string"))
+              throw new Error("tools must be an array of names");
             pi.setActiveTools(req.tools as string[]);
             reply(ctx, id, true, { applied: true });
             return;

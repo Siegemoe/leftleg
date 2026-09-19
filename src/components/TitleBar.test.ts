@@ -54,13 +54,19 @@ describe("title bar", () => {
     instance = mount(TitleBar, { target: document.body });
     flushSync();
 
-    [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "File")!.click();
+    [...document.body.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "File")!
+      .click();
     flushSync();
-    [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Settings…")!.click();
+    [...document.body.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "Settings…")!
+      .click();
     flushSync();
 
     let scope: string | null | undefined;
-    settingsProject.subscribe((value) => { scope = value; })();
+    settingsProject.subscribe((value) => {
+      scope = value;
+    })();
     expect(scope).toBeNull();
   });
 
@@ -70,9 +76,13 @@ describe("title bar", () => {
     instance = mount(TitleBar, { target: document.body });
     flushSync();
 
-    [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "File")!.click();
+    [...document.body.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "File")!
+      .click();
     flushSync();
-    [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Exit")!.click();
+    [...document.body.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "Exit")!
+      .click();
     flushSync();
     expect(mocks.quitApp).toHaveBeenCalledTimes(1);
     expect(mocks.win.close).not.toHaveBeenCalled();

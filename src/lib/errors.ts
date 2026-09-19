@@ -7,6 +7,8 @@ export function reportError(kind: string, detail: string) {
   console.error(line);
   const note = `⚠ ${detail}`;
   statusNote.set(note);
-  setTimeout(() => { if (get(statusNote) === note) statusNote.set(""); }, 15000);
+  setTimeout(() => {
+    if (get(statusNote) === note) statusNote.set("");
+  }, 15000);
   void invoke("append_log", { line }).catch(() => {});
 }

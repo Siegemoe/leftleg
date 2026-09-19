@@ -4,19 +4,70 @@
   // settings-mgmt companion (allowlisted targets, revision-checked, atomic).
   // Current-runtime controls use native RPC setters only.
   import {
-    settingsOpen, settingsProject, rpcState, models, commands, projectDir,
-    theme, applyTheme, compact, renameSession, setModel, setThinkingLevel,
-    setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, abortRetry,
-    exportSessionHtml, cloneSession, projectMeta, sessions, updateProjectMeta,
-    forgetProject, restoreProject, chooseProject, lastProcByProject, autoRetry, refreshCommands,
-    statusNote, transientNote, navigating, updateInstallLock, openNewProject,
-    keybindings, setKeybinding,
+    settingsOpen,
+    settingsProject,
+    rpcState,
+    models,
+    commands,
+    projectDir,
+    theme,
+    applyTheme,
+    compact,
+    renameSession,
+    setModel,
+    setThinkingLevel,
+    setSteeringMode,
+    setFollowUpMode,
+    setAutoCompaction,
+    setAutoRetry,
+    abortRetry,
+    exportSessionHtml,
+    cloneSession,
+    projectMeta,
+    sessions,
+    updateProjectMeta,
+    forgetProject,
+    restoreProject,
+    chooseProject,
+    lastProcByProject,
+    autoRetry,
+    refreshCommands,
+    statusNote,
+    transientNote,
+    navigating,
+    updateInstallLock,
+    openNewProject,
+    keybindings,
+    setKeybinding,
   } from "../../lib/stores";
-  import { ACTIONS, conflictingAction, effectiveBindings, parseCapture, type ActionId } from "../../lib/keybindings";
-  import { companionAvailable, bindManagement, agentDirStore, isCompanionCommand, setManagementScope, clearManagementScope } from "../../lib/settings/mgmt";
-  import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconLabel } from "../../lib/project-icons";
+  import {
+    ACTIONS,
+    conflictingAction,
+    effectiveBindings,
+    parseCapture,
+    type ActionId,
+  } from "../../lib/keybindings";
+  import {
+    companionAvailable,
+    bindManagement,
+    agentDirStore,
+    isCompanionCommand,
+    setManagementScope,
+    clearManagementScope,
+  } from "../../lib/settings/mgmt";
+  import {
+    PROJECT_COLOR_CHOICES,
+    PROJECT_ICON_CHOICES,
+    projectIconLabel,
+  } from "../../lib/project-icons";
   import ProjectIcon from "../ProjectIcon.svelte";
-  import { checkForUpdates, applyUpdate, updateAvailable, updateCheck, updateStatus } from "../../lib/updater";
+  import {
+    checkForUpdates,
+    applyUpdate,
+    updateAvailable,
+    updateCheck,
+    updateStatus,
+  } from "../../lib/updater";
   import { onDestroy, untrack } from "svelte";
   import { projectDisplayName } from "../../lib/sidebar-model";
   let { onDirtyChange }: { onDirtyChange?: (isDirty: boolean) => void } = $props();
@@ -43,12 +94,21 @@
   // re-evaluates the moment the lookup resolves and cannot disagree with
   // the send gate in either direction. Keep the function for imperative callers.
   const companionReady = $derived(
-    !$navigating && !$updateInstallLock && $commands.some((c) => isCompanionCommand(c, $agentDirStore ?? undefined)),
+    !$navigating &&
+      !$updateInstallLock &&
+      $commands.some((c) => isCompanionCommand(c, $agentDirStore ?? undefined)),
   );
   import {
-    getPath, setPath, cloneJson, sourceOf, defaultValue,
-    isUnsafeConfigKey, preparePatch,
-    BUILTIN_TOOLS, THINKING_LEVELS, type Scope,
+    getPath,
+    setPath,
+    cloneJson,
+    sourceOf,
+    defaultValue,
+    isUnsafeConfigKey,
+    preparePatch,
+    BUILTIN_TOOLS,
+    THINKING_LEVELS,
+    type Scope,
   } from "../../lib/settings/state";
   import { writeAgentExtension, getAgentDir } from "../../lib/api";
   import { Search, RotateCcw, FolderOpen, Plus } from "@lucide/svelte";
@@ -57,8 +117,16 @@
   import mediaSource from "../../../companion/leftleg-media/index.ts?raw";
 
   type SectionId =
-    | "runtime" | "behavior" | "models" | "tools" | "trust"
-    | "packages" | "appearance" | "keybindings" | "projects" | "advanced";
+    | "runtime"
+    | "behavior"
+    | "models"
+    | "tools"
+    | "trust"
+    | "packages"
+    | "appearance"
+    | "keybindings"
+    | "projects"
+    | "advanced";
 
   const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
     { id: "runtime", label: "Current runtime", hint: "Live session choices (native RPC)" },
@@ -66,11 +134,19 @@
     { id: "models", label: "Models & cycling", hint: "Startup defaults, cycling, registry" },
     { id: "tools", label: "Tools & shell", hint: "Built-in tools, shell, npm argv" },
     { id: "trust", label: "Trust & privacy", hint: "Project trust, telemetry" },
-    { id: "packages", label: "Extensions & packages", hint: "Installed packages, extension configs" },
+    {
+      id: "packages",
+      label: "Extensions & packages",
+      hint: "Installed packages, extension configs",
+    },
     { id: "appearance", label: "Appearance (Leftleg)", hint: "Leftleg theme — not Pi's TUI" },
     { id: "keybindings", label: "Key bindings", hint: "Leftleg shortcuts — overrides & capture" },
     { id: "projects", label: "Project presentation", hint: "Leftleg-only names, icons, defaults" },
-    { id: "advanced", label: "Advanced & diagnostics", hint: "Companion, resources, build identity" },
+    {
+      id: "advanced",
+      label: "Advanced & diagnostics",
+      hint: "Companion, resources, build identity",
+    },
   ];
 
   let section = $state<SectionId>("behavior");
@@ -83,10 +159,14 @@
     }
   });
   let search = $state("");
-  let scope = $state<Scope>(untrack(() => $settingsProject ? "project" : "global"));
+  let scope = $state<Scope>(untrack(() => ($settingsProject ? "project" : "global")));
 
   // ---- file-backed settings state ----
-  interface FileState { data: Record<string, unknown> | null; revision: string | null; exists: boolean }
+  interface FileState {
+    data: Record<string, unknown> | null;
+    revision: string | null;
+    exists: boolean;
+  }
   let globalState = $state<FileState>({ data: null, revision: null, exists: false });
   let projectState = $state<FileState>({ data: null, revision: null, exists: false });
   let loaded = $state(false);
@@ -99,13 +179,18 @@
   let agentDir = $state("");
 
   const scopeData = $derived(scope === "global" ? globalState : projectState);
-  const dirty = $derived(JSON.stringify(stripUndefined(draft)) !== JSON.stringify(stripUndefined(scopeData.data ?? {})));
+  const dirty = $derived(
+    JSON.stringify(stripUndefined(draft)) !== JSON.stringify(stripUndefined(scopeData.data ?? {})),
+  );
 
   function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
       if (v === undefined) continue;
-      out[k] = v !== null && typeof v === "object" && !Array.isArray(v) ? stripUndefined(v as Record<string, unknown>) : v;
+      out[k] =
+        v !== null && typeof v === "object" && !Array.isArray(v)
+          ? stripUndefined(v as Record<string, unknown>)
+          : v;
     }
     return out;
   }
@@ -135,7 +220,9 @@
   const runtimeDisabled = $derived(!$projectDir);
   const runtimeScopeNote = $derived.by(() => {
     if (!scopedProject || scopedProject === $projectDir) return "";
-    const fg = $projectDir ? projectDisplayName($projectDir, $projectMeta[$projectDir]?.name) : "no project is open";
+    const fg = $projectDir
+      ? projectDisplayName($projectDir, $projectMeta[$projectDir]?.name)
+      : "no project is open";
     const scoped = projectDisplayName(scopedProject, $projectMeta[scopedProject]?.name);
     return `Runtime controls act on the open project (${fg}) — the file-backed sections of this window edit ${scoped}'s saved settings only.`;
   });
@@ -145,9 +232,17 @@
     loading = true;
     loadError = "";
     try {
-      const g = await mgmtRequest<{ exists: boolean; data: Record<string, unknown> | null; revision: string | null }>("read", { target: "settings-global" });
+      const g = await mgmtRequest<{
+        exists: boolean;
+        data: Record<string, unknown> | null;
+        revision: string | null;
+      }>("read", { target: "settings-global" });
       globalState = { data: g.data ?? null, revision: g.revision ?? null, exists: g.exists };
-      const p = await mgmtRequest<{ exists: boolean; data: Record<string, unknown> | null; revision: string | null }>("read", { target: "settings-project" });
+      const p = await mgmtRequest<{
+        exists: boolean;
+        data: Record<string, unknown> | null;
+        revision: string | null;
+      }>("read", { target: "settings-project" });
       projectState = { data: p.data ?? null, revision: p.revision ?? null, exists: p.exists };
       resetDraft();
       loaded = true;
@@ -180,11 +275,21 @@
       const revision = scopeData.revision;
       // Remove inherit-marked paths from the draft before merging.
       const patch = stripUndefined(cloneJson(draft));
-      const wrote = await mgmtRequest<{ revision?: string | null }>("write", { target, mode: "merge", patch, revision, unsetKeys: [...inheritKeys] });
+      const wrote = await mgmtRequest<{ revision?: string | null }>("write", {
+        target,
+        mode: "merge",
+        patch,
+        revision,
+        unsetKeys: [...inheritKeys],
+      });
       const st = scope === "global" ? globalState : projectState;
       try {
         // Read back through the authoritative file (resolver proof).
-        const back = await mgmtRequest<{ exists: boolean; data: Record<string, unknown> | null; revision: string | null }>("read", { target });
+        const back = await mgmtRequest<{
+          exists: boolean;
+          data: Record<string, unknown> | null;
+          revision: string | null;
+        }>("read", { target });
         st.data = back.data ?? null;
         st.revision = back.revision ?? wrote.revision ?? null;
         st.exists = back.exists;
@@ -213,7 +318,10 @@
     let cur: Record<string, unknown> = draft;
     for (let i = 0; i < parts.length - 1; i++) {
       const nxt = cur[parts[i]];
-      if (!nxt || typeof nxt !== "object") { cur = {}; break; }
+      if (!nxt || typeof nxt !== "object") {
+        cur = {};
+        break;
+      }
       cur = nxt as Record<string, unknown>;
     }
     delete cur[parts[parts.length - 1]];
@@ -232,7 +340,10 @@
     return v === undefined ? "" : String(v);
   }
   function setFieldStr(path: string, v: string) {
-    if (v === "") { markInherit(path); return; }
+    if (v === "") {
+      markInherit(path);
+      return;
+    }
     inheritKeys = inheritKeys.filter((k) => k !== path);
     setPath(draft, path, v === "" ? undefined : v);
     draft = { ...draft };
@@ -252,7 +363,10 @@
   function setFieldNum(path: string, input: HTMLInputElement) {
     if (rejectBadNumber(path, input)) return;
     const v = input.value;
-    if (v.trim() === "") { markInherit(path); return; }
+    if (v.trim() === "") {
+      markInherit(path);
+      return;
+    }
     inheritKeys = inheritKeys.filter((k) => k !== path);
     const n = Number(v);
     setPath(draft, path, n);
@@ -261,7 +375,7 @@
   function fieldBool(path: string): boolean {
     const v = inheritKeys.includes(path) ? undefined : getPath(draft, path);
     const eff = v === undefined && scope === "project" ? getPath(globalState.data, path) : v;
-    return eff === undefined ? (defaultValue(path) === true) : eff === true;
+    return eff === undefined ? defaultValue(path) === true : eff === true;
   }
   function setFieldBool(path: string, v: boolean) {
     inheritKeys = inheritKeys.filter((k) => k !== path);
@@ -287,7 +401,10 @@
   let enabledModelsText = $state("");
   let npmCommandText = $state("");
   function parseLines(text: string): string[] {
-    return text.split("\n").map((s) => s.trim()).filter(Boolean);
+    return text
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
   function linesToDraft(path: "enabledModels" | "npmCommand", text: string) {
     setPath(draft, path, parseLines(text));
@@ -295,22 +412,33 @@
   }
   $effect(() => {
     const canonical = ((getPath(draft, "enabledModels") ?? []) as string[]).join("\n");
-    if (untrack(() => parseLines(enabledModelsText).join("\n")) !== canonical) enabledModelsText = canonical;
+    if (untrack(() => parseLines(enabledModelsText).join("\n")) !== canonical)
+      enabledModelsText = canonical;
   });
   $effect(() => {
     const canonical = ((getPath(draft, "npmCommand") ?? []) as string[]).join("\n");
-    if (untrack(() => parseLines(npmCommandText).join("\n")) !== canonical) npmCommandText = canonical;
+    if (untrack(() => parseLines(npmCommandText).join("\n")) !== canonical)
+      npmCommandText = canonical;
   });
 
   // ---- companion / resources ----
-  let resInfo = $state<{ packages?: unknown[]; extensionDirs?: string[]; skillDirs?: string[]; agentDir?: string; filesPresent?: Record<string, boolean>; packageVersions?: { name: string; version: string }[] } | null>(null);
+  let resInfo = $state<{
+    packages?: unknown[];
+    extensionDirs?: string[];
+    skillDirs?: string[];
+    agentDir?: string;
+    filesPresent?: Record<string, boolean>;
+    packageVersions?: { name: string; version: string }[];
+  } | null>(null);
   let installing = $state(false);
   let installMsg = $state("");
 
   async function loadResources() {
     try {
       resInfo = await mgmtRequest<NonNullable<typeof resInfo>>("list-resources", {});
-    } catch { resInfo = null; }
+    } catch {
+      resInfo = null;
+    }
   }
 
   async function installCompanion() {
@@ -341,8 +469,16 @@
       const current = (scopeData.data?.packages ?? globalState.data?.packages ?? []) as unknown[];
       const next = disabled ? current.filter((n) => n !== name) : [...current, name];
       const target = scope === "global" ? "settings-global" : "settings-project";
-      await mgmtRequest("write", { target, mode: "merge", patch: { packages: next }, revision: scopeData.revision });
-      const back = await mgmtRequest<{ data: Record<string, unknown> | null; revision: string | null }>("read", { target });
+      await mgmtRequest("write", {
+        target,
+        mode: "merge",
+        patch: { packages: next },
+        revision: scopeData.revision,
+      });
+      const back = await mgmtRequest<{
+        data: Record<string, unknown> | null;
+        revision: string | null;
+      }>("read", { target });
       const st = scope === "global" ? globalState : projectState;
       st.data = back.data ?? null;
       st.revision = back.revision ?? null;
@@ -354,13 +490,34 @@
   }
 
   // ---- extension config editors (file-backed) ----
-  interface ExtFile { data: Record<string, unknown> | null; raw: string | null; revision: string | null; exists: boolean }
+  interface ExtFile {
+    data: Record<string, unknown> | null;
+    raw: string | null;
+    revision: string | null;
+    exists: boolean;
+  }
   let extFiles = $state<Record<string, ExtFile>>({});
   async function loadExt(target: string) {
     try {
-      const r = await mgmtRequest<{ exists: boolean; data: Record<string, unknown> | null; raw: string | null; revision: string | null }>("read", { target });
-      extFiles = { ...extFiles, [target]: { data: r.data ?? null, raw: r.raw, revision: r.revision ?? null, exists: r.exists } };
-    } catch (e) { statusNote.set(`Couldn't load configuration: ${e}`); throw e; }
+      const r = await mgmtRequest<{
+        exists: boolean;
+        data: Record<string, unknown> | null;
+        raw: string | null;
+        revision: string | null;
+      }>("read", { target });
+      extFiles = {
+        ...extFiles,
+        [target]: {
+          data: r.data ?? null,
+          raw: r.raw,
+          revision: r.revision ?? null,
+          exists: r.exists,
+        },
+      };
+    } catch (e) {
+      statusNote.set(`Couldn't load configuration: ${e}`);
+      throw e;
+    }
   }
   function extDraft(target: string): Record<string, unknown> {
     return (extFiles[target]?.data ?? {}) as Record<string, unknown>;
@@ -373,7 +530,12 @@
     try {
       const cur = extFiles[target];
       const changes = preparePatch(patch);
-      await mgmtRequest("write", { target, mode: "merge", ...changes, revision: cur?.revision ?? null });
+      await mgmtRequest("write", {
+        target,
+        mode: "merge",
+        ...changes,
+        revision: cur?.revision ?? null,
+      });
       await loadExt(target);
       flashSaved();
     } catch (e) {
@@ -381,10 +543,19 @@
       setTimeout(() => statusNote.set(""), 6000);
     }
   }
-  async function saveExtNamespace(target: string, namespace: string, value: Record<string, unknown>) {
+  async function saveExtNamespace(
+    target: string,
+    namespace: string,
+    value: Record<string, unknown>,
+  ) {
     try {
       const cur = extFiles[target];
-      await mgmtRequest("write", { target, mode: "namespace", patch: { [namespace]: value }, revision: cur?.revision ?? null });
+      await mgmtRequest("write", {
+        target,
+        mode: "namespace",
+        patch: { [namespace]: value },
+        revision: cur?.revision ?? null,
+      });
       await loadExt(target);
       flashSaved();
     } catch (e) {
@@ -441,7 +612,8 @@
     }
     const binding = parseCapture(e);
     if (!binding) {
-      captureNote = "Needs Ctrl (or ⌘) plus a key — bare letters, Alt chords, and lone modifiers don't qualify";
+      captureNote =
+        "Needs Ctrl (or ⌘) plus a key — bare letters, Alt chords, and lone modifiers don't qualify";
       return;
     }
     // Duplicates are never applied: name the owning action on the captured
@@ -484,7 +656,9 @@
   const catalogModels = $derived.by(() => {
     const q = modelFilter.trim().toLowerCase();
     const list = $models;
-    return q ? list.filter((m) => `${m.provider}/${m.id} ${m.name}`.toLowerCase().includes(q)) : list;
+    return q
+      ? list.filter((m) => `${m.provider}/${m.id} ${m.name}`.toLowerCase().includes(q))
+      : list;
   });
 
   let refreshing = $state(false);
@@ -494,7 +668,8 @@
     refreshMsg = "";
     try {
       await mgmtRequest("refresh-models", {});
-      refreshMsg = "Model registry refresh requested via companion — verify availability with the runtime model list.";
+      refreshMsg =
+        "Model registry refresh requested via companion — verify availability with the runtime model list.";
     } catch (e) {
       refreshMsg = e instanceof Error ? e.message : String(e);
     } finally {
@@ -508,14 +683,19 @@
   $effect(() => {
     const t = advTarget;
     const f = extFiles[t];
-    if (t && f) advJson = f.exists ? f.raw ?? JSON.stringify(f.data ?? {}, null, 2) : "{}";
+    if (t && f) advJson = f.exists ? (f.raw ?? JSON.stringify(f.data ?? {}, null, 2)) : "{}";
   });
   async function applyAdvJson() {
     try {
       JSON.parse(advJson);
       const cur = extFiles[advTarget];
       if (!cur) throw new Error("Load the file before saving");
-      await mgmtRequest("write", { target: advTarget, mode: "replace", content: advJson, revision: cur.revision });
+      await mgmtRequest("write", {
+        target: advTarget,
+        mode: "replace",
+        content: advJson,
+        revision: cur.revision,
+      });
       await loadExt(advTarget);
       void loadAll(true);
       statusNote.set("Saved — read back from the file.");
@@ -544,7 +724,9 @@
       void renameSession(name, path);
     }, 700);
   }
-  onDestroy(() => { if (renameTimer) clearTimeout(renameTimer); });
+  onDestroy(() => {
+    if (renameTimer) clearTimeout(renameTimer);
+  });
   $effect(() => {
     // refreshRpcState re-fires this store after every RPC (sendPrompt,
     // setModel, rename ack, session switch). While a rename debounce is
@@ -559,24 +741,40 @@
 
   $effect(() => {
     // load once when the workspace becomes visible
-    if ($settingsOpen) untrack(() => {
-      void getAgentDir().then((d) => (agentDir = d)).catch(() => {});
-      void loadAll();
-      if (companionAvailable()) void loadResources();
-    });
+    if ($settingsOpen)
+      untrack(() => {
+        void getAgentDir()
+          .then((d) => (agentDir = d))
+          .catch(() => {});
+        void loadAll();
+        if (companionAvailable()) void loadResources();
+      });
   });
 </script>
 
 {#snippet applyBar()}
   <div class="apply-bar">
     <span class="hint">
-      {dirty ? "Unsaved edits" : "No unsaved edits"}{inheritKeys.length > 0 ? ` · ${inheritKeys.length} field(s) reset to inherited` : ""}
-      {#if saveState === "saved"} · <span class="chip ok">Saved — verified by read-back</span>{/if}
-      {#if saveState === "error"} · <span class="hint err">{saveError}</span>{/if}
+      {dirty ? "Unsaved edits" : "No unsaved edits"}{inheritKeys.length > 0
+        ? ` · ${inheritKeys.length} field(s) reset to inherited`
+        : ""}
+      {#if saveState === "saved"}
+        · <span class="chip ok">Saved — verified by read-back</span>{/if}
+      {#if saveState === "error"}
+        · <span class="hint err">{saveError}</span>{/if}
     </span>
     <span class="spacer"></span>
-    <button class="ghost" onclick={discardSettings} disabled={!loaded || loading || !dirty || saveState === "saving"}>Discard</button>
-    <button class="primary" onclick={() => void applySettings()} disabled={!loaded || loading || !dirty || saveState === "saving"}>{saveState === "saving" ? "Saving…" : "Apply &amp; verify".replace("&amp;", "&")}</button>
+    <button
+      class="ghost"
+      onclick={discardSettings}
+      disabled={!loaded || loading || !dirty || saveState === "saving"}>Discard</button
+    >
+    <button
+      class="primary"
+      onclick={() => void applySettings()}
+      disabled={!loaded || loading || !dirty || saveState === "saving"}
+      >{saveState === "saving" ? "Saving…" : "Apply &amp; verify".replace("&amp;", "&")}</button
+    >
   </div>
 {/snippet}
 
@@ -589,7 +787,11 @@
     <nav>
       {#each SECTIONS as s (s.id)}
         {#if matchesSearch(s.label, s.hint)}
-          <button class="rail-item" class:active={section === s.id} onclick={() => (section = s.id)}>
+          <button
+            class="rail-item"
+            class:active={section === s.id}
+            onclick={() => (section = s.id)}
+          >
             <span class="rail-label">{s.label}</span>
             <span class="rail-hint">{s.hint}</span>
           </button>
@@ -597,7 +799,9 @@
       {/each}
     </nav>
     <div class="rail-foot mono">
-      <span class:ok={companionReady} class:bad={!companionReady}>companion {companionReady ? "ready" : "not installed"}</span>
+      <span class:ok={companionReady} class:bad={!companionReady}
+        >companion {companionReady ? "ready" : "not installed"}</span
+      >
     </div>
   </aside>
 
@@ -610,12 +814,27 @@
 
     {#if section === "runtime"}
       <h3>Current runtime <span class="chip">changes the active session</span></h3>
-      <p class="hint">Native RPC controls. Startup defaults (what a fresh session gets) live under <button class="linklike" onclick={() => (section = "behavior")}>Agent behavior</button> and <button class="linklike" onclick={() => (section = "models")}>Models</button>.</p>
+      <p class="hint">
+        Native RPC controls. Startup defaults (what a fresh session gets) live under <button
+          class="linklike"
+          onclick={() => (section = "behavior")}>Agent behavior</button
+        >
+        and <button class="linklike" onclick={() => (section = "models")}>Models</button>.
+      </p>
       {#if runtimeScopeNote}<p class="hint">{runtimeScopeNote}</p>{/if}
       <div class="rows">
         <div class="row">
           <label for="rt-model">Model ({$models.length} available)</label>
-          <select id="rt-model" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.model ? `${$rpcState.model.provider}|${$rpcState.model.id}` : ""} onchange={(e) => { const [provider, id] = e.currentTarget.value.split("|"); void setModel(provider, id); }}>
+          <select
+            id="rt-model"
+            disabled={runtimeDisabled}
+            title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}
+            value={$rpcState?.model ? `${$rpcState.model.provider}|${$rpcState.model.id}` : ""}
+            onchange={(e) => {
+              const [provider, id] = e.currentTarget.value.split("|");
+              void setModel(provider, id);
+            }}
+          >
             {#each $models as m (m.provider + "/" + m.id)}
               <option value={m.provider + "|" + m.id}>{m.provider} / {m.id}</option>
             {/each}
@@ -623,38 +842,100 @@
         </div>
         <div class="row">
           <label for="rt-think">Thinking level</label>
-          <select id="rt-think" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.thinkingLevel ?? "medium"} onchange={(e) => void setThinkingLevel(e.currentTarget.value as never)}>
+          <select
+            id="rt-think"
+            disabled={runtimeDisabled}
+            title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}
+            value={$rpcState?.thinkingLevel ?? "medium"}
+            onchange={(e) => void setThinkingLevel(e.currentTarget.value as never)}
+          >
             {#each THINKING_LEVELS as l (l)}<option value={l}>{l}</option>{/each}
           </select>
         </div>
         <div class="row">
-          <label for="rt-steer">Steering delivery <span class="chip">persists via SettingsManager</span></label>
-          <select id="rt-steer" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.steeringMode ?? "one-at-a-time"} onchange={(e) => void setSteeringMode(e.currentTarget.value as never)}>
+          <label for="rt-steer"
+            >Steering delivery <span class="chip">persists via SettingsManager</span></label
+          >
+          <select
+            id="rt-steer"
+            disabled={runtimeDisabled}
+            title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}
+            value={$rpcState?.steeringMode ?? "one-at-a-time"}
+            onchange={(e) => void setSteeringMode(e.currentTarget.value as never)}
+          >
             <option value="all">all — after each turn</option>
             <option value="one-at-a-time">one-at-a-time</option>
           </select>
         </div>
         <div class="row">
-          <label for="rt-fu">Follow-up delivery <span class="chip">persists via SettingsManager</span></label>
-          <select id="rt-fu" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.followUpMode ?? "one-at-a-time"} onchange={(e) => void setFollowUpMode(e.currentTarget.value as never)}>
+          <label for="rt-fu"
+            >Follow-up delivery <span class="chip">persists via SettingsManager</span></label
+          >
+          <select
+            id="rt-fu"
+            disabled={runtimeDisabled}
+            title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}
+            value={$rpcState?.followUpMode ?? "one-at-a-time"}
+            onchange={(e) => void setFollowUpMode(e.currentTarget.value as never)}
+          >
             <option value="all">all — when agent finishes</option>
             <option value="one-at-a-time">one-at-a-time</option>
           </select>
         </div>
         <div class="row">
-          <label class="check" title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}><input type="checkbox" checked={$rpcState?.autoCompactionEnabled ?? true} disabled={runtimeDisabled} onchange={(e) => setAutoCompaction(e.currentTarget.checked)} /> Auto-compaction (persists)</label>
-          <button onclick={() => compact()} disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Compact now</button>
+          <label class="check" title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}
+            ><input
+              type="checkbox"
+              checked={$rpcState?.autoCompactionEnabled ?? true}
+              disabled={runtimeDisabled}
+              onchange={(e) => setAutoCompaction(e.currentTarget.checked)}
+            /> Auto-compaction (persists)</label
+          >
+          <button
+            onclick={() => compact()}
+            disabled={runtimeDisabled}
+            title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Compact now</button
+          >
         </div>
         <div class="row">
-          <label class="check" title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}><input type="checkbox" checked={$autoRetry} disabled={runtimeDisabled} onchange={(e) => { const v = e.currentTarget.checked; void setAutoRetry(v); }} /> Auto-retry (persists; Leftleg mirrors the last value set)</label>
-          <button onclick={() => void abortRetry()} disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Abort running retry</button>
+          <label class="check" title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}
+            ><input
+              type="checkbox"
+              checked={$autoRetry}
+              disabled={runtimeDisabled}
+              onchange={(e) => {
+                const v = e.currentTarget.checked;
+                void setAutoRetry(v);
+              }}
+            /> Auto-retry (persists; Leftleg mirrors the last value set)</label
+          >
+          <button
+            onclick={() => void abortRetry()}
+            disabled={runtimeDisabled}
+            title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Abort running retry</button
+          >
         </div>
         <div class="row">
           <span class="row-label">Session actions (operational — not configuration)</span>
           <div class="inline">
-            <input class="grow" value={sessionName} placeholder="session name" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} oninput={onSessionNameInput} />
-            <button onclick={() => void exportSessionHtml()} disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Export as HTML…</button>
-            <button onclick={() => void cloneSession()} disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Clone</button>
+            <input
+              class="grow"
+              value={sessionName}
+              placeholder="session name"
+              disabled={runtimeDisabled}
+              title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}
+              oninput={onSessionNameInput}
+            />
+            <button
+              onclick={() => void exportSessionHtml()}
+              disabled={runtimeDisabled}
+              title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Export as HTML…</button
+            >
+            <button
+              onclick={() => void cloneSession()}
+              disabled={runtimeDisabled}
+              title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined}>Clone</button
+            >
           </div>
         </div>
         <div class="row">
@@ -668,97 +949,299 @@
     {:else if section === "behavior"}
       <h3>Agent behavior</h3>
       <div class="scope-row">
-        <span class="scope-name">Scope: {scope === "global" ? "Global" : "Project"} — {scope === "global" ? (agentDir || "~/.pi/agent") + "/settings.json" : scopeProjectLabel()}</span>
+        <span class="scope-name"
+          >Scope: {scope === "global" ? "Global" : "Project"} — {scope === "global"
+            ? (agentDir || "~/.pi/agent") + "/settings.json"
+            : scopeProjectLabel()}</span
+        >
         <div class="seg">
-          <button class:active={scope === "global"} onclick={() => switchScope("global")}>Global</button>
-          <button class:active={scope === "project"} onclick={() => switchScope("project")}>Project</button>
+          <button class:active={scope === "global"} onclick={() => switchScope("global")}
+            >Global</button
+          >
+          <button class:active={scope === "project"} onclick={() => switchScope("project")}
+            >Project</button
+          >
         </div>
       </div>
       <div class="rows">
         <div class="row" class:filtered={!matchesSearch("startup provider", "defaultProvider")}>
-          <label for="ab-prov" class="with-chip">Startup provider <span class="chip src">{sourceChip("defaultProvider")}</span></label>
+          <label for="ab-prov" class="with-chip"
+            >Startup provider <span class="chip src">{sourceChip("defaultProvider")}</span></label
+          >
           <div class="inline">
-            <input id="ab-prov" value={fieldStr("defaultProvider")} oninput={(e) => setFieldStr("defaultProvider", e.currentTarget.value)} placeholder="inherited — e.g. openrouter" />
-            <button class="ghost" title="Reset to inherited" onclick={() => markInherit("defaultProvider")}><RotateCcw size={12} strokeWidth={2} /></button>
+            <input
+              id="ab-prov"
+              value={fieldStr("defaultProvider")}
+              oninput={(e) => setFieldStr("defaultProvider", e.currentTarget.value)}
+              placeholder="inherited — e.g. openrouter"
+            />
+            <button
+              class="ghost"
+              title="Reset to inherited"
+              onclick={() => markInherit("defaultProvider")}
+              ><RotateCcw size={12} strokeWidth={2} /></button
+            >
           </div>
         </div>
         <div class="row" class:filtered={!matchesSearch("startup model", "defaultModel")}>
-          <label for="ab-model" class="with-chip">Startup model <span class="chip src">{sourceChip("defaultModel")}</span></label>
+          <label for="ab-model" class="with-chip"
+            >Startup model <span class="chip src">{sourceChip("defaultModel")}</span></label
+          >
           <div class="inline">
-            <input id="ab-model" class="mono" value={fieldStr("defaultModel")} oninput={(e) => setFieldStr("defaultModel", e.currentTarget.value)} placeholder="inherited — model id with / : or :free preserved" />
-            <button class="ghost" title="Reset to inherited" onclick={() => markInherit("defaultModel")}><RotateCcw size={12} strokeWidth={2} /></button>
+            <input
+              id="ab-model"
+              class="mono"
+              value={fieldStr("defaultModel")}
+              oninput={(e) => setFieldStr("defaultModel", e.currentTarget.value)}
+              placeholder="inherited — model id with / : or :free preserved"
+            />
+            <button
+              class="ghost"
+              title="Reset to inherited"
+              onclick={() => markInherit("defaultModel")}
+              ><RotateCcw size={12} strokeWidth={2} /></button
+            >
           </div>
         </div>
-        <div class="row" class:filtered={!matchesSearch("startup thinking", "defaultThinkingLevel")}>
-          <label for="ab-think" class="with-chip">Startup thinking level <span class="chip src">{sourceChip("defaultThinkingLevel")}</span></label>
+        <div
+          class="row"
+          class:filtered={!matchesSearch("startup thinking", "defaultThinkingLevel")}
+        >
+          <label for="ab-think" class="with-chip"
+            >Startup thinking level <span class="chip src"
+              >{sourceChip("defaultThinkingLevel")}</span
+            ></label
+          >
           <div class="inline">
-            <select id="ab-think" value={fieldStr("defaultThinkingLevel")} onchange={(e) => setFieldStr("defaultThinkingLevel", e.currentTarget.value)}>
+            <select
+              id="ab-think"
+              value={fieldStr("defaultThinkingLevel")}
+              onchange={(e) => setFieldStr("defaultThinkingLevel", e.currentTarget.value)}
+            >
               <option value="">(inherited)</option>
               {#each THINKING_LEVELS as l (l)}<option value={l}>{l}</option>{/each}
             </select>
-            <button class="ghost" title="Reset to inherited" onclick={() => markInherit("defaultThinkingLevel")}><RotateCcw size={12} strokeWidth={2} /></button>
+            <button
+              class="ghost"
+              title="Reset to inherited"
+              onclick={() => markInherit("defaultThinkingLevel")}
+              ><RotateCcw size={12} strokeWidth={2} /></button
+            >
           </div>
         </div>
-        <div class="row" class:filtered={!matchesSearch("compaction", "compaction.enabled reserveTokens keepRecentTokens")}>
-          <span class="with-chip">Compaction <span class="chip src">{sourceChip("compaction.enabled")}</span> <span class="chip">defaults: on · 16384 · 20000</span></span>
+        <div
+          class="row"
+          class:filtered={!matchesSearch(
+            "compaction",
+            "compaction.enabled reserveTokens keepRecentTokens",
+          )}
+        >
+          <span class="with-chip"
+            >Compaction <span class="chip src">{sourceChip("compaction.enabled")}</span>
+            <span class="chip">defaults: on · 16384 · 20000</span></span
+          >
           <div class="inline">
-            <label class="check"><input type="checkbox" checked={fieldBool("compaction.enabled")} onchange={(e) => setFieldBool("compaction.enabled", e.currentTarget.checked)} /> enabled</label>
-            <input class="num" type="number" value={fieldNum("compaction.reserveTokens")} oninput={(e) => setFieldNum("compaction.reserveTokens", e.currentTarget)} title="reserveTokens" />
-            <input class="num" type="number" value={fieldNum("compaction.keepRecentTokens")} oninput={(e) => setFieldNum("compaction.keepRecentTokens", e.currentTarget)} title="keepRecentTokens" />
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("compaction.enabled")}
+                onchange={(e) => setFieldBool("compaction.enabled", e.currentTarget.checked)}
+              /> enabled</label
+            >
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("compaction.reserveTokens")}
+              oninput={(e) => setFieldNum("compaction.reserveTokens", e.currentTarget)}
+              title="reserveTokens"
+            />
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("compaction.keepRecentTokens")}
+              oninput={(e) => setFieldNum("compaction.keepRecentTokens", e.currentTarget)}
+              title="keepRecentTokens"
+            />
           </div>
         </div>
         <div class="row" class:filtered={!matchesSearch("branch summary", "branchSummary")}>
-          <span class="with-chip">Branch summary <span class="chip">defaults: 16384 · no skip</span></span>
+          <span class="with-chip"
+            >Branch summary <span class="chip">defaults: 16384 · no skip</span></span
+          >
           <div class="inline">
-            <input class="num" type="number" value={fieldNum("branchSummary.reserveTokens")} oninput={(e) => setFieldNum("branchSummary.reserveTokens", e.currentTarget)} title="reserveTokens" />
-            <label class="check"><input type="checkbox" checked={fieldBool("branchSummary.skipPrompt")} onchange={(e) => setFieldBool("branchSummary.skipPrompt", e.currentTarget.checked)} /> skipPrompt</label>
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("branchSummary.reserveTokens")}
+              oninput={(e) => setFieldNum("branchSummary.reserveTokens", e.currentTarget)}
+              title="reserveTokens"
+            />
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("branchSummary.skipPrompt")}
+                onchange={(e) => setFieldBool("branchSummary.skipPrompt", e.currentTarget.checked)}
+              /> skipPrompt</label
+            >
           </div>
         </div>
-        <div class="row" class:filtered={!matchesSearch("retry agent", "retry.enabled maxRetries baseDelayMs")}>
-          <span class="with-chip">Agent retry <span class="chip">defaults: on · 3 · 2000ms (2s→4s→8s)</span> <span class="chip src">{sourceChip("retry.maxRetries")}</span></span>
+        <div
+          class="row"
+          class:filtered={!matchesSearch("retry agent", "retry.enabled maxRetries baseDelayMs")}
+        >
+          <span class="with-chip"
+            >Agent retry <span class="chip">defaults: on · 3 · 2000ms (2s→4s→8s)</span>
+            <span class="chip src">{sourceChip("retry.maxRetries")}</span></span
+          >
           <div class="inline">
-            <label class="check"><input type="checkbox" checked={fieldBool("retry.enabled")} onchange={(e) => setFieldBool("retry.enabled", e.currentTarget.checked)} /> enabled</label>
-            <input class="num" type="number" value={fieldNum("retry.maxRetries")} oninput={(e) => setFieldNum("retry.maxRetries", e.currentTarget)} title="maxRetries" />
-            <input class="num" type="number" value={fieldNum("retry.baseDelayMs")} oninput={(e) => setFieldNum("retry.baseDelayMs", e.currentTarget)} title="baseDelayMs" />
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("retry.enabled")}
+                onchange={(e) => setFieldBool("retry.enabled", e.currentTarget.checked)}
+              /> enabled</label
+            >
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("retry.maxRetries")}
+              oninput={(e) => setFieldNum("retry.maxRetries", e.currentTarget)}
+              title="maxRetries"
+            />
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("retry.baseDelayMs")}
+              oninput={(e) => setFieldNum("retry.baseDelayMs", e.currentTarget)}
+              title="baseDelayMs"
+            />
           </div>
         </div>
-        <div class="row" class:filtered={!matchesSearch("provider retry timeout", "retry.provider")}>
-          <span class="with-chip">Provider retries <span class="chip">timeoutMs / maxRetries / maxRetryDelayMs — keep maxRetries 0 unless needed</span></span>
+        <div
+          class="row"
+          class:filtered={!matchesSearch("provider retry timeout", "retry.provider")}
+        >
+          <span class="with-chip"
+            >Provider retries <span class="chip"
+              >timeoutMs / maxRetries / maxRetryDelayMs — keep maxRetries 0 unless needed</span
+            ></span
+          >
           <div class="inline">
-            <input class="num" type="number" value={fieldNum("retry.provider.timeoutMs")} oninput={(e) => setFieldNum("retry.provider.timeoutMs", e.currentTarget)} title="timeoutMs" />
-            <input class="num" type="number" value={fieldNum("retry.provider.maxRetries")} oninput={(e) => setFieldNum("retry.provider.maxRetries", e.currentTarget)} title="maxRetries" />
-            <input class="num" type="number" value={fieldNum("retry.provider.maxRetryDelayMs")} oninput={(e) => setFieldNum("retry.provider.maxRetryDelayMs", e.currentTarget)} title="maxRetryDelayMs" />
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("retry.provider.timeoutMs")}
+              oninput={(e) => setFieldNum("retry.provider.timeoutMs", e.currentTarget)}
+              title="timeoutMs"
+            />
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("retry.provider.maxRetries")}
+              oninput={(e) => setFieldNum("retry.provider.maxRetries", e.currentTarget)}
+              title="maxRetries"
+            />
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("retry.provider.maxRetryDelayMs")}
+              oninput={(e) => setFieldNum("retry.provider.maxRetryDelayMs", e.currentTarget)}
+              title="maxRetryDelayMs"
+            />
           </div>
         </div>
-        <div class="row" class:filtered={!matchesSearch("transport timeout", "transport httpIdleTimeoutMs websocketConnectTimeoutMs")}>
+        <div
+          class="row"
+          class:filtered={!matchesSearch(
+            "transport timeout",
+            "transport httpIdleTimeoutMs websocketConnectTimeoutMs",
+          )}
+        >
           <span class="row-label">Transport &amp; timeouts</span>
           <div class="inline">
-            <select value={fieldStr("transport")} onchange={(e) => setFieldStr("transport", e.currentTarget.value)}>
+            <select
+              value={fieldStr("transport")}
+              onchange={(e) => setFieldStr("transport", e.currentTarget.value)}
+            >
               <option value="">(inherited)</option>
-              <option value="auto">auto</option><option value="sse">sse</option><option value="websocket">websocket</option><option value="websocket-cached">websocket-cached</option>
+              <option value="auto">auto</option><option value="sse">sse</option><option
+                value="websocket">websocket</option
+              ><option value="websocket-cached">websocket-cached</option>
             </select>
-            <input class="num" type="number" value={fieldNum("httpIdleTimeoutMs")} oninput={(e) => setFieldNum("httpIdleTimeoutMs", e.currentTarget)} title="httpIdleTimeoutMs (0 disables)" />
-            <input class="num" type="number" value={fieldNum("websocketConnectTimeoutMs")} oninput={(e) => setFieldNum("websocketConnectTimeoutMs", e.currentTarget)} title="websocketConnectTimeoutMs" />
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("httpIdleTimeoutMs")}
+              oninput={(e) => setFieldNum("httpIdleTimeoutMs", e.currentTarget)}
+              title="httpIdleTimeoutMs (0 disables)"
+            />
+            <input
+              class="num"
+              type="number"
+              value={fieldNum("websocketConnectTimeoutMs")}
+              oninput={(e) => setFieldNum("websocketConnectTimeoutMs", e.currentTarget)}
+              title="websocketConnectTimeoutMs"
+            />
           </div>
         </div>
         <div class="row" class:filtered={!matchesSearch("images resize block", "images")}>
           <span class="with-chip">Images <span class="chip">resize on · block off</span></span>
           <div class="inline">
-            <label class="check"><input type="checkbox" checked={fieldBool("images.autoResize")} onchange={(e) => setFieldBool("images.autoResize", e.currentTarget.checked)} /> autoResize (2000×2000)</label>
-            <label class="check"><input type="checkbox" checked={fieldBool("images.blockImages")} onchange={(e) => setFieldBool("images.blockImages", e.currentTarget.checked)} /> blockImages</label>
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("images.autoResize")}
+                onchange={(e) => setFieldBool("images.autoResize", e.currentTarget.checked)}
+              /> autoResize (2000×2000)</label
+            >
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("images.blockImages")}
+                onchange={(e) => setFieldBool("images.blockImages", e.currentTarget.checked)}
+              /> blockImages</label
+            >
           </div>
         </div>
-        <div class="row" class:filtered={!matchesSearch("warnings anthropic extra usage", "warnings")}>
+        <div
+          class="row"
+          class:filtered={!matchesSearch("warnings anthropic extra usage", "warnings")}
+        >
           <span class="with-chip">Warnings</span>
           <div class="inline">
-            <label class="check"><input type="checkbox" checked={fieldBool("warnings.anthropicExtraUsage")} onchange={(e) => setFieldBool("warnings.anthropicExtraUsage", e.currentTarget.checked)} /> warn on Anthropic paid extra usage</label>
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("warnings.anthropicExtraUsage")}
+                onchange={(e) =>
+                  setFieldBool("warnings.anthropicExtraUsage", e.currentTarget.checked)}
+              /> warn on Anthropic paid extra usage</label
+            >
           </div>
         </div>
-        <div class="row" class:filtered={!matchesSearch("thinking block cache notices", "hideThinkingBlock showCacheMissNotices")}>
+        <div
+          class="row"
+          class:filtered={!matchesSearch(
+            "thinking block cache notices",
+            "hideThinkingBlock showCacheMissNotices",
+          )}
+        >
           <span class="with-chip">Display extras</span>
           <div class="inline">
-            <label class="check"><input type="checkbox" checked={fieldBool("hideThinkingBlock")} onchange={(e) => setFieldBool("hideThinkingBlock", e.currentTarget.checked)} /> hideThinkingBlock</label>
-            <label class="check"><input type="checkbox" checked={fieldBool("showCacheMissNotices")} onchange={(e) => setFieldBool("showCacheMissNotices", e.currentTarget.checked)} /> showCacheMissNotices</label>
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("hideThinkingBlock")}
+                onchange={(e) => setFieldBool("hideThinkingBlock", e.currentTarget.checked)}
+              /> hideThinkingBlock</label
+            >
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("showCacheMissNotices")}
+                onchange={(e) => setFieldBool("showCacheMissNotices", e.currentTarget.checked)}
+              /> showCacheMissNotices</label
+            >
           </div>
         </div>
       </div>
@@ -766,20 +1249,45 @@
     {:else if section === "models"}
       <h3>Models &amp; cycling</h3>
       <div class="scope-row">
-        <span class="scope-name">Scope: {scope === "global" ? "Global settings.json" : "Project .pi/settings.json"}</span>
+        <span class="scope-name"
+          >Scope: {scope === "global" ? "Global settings.json" : "Project .pi/settings.json"}</span
+        >
         <div class="seg">
-          <button class:active={scope === "global"} onclick={() => switchScope("global")}>Global</button>
-          <button class:active={scope === "project"} onclick={() => switchScope("project")}>Project</button>
+          <button class:active={scope === "global"} onclick={() => switchScope("global")}
+            >Global</button
+          >
+          <button class:active={scope === "project"} onclick={() => switchScope("project")}
+            >Project</button
+          >
         </div>
       </div>
       <div class="rows">
-        <div class="row" class:filtered={!matchesSearch("enabled models cycling patterns", "enabledModels")}>
-          <label for="m-cyc" class="with-chip">enabledModels (Ctrl+P cycling; one pattern per line) <span class="chip src">{sourceChip("enabledModels")}</span></label>
-          <textarea id="m-cyc" class="mono" rows={3} value={enabledModelsText} oninput={(e) => (enabledModelsText = e.currentTarget.value)} onchange={() => linesToDraft("enabledModels", enabledModelsText)}></textarea>
+        <div
+          class="row"
+          class:filtered={!matchesSearch("enabled models cycling patterns", "enabledModels")}
+        >
+          <label for="m-cyc" class="with-chip"
+            >enabledModels (Ctrl+P cycling; one pattern per line) <span class="chip src"
+              >{sourceChip("enabledModels")}</span
+            ></label
+          >
+          <textarea
+            id="m-cyc"
+            class="mono"
+            rows={3}
+            value={enabledModelsText}
+            oninput={(e) => (enabledModelsText = e.currentTarget.value)}
+            onchange={() => linesToDraft("enabledModels", enabledModelsText)}></textarea>
         </div>
         <div class="row">
-          <label for="m-filter">Model registry ({$models.length} configured — full list, searchable)</label>
-          <input id="m-filter" placeholder="Filter by provider, id, name…" bind:value={modelFilter} />
+          <label for="m-filter"
+            >Model registry ({$models.length} configured — full list, searchable)</label
+          >
+          <input
+            id="m-filter"
+            placeholder="Filter by provider, id, name…"
+            bind:value={modelFilter}
+          />
           <div class="model-list">
             {#each catalogModels as m (m.provider + "/" + m.id)}
               <div class="model-row">
@@ -792,19 +1300,42 @@
             {/each}
           </div>
           <div class="inline">
-            <button onclick={() => void refreshRegistry()} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh registry (companion)"}</button>
+            <button onclick={() => void refreshRegistry()} disabled={refreshing}
+              >{refreshing ? "Refreshing…" : "Refresh registry (companion)"}</button
+            >
             {#if refreshMsg}<span class="hint">{refreshMsg}</span>{/if}
           </div>
-          <p class="hint">Custom providers/models live in <span class="mono">models.json</span> (user-authored); <span class="mono">models-store.json</span> is a generated cache and is never edited here. Full provider editor: pending — see coverage matrix.</p>
+          <p class="hint">
+            Custom providers/models live in <span class="mono">models.json</span> (user-authored);
+            <span class="mono">models-store.json</span> is a generated cache and is never edited here.
+            Full provider editor: pending — see coverage matrix.
+          </p>
         </div>
         <div class="row" class:filtered={!matchesSearch("media agents", "media")}>
-          <label for="media-model" class="with-chip">Media agents — image_generate defaults <span class="chip src">media-config</span></label>
+          <label for="media-model" class="with-chip"
+            >Media agents — image_generate defaults <span class="chip src">media-config</span
+            ></label
+          >
           {#if extFiles["media-config"]}
             <div class="inline wrap">
               <span class="chip">model</span>
-              <input id="media-model" class="grow mono" value={String(getPath(extDraft("media-config"), "model") ?? "")} onchange={(e) => void saveExt("media-config", { model: e.currentTarget.value.trim() || undefined })} placeholder="google/gemini-3.1-flash-image" />
+              <input
+                id="media-model"
+                class="grow mono"
+                value={String(getPath(extDraft("media-config"), "model") ?? "")}
+                onchange={(e) =>
+                  void saveExt("media-config", {
+                    model: e.currentTarget.value.trim() || undefined,
+                  })}
+                placeholder="google/gemini-3.1-flash-image"
+              />
               <span class="chip">resolution</span>
-              <select class="sel" value={String(getPath(extDraft("media-config"), "resolution") ?? "")} onchange={(e) => void saveExt("media-config", { resolution: e.currentTarget.value || undefined })}>
+              <select
+                class="sel"
+                value={String(getPath(extDraft("media-config"), "resolution") ?? "")}
+                onchange={(e) =>
+                  void saveExt("media-config", { resolution: e.currentTarget.value || undefined })}
+              >
                 <option value="">(built-in default)</option>
                 <option value="512">512</option>
                 <option value="1K">1K</option>
@@ -812,7 +1343,12 @@
                 <option value="4K">4K</option>
               </select>
               <span class="chip">quality</span>
-              <select class="sel" value={String(getPath(extDraft("media-config"), "quality") ?? "")} onchange={(e) => void saveExt("media-config", { quality: e.currentTarget.value || undefined })}>
+              <select
+                class="sel"
+                value={String(getPath(extDraft("media-config"), "quality") ?? "")}
+                onchange={(e) =>
+                  void saveExt("media-config", { quality: e.currentTarget.value || undefined })}
+              >
                 <option value="">(built-in default)</option>
                 <option value="auto">auto</option>
                 <option value="low">low</option>
@@ -820,7 +1356,14 @@
                 <option value="high">high</option>
               </select>
               <span class="chip">output format</span>
-              <select class="sel" value={String(getPath(extDraft("media-config"), "output_format") ?? "")} onchange={(e) => void saveExt("media-config", { output_format: e.currentTarget.value || undefined })}>
+              <select
+                class="sel"
+                value={String(getPath(extDraft("media-config"), "output_format") ?? "")}
+                onchange={(e) =>
+                  void saveExt("media-config", {
+                    output_format: e.currentTarget.value || undefined,
+                  })}
+              >
                 <option value="">(built-in default)</option>
                 <option value="png">png</option>
                 <option value="jpeg">jpeg</option>
@@ -828,17 +1371,29 @@
                 <option value="svg">svg</option>
               </select>
               <span class="chip">background</span>
-              <select class="sel" value={String(getPath(extDraft("media-config"), "background") ?? "")} onchange={(e) => void saveExt("media-config", { background: e.currentTarget.value || undefined })}>
+              <select
+                class="sel"
+                value={String(getPath(extDraft("media-config"), "background") ?? "")}
+                onchange={(e) =>
+                  void saveExt("media-config", { background: e.currentTarget.value || undefined })}
+              >
                 <option value="">(built-in default)</option>
                 <option value="auto">auto</option>
                 <option value="transparent">transparent</option>
                 <option value="opaque">opaque</option>
               </select>
             </div>
-            <p class="hint">Defaults for the image_generate media agent — empty fields use the built-in default; tool arguments always win. Stored in <span class="mono">{agentDir}/extensions/leftleg-media/config.json</span> via the settings companion.</p>
+            <p class="hint">
+              Defaults for the image_generate media agent — empty fields use the built-in default;
+              tool arguments always win. Stored in <span class="mono"
+                >{agentDir}/extensions/leftleg-media/config.json</span
+              > via the settings companion.
+            </p>
           {:else}
             <div class="inline">
-              <button onclick={() => void loadExt("media-config").catch(() => {})}>Load media-config</button>
+              <button onclick={() => void loadExt("media-config").catch(() => {})}
+                >Load media-config</button
+              >
             </div>
           {/if}
         </div>
@@ -847,40 +1402,116 @@
     {:else if section === "tools"}
       <h3>Tools &amp; shell</h3>
       <div class="scope-row">
-        <span class="scope-name">Scope: {scope === "global" ? "Global settings.json" : "Project .pi/settings.json"}</span>
+        <span class="scope-name"
+          >Scope: {scope === "global" ? "Global settings.json" : "Project .pi/settings.json"}</span
+        >
         <div class="seg">
-          <button class:active={scope === "global"} onclick={() => switchScope("global")}>Global</button>
-          <button class:active={scope === "project"} onclick={() => switchScope("project")}>Project</button>
+          <button class:active={scope === "global"} onclick={() => switchScope("global")}
+            >Global</button
+          >
+          <button class:active={scope === "project"} onclick={() => switchScope("project")}
+            >Project</button
+          >
         </div>
       </div>
       <div class="rows">
         <div class="row" class:filtered={!matchesSearch("default tools built-in", "defaultTools")}>
-          <span class="with-chip">defaultTools — startup BUILT-INS only <span class="chip src">{sourceChip("defaultTools")}</span></span>
+          <span class="with-chip"
+            >defaultTools — startup BUILT-INS only <span class="chip src"
+              >{sourceChip("defaultTools")}</span
+            ></span
+          >
           <div class="inline wrap">
             {#each BUILTIN_TOOLS as t (t)}
-              <label class="check"><input type="checkbox" checked={((getPath(draft, "defaultTools") ?? []) as string[]).includes(t)} onchange={(e) => { const cur = new Set((getPath(draft, "defaultTools") ?? []) as string[]); if (e.currentTarget.checked) cur.add(t); else cur.delete(t); setPath(draft, "defaultTools", [...cur]); draft = { ...draft }; }} /> {t}</label>
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  checked={((getPath(draft, "defaultTools") ?? []) as string[]).includes(t)}
+                  onchange={(e) => {
+                    const cur = new Set((getPath(draft, "defaultTools") ?? []) as string[]);
+                    if (e.currentTarget.checked) cur.add(t);
+                    else cur.delete(t);
+                    setPath(draft, "defaultTools", [...cur]);
+                    draft = { ...draft };
+                  }}
+                />
+                {t}</label
+              >
             {/each}
-            <button class="ghost" title="Reset to inherited (standard defaults)" onclick={() => markInherit("defaultTools")}><RotateCcw size={12} strokeWidth={2} /></button>
+            <button
+              class="ghost"
+              title="Reset to inherited (standard defaults)"
+              onclick={() => markInherit("defaultTools")}
+              ><RotateCcw size={12} strokeWidth={2} /></button
+            >
           </div>
-          <p class="hint">Omitted = Pi's standard defaults. Extension/SDK tools are NOT affected by this list; `--tools`/`--exclude-tools` launch flags have different (strict allowlist / filter) semantics and are launcher-level.</p>
+          <p class="hint">
+            Omitted = Pi's standard defaults. Extension/SDK tools are NOT affected by this list;
+            `--tools`/`--exclude-tools` launch flags have different (strict allowlist / filter)
+            semantics and are launcher-level.
+          </p>
         </div>
-        <div class="row" class:filtered={!matchesSearch("shell path prefix npm", "shellPath shellCommandPrefix npmCommand")}>
-          <span class="row-label">Shell &amp; npm <span class="chip">effective shell is owned by the pwsh adapter on this install</span></span>
+        <div
+          class="row"
+          class:filtered={!matchesSearch(
+            "shell path prefix npm",
+            "shellPath shellCommandPrefix npmCommand",
+          )}
+        >
+          <span class="row-label"
+            >Shell &amp; npm <span class="chip"
+              >effective shell is owned by the pwsh adapter on this install</span
+            ></span
+          >
           <div class="inline">
-            <input class="grow mono" value={fieldStr("shellPath")} oninput={(e) => setFieldStr("shellPath", e.currentTarget.value)} placeholder="shellPath (e.g. C:/Program Files/Git/bin/bash.exe)" />
+            <input
+              class="grow mono"
+              value={fieldStr("shellPath")}
+              oninput={(e) => setFieldStr("shellPath", e.currentTarget.value)}
+              placeholder="shellPath (e.g. C:/Program Files/Git/bin/bash.exe)"
+            />
           </div>
           <div class="inline">
-            <input class="grow" value={fieldStr("shellCommandPrefix")} oninput={(e) => setFieldStr("shellCommandPrefix", e.currentTarget.value)} placeholder="shellCommandPrefix (prefix for every bash command)" />
+            <input
+              class="grow"
+              value={fieldStr("shellCommandPrefix")}
+              oninput={(e) => setFieldStr("shellCommandPrefix", e.currentTarget.value)}
+              placeholder="shellCommandPrefix (prefix for every bash command)"
+            />
           </div>
-          <textarea class="mono" rows={2} value={npmCommandText} oninput={(e) => (npmCommandText = e.currentTarget.value)} onchange={() => linesToDraft("npmCommand", npmCommandText)} placeholder="npmCommand argv — one token per line (e.g. mise / exec / node@20 / -- / npm)"></textarea>
+          <textarea
+            class="mono"
+            rows={2}
+            value={npmCommandText}
+            oninput={(e) => (npmCommandText = e.currentTarget.value)}
+            onchange={() => linesToDraft("npmCommand", npmCommandText)}
+            placeholder="npmCommand argv — one token per line (e.g. mise / exec / node@20 / -- / npm)"
+          ></textarea>
         </div>
         <div class="row" class:filtered={!matchesSearch("session dir", "sessionDir")}>
-          <span class="with-chip">sessionDir <span class="chip">configuration only — sessions themselves are not managed here</span></span>
-          <input class="grow mono" value={fieldStr("sessionDir")} oninput={(e) => setFieldStr("sessionDir", e.currentTarget.value)} placeholder="inherited — relative to project, ~ allowed" />
+          <span class="with-chip"
+            >sessionDir <span class="chip"
+              >configuration only — sessions themselves are not managed here</span
+            ></span
+          >
+          <input
+            class="grow mono"
+            value={fieldStr("sessionDir")}
+            oninput={(e) => setFieldStr("sessionDir", e.currentTarget.value)}
+            placeholder="inherited — relative to project, ~ allowed"
+          />
         </div>
         <div class="row" class:filtered={!matchesSearch("proxy", "httpProxy")}>
           <span class="with-chip">httpProxy <span class="chip">global only</span></span>
-          <input class="grow mono" value={fieldStr("httpProxy")} oninput={(e) => setFieldStr("httpProxy", e.currentTarget.value)} placeholder={scope === "project" ? "global-only setting — switch scope to edit" : "inherited — http://127.0.0.1:7890"} disabled={scope === "project"} />
+          <input
+            class="grow mono"
+            value={fieldStr("httpProxy")}
+            oninput={(e) => setFieldStr("httpProxy", e.currentTarget.value)}
+            placeholder={scope === "project"
+              ? "global-only setting — switch scope to edit"
+              : "inherited — http://127.0.0.1:7890"}
+            disabled={scope === "project"}
+          />
         </div>
       </div>
       {@render applyBar()}
@@ -888,29 +1519,62 @@
       <h3>Trust &amp; privacy</h3>
       <div class="rows">
         <div class="row">
-          <span class="with-chip">defaultProjectTrust (global fallback for RPC starts) <span class="chip">default ask — applies when no saved decision exists</span></span>
-          <select value={fieldStr("defaultProjectTrust")} onchange={(e) => setFieldStr("defaultProjectTrust", e.currentTarget.value)}>
+          <span class="with-chip"
+            >defaultProjectTrust (global fallback for RPC starts) <span class="chip"
+              >default ask — applies when no saved decision exists</span
+            ></span
+          >
+          <select
+            value={fieldStr("defaultProjectTrust")}
+            onchange={(e) => setFieldStr("defaultProjectTrust", e.currentTarget.value)}
+          >
             <option value="">(inherited — ask)</option>
             <option value="ask">ask — ignore project resources without prompting</option>
             <option value="always">always — trust project resources</option>
             <option value="never">never — ignore project resources</option>
           </select>
-          <p class="hint">Saved decisions live in <span class="mono">trust.json</span> (Pi-owned). Viewing it here; the explicit trust action and per-project flow: pending — no automatic trust escalation happens from Settings.</p>
+          <p class="hint">
+            Saved decisions live in <span class="mono">trust.json</span> (Pi-owned). Viewing it here;
+            the explicit trust action and per-project flow: pending — no automatic trust escalation happens
+            from Settings.
+          </p>
         </div>
         <div class="row">
           <span class="row-label">Telemetry &amp; updates</span>
           <div class="inline">
-            <label class="check"><input type="checkbox" checked={fieldBool("enableInstallTelemetry")} onchange={(e) => setFieldBool("enableInstallTelemetry", e.currentTarget.checked)} /> install/update telemetry ping + provider attribution headers</label>
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("enableInstallTelemetry")}
+                onchange={(e) => setFieldBool("enableInstallTelemetry", e.currentTarget.checked)}
+              /> install/update telemetry ping + provider attribution headers</label
+            >
           </div>
           <div class="inline">
-            <label class="check"><input type="checkbox" checked={fieldBool("enableAnalytics")} onchange={(e) => setFieldBool("enableAnalytics", e.currentTarget.checked)} /> analytics sharing (opt-in)</label>
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={fieldBool("enableAnalytics")}
+                onchange={(e) => setFieldBool("enableAnalytics", e.currentTarget.checked)}
+              /> analytics sharing (opt-in)</label
+            >
           </div>
-          <p class="hint">Update checks are controlled by env (<span class="mono">PI_SKIP_VERSION_CHECK</span>, <span class="mono">PI_OFFLINE</span>) and are shown read-only in Advanced.</p>
+          <p class="hint">
+            Update checks are controlled by env (<span class="mono">PI_SKIP_VERSION_CHECK</span>,
+            <span class="mono">PI_OFFLINE</span>) and are shown read-only in Advanced.
+          </p>
         </div>
         <div class="row">
           <span class="row-label">Saved trust decisions (trust.json, read-only)</span>
-          <textarea class="mono" rows={4} readonly value={JSON.stringify(extFiles["trust"]?.data ?? null, null, 2)}></textarea>
-          <p class="hint">Stored Pi decisions for trusted folders. Editing is Pi-owned; this view refreshes on open.</p>
+          <textarea
+            class="mono"
+            rows={4}
+            readonly
+            value={JSON.stringify(extFiles["trust"]?.data ?? null, null, 2)}></textarea>
+          <p class="hint">
+            Stored Pi decisions for trusted folders. Editing is Pi-owned; this view refreshes on
+            open.
+          </p>
         </div>
       </div>
       {@render applyBar()}
@@ -918,7 +1582,10 @@
       <h3>Extensions &amp; packages</h3>
       <div class="rows">
         <div class="row">
-          <span class="row-label">Installed packages (from {scope === "global" ? "global" : "project"} settings.json — enable/disable is reversible; sources stay installed)</span>
+          <span class="row-label"
+            >Installed packages (from {scope === "global" ? "global" : "project"} settings.json — enable/disable
+            is reversible; sources stay installed)</span
+          >
           {#each packageEntries() as name (name)}
             <div class="pkg-row">
               <span class="pkg-name">{name}</span>
@@ -932,7 +1599,9 @@
           <span class="row-label">Resource inventory (agent dir)</span>
           <div class="inline wrap">
             <span class="chip">skills: {(resInfo?.skillDirs ?? []).length}</span>
-            <span class="chip">extension dirs: {(resInfo?.extensionDirs ?? []).join(", ") || "—"}</span>
+            <span class="chip"
+              >extension dirs: {(resInfo?.extensionDirs ?? []).join(", ") || "—"}</span
+            >
             {#each Object.entries(resInfo?.filesPresent ?? {}) as [f, present] (f)}
               <span class="chip" class:ok={present}>{f}{present ? "" : " (absent)"}</span>
             {/each}
@@ -946,7 +1615,11 @@
           <label for="pk-cmds">Commands registered by pi (get_commands)</label>
           <div class="cmd-list">
             {#each $commands as c (c.name)}
-              <div class="cmd-row"><span class="cmd-name mono">/{c.name}</span>{#if c.source}<span class="tag">{c.source}</span>{/if}<span class="cmd-desc">{c.description ?? ""}</span></div>
+              <div class="cmd-row">
+                <span class="cmd-name mono">/{c.name}</span>{#if c.source}<span class="tag"
+                    >{c.source}</span
+                  >{/if}<span class="cmd-desc">{c.description ?? ""}</span>
+              </div>
             {:else}
               <div class="hint none">No commands.</div>
             {/each}
@@ -954,30 +1627,103 @@
         </div>
         <div class="row">
           <span class="row-label">i18n locale (pi-extensions-i18n config.json)</span>
-          <select value={String(getPath(extDraft("i18n-config"), "locale") ?? "")} onchange={(e) => void saveExt("i18n-config", { locale: e.currentTarget.value || undefined })}>
+          <select
+            value={String(getPath(extDraft("i18n-config"), "locale") ?? "")}
+            onchange={(e) =>
+              void saveExt("i18n-config", { locale: e.currentTarget.value || undefined })}
+          >
             <option value="">(unset — extension default)</option>
             <option value="en-US">en-US</option>
             <option value="zh-CN">zh-CN</option>
           </select>
-          <p class="hint">Affects Distill prompt language — agent behavior, not just decoration. Reload timing: next turn.</p>
+          <p class="hint">
+            Affects Distill prompt language — agent behavior, not just decoration. Reload timing:
+            next turn.
+          </p>
         </div>
         <div class="row">
           <span class="row-label">Distill config (extensions/pi-distill/config.json)</span>
           <div class="inline wrap">
-            <label class="check"><input type="checkbox" checked={getPath(extDraft("distill-config"), "enabled") === true} onchange={(e) => void saveExt("distill-config", { enabled: e.currentTarget.checked })} /> enabled</label>
-            <input class="num" type="number" value={String(getPath(extDraft("distill-config"), "minChars") ?? "")} onchange={(e) => void saveExt("distill-config", { minChars: e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value) })} title="minChars" />
-            <input class="num" type="number" value={String(getPath(extDraft("distill-config"), "maxChars") ?? "")} onchange={(e) => void saveExt("distill-config", { maxChars: e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value) })} title="maxChars" />
-            <input class="mono" value={String(getPath(extDraft("distill-config"), "model") ?? "")} onchange={(e) => void saveExt("distill-config", { model: e.currentTarget.value || undefined })} placeholder="model (blank = current-model fallback)" />
+            <label class="check"
+              ><input
+                type="checkbox"
+                checked={getPath(extDraft("distill-config"), "enabled") === true}
+                onchange={(e) =>
+                  void saveExt("distill-config", { enabled: e.currentTarget.checked })}
+              /> enabled</label
+            >
+            <input
+              class="num"
+              type="number"
+              value={String(getPath(extDraft("distill-config"), "minChars") ?? "")}
+              onchange={(e) =>
+                void saveExt("distill-config", {
+                  minChars:
+                    e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value),
+                })}
+              title="minChars"
+            />
+            <input
+              class="num"
+              type="number"
+              value={String(getPath(extDraft("distill-config"), "maxChars") ?? "")}
+              onchange={(e) =>
+                void saveExt("distill-config", {
+                  maxChars:
+                    e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value),
+                })}
+              title="maxChars"
+            />
+            <input
+              class="mono"
+              value={String(getPath(extDraft("distill-config"), "model") ?? "")}
+              onchange={(e) =>
+                void saveExt("distill-config", { model: e.currentTarget.value || undefined })}
+              placeholder="model (blank = current-model fallback)"
+            />
           </div>
-          <p class="hint">Full field set incl. per-tool enablement and render options: pending — advanced JSON editor covers it meanwhile.</p>
+          <p class="hint">
+            Full field set incl. per-tool enablement and render options: pending — advanced JSON
+            editor covers it meanwhile.
+          </p>
         </div>
         <div class="row">
-          <span class="row-label">Todo &amp; background tasks (99extensions.json — namespace-safe)</span>
+          <span class="row-label"
+            >Todo &amp; background tasks (99extensions.json — namespace-safe)</span
+          >
           <div class="inline wrap">
-            <span class="chip">todo.collapsedTaskLimit</span><input class="num" type="number" min={1} max={10} value={String(getPath(extDraft("99extensions"), "todo.collapsedTaskLimit") ?? "")} onchange={(e) => void saveExtNamespace("99extensions", "todo", { ...((extDraft("99extensions").todo ?? {}) as Record<string, unknown>), collapsedTaskLimit: e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value) })} />
-            <span class="chip">todo.reminderInterval</span><input class="num" type="number" min={0} max={20} value={String(getPath(extDraft("99extensions"), "todo.reminderInterval") ?? "")} onchange={(e) => void saveExtNamespace("99extensions", "todo", { ...((extDraft("99extensions").todo ?? {}) as Record<string, unknown>), reminderInterval: e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value) })} />
+            <span class="chip">todo.collapsedTaskLimit</span><input
+              class="num"
+              type="number"
+              min={1}
+              max={10}
+              value={String(getPath(extDraft("99extensions"), "todo.collapsedTaskLimit") ?? "")}
+              onchange={(e) =>
+                void saveExtNamespace("99extensions", "todo", {
+                  ...((extDraft("99extensions").todo ?? {}) as Record<string, unknown>),
+                  collapsedTaskLimit:
+                    e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value),
+                })}
+            />
+            <span class="chip">todo.reminderInterval</span><input
+              class="num"
+              type="number"
+              min={0}
+              max={20}
+              value={String(getPath(extDraft("99extensions"), "todo.reminderInterval") ?? "")}
+              onchange={(e) =>
+                void saveExtNamespace("99extensions", "todo", {
+                  ...((extDraft("99extensions").todo ?? {}) as Record<string, unknown>),
+                  reminderInterval:
+                    e.currentTarget.value === "" ? undefined : Number(e.currentTarget.value),
+                })}
+            />
           </div>
-          <p class="hint">Namespace writes replace ONLY the todo / background-tasks namespaces; every other namespace in 99extensions.json is preserved. reminderInterval changes model context; collapsedTaskLimit is presentation.</p>
+          <p class="hint">
+            Namespace writes replace ONLY the todo / background-tasks namespaces; every other
+            namespace in 99extensions.json is preserved. reminderInterval changes model context;
+            collapsedTaskLimit is presentation.
+          </p>
         </div>
       </div>
     {:else if section === "appearance"}
@@ -987,10 +1733,15 @@
           <span class="row-label">Leftleg theme</span>
           <div class="seg">
             {#each [["light", "Light"], ["dark", "Dark"], ["system", "System"]] as [v, l] (v)}
-              <button class:active={$theme === v} onclick={() => applyTheme(v as never)}>{l}</button>
+              <button class:active={$theme === v} onclick={() => applyTheme(v as never)}>{l}</button
+              >
             {/each}
           </div>
-          <p class="hint">Fonts (Plus Jakarta Sans) and icon set (Lucide) are bundled app choices. These do NOT style terminal Pi — Pi's own TUI theme (<span class="mono">theme</span> in settings.json) is under Agent behavior's file scope and labeled TUI-only.</p>
+          <p class="hint">
+            Fonts (Plus Jakarta Sans) and icon set (Lucide) are bundled app choices. These do NOT
+            style terminal Pi — Pi's own TUI theme (<span class="mono">theme</span> in settings.json)
+            is under Agent behavior's file scope and labeled TUI-only.
+          </p>
         </div>
       </div>
     {:else if section === "keybindings"}
@@ -1011,28 +1762,55 @@
             </div>
             {#if captureAction === a.id && captureNote}<p class="hint">{captureNote}</p>{/if}
             {#if captureConflictOn === a.id && captureConflictWith}
-              <p class="hint err">Already used by {actionLabel(captureConflictWith)} — not applied. Pick a different combination.</p>
+              <p class="hint err">
+                Already used by {actionLabel(captureConflictWith)} — not applied. Pick a different combination.
+              </p>
             {/if}
           </div>
         {/each}
         <div class="row">
           <div class="inline">
-            <button class="ghost" onclick={resetAllKeybindings} disabled={Object.keys($keybindings).length === 0}>Reset all</button>
+            <button
+              class="ghost"
+              onclick={resetAllKeybindings}
+              disabled={Object.keys($keybindings).length === 0}>Reset all</button
+            >
             <span class="hint">Clears every override — the registry defaults come back.</span>
           </div>
-          <p class="hint">Shortcuts need Ctrl (or ⌘) plus a key; Shift matters (Ctrl+N ≠ Ctrl+Shift+N). They fire while typing but stand down when a modal owns the keyboard. Escape stays reserved for closing menus and dialogs.</p>
+          <p class="hint">
+            Shortcuts need Ctrl (or ⌘) plus a key; Shift matters (Ctrl+N ≠ Ctrl+Shift+N). They fire
+            while typing but stand down when a modal owns the keyboard. Escape stays reserved for
+            closing menus and dialogs.
+          </p>
         </div>
       </div>
     {:else if section === "projects"}
       <h3>Project presentation (Leftleg-owned)</h3>
       <div class="rows">
-        {#each [...new Set([...Object.keys($projectMeta), ...$sessions.map((s) => s.cwd)])] as dir (dir)}
+        {#each [...new Set( [...Object.keys($projectMeta), ...$sessions.map((s) => s.cwd)] )] as dir (dir)}
           {@const meta = $projectMeta[dir] ?? {}}
           <div class="row">
             <div class="inline">
               <input class="mono grow" value={dir} disabled title="Project directory" />
-              <input value={meta.name ?? ""} placeholder="display name" onchange={(e) => updateProjectMeta(dir, { name: e.currentTarget.value.trim() || undefined })} />
-              <select value={meta.defaultModel ? `${meta.defaultModel.provider}|${meta.defaultModel.id}` : ""} onchange={(e) => { const v = e.currentTarget.value; if (!v) updateProjectMeta(dir, { defaultModel: undefined }); else { const [provider, id] = v.split("|"); updateProjectMeta(dir, { defaultModel: { provider, id } }); } }}>
+              <input
+                value={meta.name ?? ""}
+                placeholder="display name"
+                onchange={(e) =>
+                  updateProjectMeta(dir, { name: e.currentTarget.value.trim() || undefined })}
+              />
+              <select
+                value={meta.defaultModel
+                  ? `${meta.defaultModel.provider}|${meta.defaultModel.id}`
+                  : ""}
+                onchange={(e) => {
+                  const v = e.currentTarget.value;
+                  if (!v) updateProjectMeta(dir, { defaultModel: undefined });
+                  else {
+                    const [provider, id] = v.split("|");
+                    updateProjectMeta(dir, { defaultModel: { provider, id } });
+                  }
+                }}
+              >
                 <option value="">default model: Leftleg default</option>
                 {#each $models as m (m.provider + "/" + m.id)}
                   <option value={m.provider + "|" + m.id}>{m.provider} / {m.id}</option>
@@ -1041,29 +1819,68 @@
             </div>
             <div class="inline">
               {#each PROJECT_ICON_CHOICES as icon (icon)}
-                <button class="ghost icon-pick" class:active={meta.icon === icon} title={projectIconLabel(icon)} onclick={() => updateProjectMeta(dir, { icon: icon === meta.icon ? undefined : icon })}><ProjectIcon icon={icon} size={15} /></button>
+                <button
+                  class="ghost icon-pick"
+                  class:active={meta.icon === icon}
+                  title={projectIconLabel(icon)}
+                  onclick={() =>
+                    updateProjectMeta(dir, { icon: icon === meta.icon ? undefined : icon })}
+                  ><ProjectIcon {icon} size={15} /></button
+                >
               {/each}
             </div>
             <div class="inline">
               <span class="pick-label">color</span>
               {#each PROJECT_COLOR_CHOICES as c (c)}
                 {#if c}
-                  <button class="color-pick" class:active={meta.color === c} style={`background:${c}`} title={c} aria-label={`icon color ${c}`} onclick={() => updateProjectMeta(dir, { color: meta.color === c ? undefined : c })}></button>
+                  <button
+                    class="color-pick"
+                    class:active={meta.color === c}
+                    style={`background:${c}`}
+                    title={c}
+                    aria-label={`icon color ${c}`}
+                    onclick={() =>
+                      updateProjectMeta(dir, { color: meta.color === c ? undefined : c })}
+                  ></button>
                 {:else}
-                  <button class="color-pick none" class:active={!meta.color} title="theme default" aria-label="theme default icon color" onclick={() => updateProjectMeta(dir, { color: undefined })}></button>
+                  <button
+                    class="color-pick none"
+                    class:active={!meta.color}
+                    title="theme default"
+                    aria-label="theme default icon color"
+                    onclick={() => updateProjectMeta(dir, { color: undefined })}
+                  ></button>
                 {/if}
               {/each}
             </div>
             <div class="inline">
-              <label class="check" title={dir === $projectDir ? "The active project can't be hidden" : $lastProcByProject[dir] ? "Stop the project's pi process before hiding it" : undefined}><input type="checkbox" checked={!!meta.forgotten && dir !== $projectDir} disabled={dir === $projectDir || !!$lastProcByProject[dir]} onchange={(e) => (e.currentTarget.checked ? forgetProject(dir) : restoreProject(dir))} /> hidden from sidebar</label>
+              <label
+                class="check"
+                title={dir === $projectDir
+                  ? "The active project can't be hidden"
+                  : $lastProcByProject[dir]
+                    ? "Stop the project's pi process before hiding it"
+                    : undefined}
+                ><input
+                  type="checkbox"
+                  checked={!!meta.forgotten && dir !== $projectDir}
+                  disabled={dir === $projectDir || !!$lastProcByProject[dir]}
+                  onchange={(e) =>
+                    e.currentTarget.checked ? forgetProject(dir) : restoreProject(dir)}
+                /> hidden from sidebar</label
+              >
             </div>
           </div>
         {:else}
           <div class="hint none">No projects known yet.</div>
         {/each}
         <div class="row">
-          <button onclick={chooseProject}><FolderOpen size={13} strokeWidth={2} /> Open another folder…</button>
-          <button onclick={() => openNewProject()}><Plus size={13} strokeWidth={2} /> New project…</button>
+          <button onclick={chooseProject}
+            ><FolderOpen size={13} strokeWidth={2} /> Open another folder…</button
+          >
+          <button onclick={() => openNewProject()}
+            ><Plus size={13} strokeWidth={2} /> New project…</button
+          >
         </div>
       </div>
     {:else}
@@ -1072,11 +1889,26 @@
         <div class="row">
           <span class="row-label">Settings companion (management channel)</span>
           <div class="inline">
-            <span class="chip" class:ok={companionReady} class:bad={!companionReady}>{companionReady ? "installed & loaded" : "not installed"}</span>
-            <button class="primary" disabled={installing} onclick={() => void installCompanion()}>{installing ? "Installing…" : companionReady ? "Reinstall" : "Install companion"}</button>
+            <span class="chip" class:ok={companionReady} class:bad={!companionReady}
+              >{companionReady ? "installed & loaded" : "not installed"}</span
+            >
+            <button class="primary" disabled={installing} onclick={() => void installCompanion()}
+              >{installing
+                ? "Installing…"
+                : companionReady
+                  ? "Reinstall"
+                  : "Install companion"}</button
+            >
           </div>
           {#if installMsg}<p class="hint">{installMsg}</p>{/if}
-          <p class="hint">Reserved command <span class="mono">/settings-mgmt</span>; versioned JSON requests; structured replies; availability-gated so a request can never fall through to an LLM prompt. Installing also ships the <span class="mono">leftleg-media</span> companion (the <span class="mono">image_generate</span> tool — OpenRouter Image API, auth resolved inside pi). Agent dir: <span class="mono">{agentDir || "~/.pi/agent"}</span></p>
+          <p class="hint">
+            Reserved command <span class="mono">/settings-mgmt</span>; versioned JSON requests;
+            structured replies; availability-gated so a request can never fall through to an LLM
+            prompt. Installing also ships the <span class="mono">leftleg-media</span> companion (the
+            <span class="mono">image_generate</span>
+            tool — OpenRouter Image API, auth resolved inside pi). Agent dir:
+            <span class="mono">{agentDir || "~/.pi/agent"}</span>
+          </p>
         </div>
         <div class="row">
           <span class="row-label">Updates</span>
@@ -1091,8 +1923,20 @@
             {:else if $updateCheck.status === "failed"}
               <span class="chip bad" title={$updateCheck.message}>check failed</span>
             {/if}
-            <button class="primary" disabled={$updateCheck.status === "checking" || ["downloading", "preparing", "installing"].includes($updateStatus)} onclick={() => void checkForUpdates()}>Check now</button>
-            {#if $updateAvailable}<button class="primary" disabled={["downloading", "preparing", "installing"].includes($updateStatus)} onclick={() => void applyUpdate()}>{$updateStatus === "ready" ? "Install downloaded update" : "Install & restart"}</button>{/if}
+            <button
+              class="primary"
+              disabled={$updateCheck.status === "checking" ||
+                ["downloading", "preparing", "installing"].includes($updateStatus)}
+              onclick={() => void checkForUpdates()}>Check now</button
+            >
+            {#if $updateAvailable}<button
+                class="primary"
+                disabled={["downloading", "preparing", "installing"].includes($updateStatus)}
+                onclick={() => void applyUpdate()}
+                >{$updateStatus === "ready"
+                  ? "Install downloaded update"
+                  : "Install & restart"}</button
+              >{/if}
           </div>
           {#if $updateCheck.status === "failed"}<p class="hint">{$updateCheck.message}</p>{/if}
         </div>
@@ -1103,11 +1947,21 @@
             <span class="chip">Pi agent dir: {agentDir || "~/.pi/agent"}</span>
             <span class="chip">Pi 0.85.1 (npm global; exe resolved via PATH)</span>
           </div>
-          <p class="hint">If the GUI behaves like an older build after installing, check that the shortcut targets <span class="mono">%LOCALAPPDATA%\Leftleg\leftleg.exe</span> — this panel surfaces the running configuration identity.</p>
+          <p class="hint">
+            If the GUI behaves like an older build after installing, check that the shortcut targets <span
+              class="mono">%LOCALAPPDATA%\Leftleg\leftleg.exe</span
+            > — this panel surfaces the running configuration identity.
+          </p>
         </div>
         <div class="row">
           <span class="row-label">Raw config editors (validated; unknown fields preserved)</span>
-          <select id="adv-target" onchange={(e) => { const t = e.currentTarget.value; if (t) void loadExt(t).catch(() => {}); }}>
+          <select
+            id="adv-target"
+            onchange={(e) => {
+              const t = e.currentTarget.value;
+              if (t) void loadExt(t).catch(() => {});
+            }}
+          >
             <option value="">choose a registered resource…</option>
             <option value="media-config">media-config</option>
             <option value="settings-global">settings-global</option>
@@ -1167,7 +2021,12 @@
     font-size: 12px;
     outline: none;
   }
-  nav { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+  }
   .rail-item {
     display: flex;
     flex-direction: column;
@@ -1181,20 +2040,49 @@
     text-align: left;
     width: 100%;
   }
-  .rail-item:hover { background: var(--bg-surface-2); }
-  .rail-item.active { background: var(--accent-soft); }
-  .rail-item.active .rail-label { color: var(--accent); }
-  .rail-label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
-  .rail-hint { font-size: 10px; color: var(--text-3); }
-  .rail-foot { margin-top: auto; padding: 6px 4px; font-size: 10px; color: var(--text-3); }
-  .rail-foot .ok { color: var(--ok); }
-  .rail-foot .bad { color: orange; }
+  .rail-item:hover {
+    background: var(--bg-surface-2);
+  }
+  .rail-item.active {
+    background: var(--accent-soft);
+  }
+  .rail-item.active .rail-label {
+    color: var(--accent);
+  }
+  .rail-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  .rail-hint {
+    font-size: 10px;
+    color: var(--text-3);
+  }
+  .rail-foot {
+    margin-top: auto;
+    padding: 6px 4px;
+    font-size: 10px;
+    color: var(--text-3);
+  }
+  .rail-foot .ok {
+    color: var(--ok);
+  }
+  .rail-foot .bad {
+    color: orange;
+  }
   .content {
     overflow-y: auto;
     padding: 16px 22px 22px;
     min-height: 0;
   }
-  h3 { margin: 0 0 10px; font-size: 15px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   .chip {
     display: inline-flex;
     align-items: center;
@@ -1206,9 +2094,18 @@
     padding: 0 7px;
     white-space: nowrap;
   }
-  .chip.src { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-  .chip.ok { color: var(--ok); border-color: var(--ok); }
-  .chip.bad { color: orange; border-color: orange; }
+  .chip.src {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  .chip.ok {
+    color: var(--ok);
+    border-color: var(--ok);
+  }
+  .chip.bad {
+    color: orange;
+    border-color: orange;
+  }
   .scope-row {
     display: flex;
     align-items: center;
@@ -1219,16 +2116,54 @@
     background: var(--bg-surface-2);
     border-radius: var(--radius-sm);
   }
-  .scope-name { font-size: 11.5px; color: var(--text-2); }
-  .seg { display: flex; gap: 4px; }
-  .seg button { padding: 3px 12px; border-radius: 99px; font-size: 11.5px; background: transparent; }
-  .seg button.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
-  .rows { display: flex; flex-direction: column; gap: 12px; }
-  .row { display: flex; flex-direction: column; gap: 5px; }
-  .row.filtered { display: none; }
-  .with-chip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); }
-  label { font-size: 12.5px; color: var(--text-2); }
-  input, select, textarea {
+  .scope-name {
+    font-size: 11.5px;
+    color: var(--text-2);
+  }
+  .seg {
+    display: flex;
+    gap: 4px;
+  }
+  .seg button {
+    padding: 3px 12px;
+    border-radius: 99px;
+    font-size: 11.5px;
+    background: transparent;
+  }
+  .seg button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+  }
+  .rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .row.filtered {
+    display: none;
+  }
+  .with-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  label {
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  input,
+  select,
+  textarea {
     padding: 6px 9px;
     background: var(--bg-inset);
     border: 1px solid var(--border);
@@ -1236,17 +2171,60 @@
     color: var(--text);
     font-size: 12.5px;
   }
-  textarea { width: 100%; box-sizing: border-box; }
-  .inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .inline .num { width: 110px; }
-  .inline .grow { flex: 1; min-width: 200px; }
-  .inline.wrap { flex-wrap: wrap; }
-  .check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); cursor: pointer; }
-  .ghost, .danger { font-size: 11.5px; padding: 4px 10px; }
-  .ghost:disabled { opacity: 0.4; cursor: default; }
-  .primary { font-size: 12px; padding: 5px 14px; }
-  .primary:disabled { opacity: 0.45; cursor: default; }
-  .linklike { border: none; background: transparent; color: var(--accent); font-size: inherit; padding: 0; cursor: pointer; text-decoration: underline; }
+  textarea {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .inline .num {
+    width: 110px;
+  }
+  .inline .grow {
+    flex: 1;
+    min-width: 200px;
+  }
+  .inline.wrap {
+    flex-wrap: wrap;
+  }
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .ghost,
+  .danger {
+    font-size: 11.5px;
+    padding: 4px 10px;
+  }
+  .ghost:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .primary {
+    font-size: 12px;
+    padding: 5px 14px;
+  }
+  .primary:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .linklike {
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    font-size: inherit;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+  }
   .apply-bar {
     display: flex;
     align-items: center;
@@ -1259,10 +2237,20 @@
     position: sticky;
     bottom: 0;
   }
-  .apply-bar .spacer { flex: 1; }
-  .hint { font-size: 11.5px; color: var(--text-3); margin: 0; }
-  .hint.err { color: var(--danger); }
-  .hint.none { padding: 8px 0; }
+  .apply-bar .spacer {
+    flex: 1;
+  }
+  .hint {
+    font-size: 11.5px;
+    color: var(--text-3);
+    margin: 0;
+  }
+  .hint.err {
+    color: var(--danger);
+  }
+  .hint.none {
+    padding: 8px 0;
+  }
   .pkg-row {
     display: flex;
     align-items: center;
@@ -1273,7 +2261,13 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
   }
-  .pkg-name { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pkg-name {
+    font-size: 12px;
+    color: var(--text-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .model-list {
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -1296,8 +2290,13 @@
     color: var(--text-2);
     font-size: 12px;
   }
-  .sel:focus { outline: none; border-color: var(--accent); }
-  .model-row:last-child { border-bottom: none; }
+  .sel:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .model-row:last-child {
+    border-bottom: none;
+  }
   .cmd-list {
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -1312,13 +2311,36 @@
     border-bottom: 1px solid var(--border);
     font-size: 12px;
   }
-  .cmd-row:last-child { border-bottom: none; }
-  .cmd-name { color: var(--accent); flex-shrink: 0; }
-  .cmd-desc { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .adv-json { font-size: 11.5px; }
-  .icon-pick { font-size: 14px; padding: 3px 6px; }
-  .icon-pick.active { background: var(--accent-soft); color: var(--accent); }
-  .pick-label { font-size: 11px; color: var(--text-3); align-self: center; user-select: none; }
+  .cmd-row:last-child {
+    border-bottom: none;
+  }
+  .cmd-name {
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .cmd-desc {
+    color: var(--text-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .adv-json {
+    font-size: 11.5px;
+  }
+  .icon-pick {
+    font-size: 14px;
+    padding: 3px 6px;
+  }
+  .icon-pick.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .pick-label {
+    font-size: 11px;
+    color: var(--text-3);
+    align-self: center;
+    user-select: none;
+  }
   .color-pick {
     width: 18px;
     height: 18px;
@@ -1328,9 +2350,17 @@
     cursor: pointer;
     flex-shrink: 0;
   }
-  .color-pick:hover { transform: scale(1.12); }
-  .color-pick.active { border-color: var(--bg-surface); box-shadow: 0 0 0 1.5px var(--text-2); }
-  .color-pick.none { background: transparent; border: 1.5px dashed var(--text-3); }
+  .color-pick:hover {
+    transform: scale(1.12);
+  }
+  .color-pick.active {
+    border-color: var(--bg-surface);
+    box-shadow: 0 0 0 1.5px var(--text-2);
+  }
+  .color-pick.none {
+    background: transparent;
+    border: 1.5px dashed var(--text-3);
+  }
   .kb-row {
     display: flex;
     align-items: center;
@@ -1341,7 +2371,12 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
   }
-  .kb-name { flex: 1; min-width: 140px; font-size: 12.5px; color: var(--text); }
+  .kb-name {
+    flex: 1;
+    min-width: 140px;
+    font-size: 12.5px;
+    color: var(--text);
+  }
   .kb-key {
     min-width: 96px;
     text-align: center;
@@ -1352,5 +2387,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
   }
-  .kb-capture { font-size: 11.5px; color: var(--accent); }
+  .kb-capture {
+    font-size: 11.5px;
+    color: var(--accent);
+  }
 </style>

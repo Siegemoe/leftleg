@@ -4,7 +4,14 @@
 // extension sources hold the auto-update for that run and raise a warning —
 // belt-and-braces on top of the risk acceptance.
 import { get } from "svelte/store";
-import { collectUpdateInstallBlockers, navigating, pushNotification, setGuiStateValue, guiStateValue, updateInstallLock } from "./stores";
+import {
+  collectUpdateInstallBlockers,
+  navigating,
+  pushNotification,
+  setGuiStateValue,
+  guiStateValue,
+  updateInstallLock,
+} from "./stores";
 import { piIntegrityReport, runPiManager } from "./api";
 
 /** At most one managed update attempt per 12 hours. */
@@ -26,9 +33,16 @@ function navigatingSettled(timeoutMs = 60_000): Promise<boolean> {
   if (!get(navigating)) return Promise.resolve(true);
   return new Promise((resolve) => {
     let unsub = () => {};
-    const timer = setTimeout(() => { unsub(); resolve(false); }, timeoutMs);
+    const timer = setTimeout(() => {
+      unsub();
+      resolve(false);
+    }, timeoutMs);
     unsub = navigating.subscribe((v) => {
-      if (!v) { clearTimeout(timer); unsub(); resolve(true); }
+      if (!v) {
+        clearTimeout(timer);
+        unsub();
+        resolve(true);
+      }
     });
   });
 }
@@ -100,13 +114,19 @@ export function runStartupPiUpdate(): void {
       const upgraded = summarizeUpdateOutput(res.stdout);
       if (res.exitCode === 0) {
         if (upgraded.length > 0) {
-          pushNotification("info", `pi updated: ${upgraded.length} package(s) — restart pi to pick them up`);
+          pushNotification(
+            "info",
+            `pi updated: ${upgraded.length} package(s) — restart pi to pick them up`,
+          );
         }
       } else {
         pushNotification("error", `pi update failed (exit ${res.exitCode}) — see Leftleg logs`);
       }
     } catch (e) {
-      pushNotification("error", `pi update couldn't run: ${e instanceof Error ? e.message : String(e)}`);
+      pushNotification(
+        "error",
+        `pi update couldn't run: ${e instanceof Error ? e.message : String(e)}`,
+      );
     } finally {
       if (ownsUpdateLock) updateInstallLock.set(false);
       inFlight = false;

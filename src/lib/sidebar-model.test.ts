@@ -2,8 +2,13 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "./types";
 import {
-  filterSessionsByQuery, formatRelativeTime, groupSessionsByProject, resolveProjectPill,
-  resolveThreadPill, splitSections, toSidebarSessions,
+  filterSessionsByQuery,
+  formatRelativeTime,
+  groupSessionsByProject,
+  resolveProjectPill,
+  resolveThreadPill,
+  splitSections,
+  toSidebarSessions,
 } from "./sidebar-model";
 
 function info(over: Partial<SessionInfo>): SessionInfo {
@@ -19,7 +24,15 @@ function info(over: Partial<SessionInfo>): SessionInfo {
   };
 }
 
-function session(over: Partial<Parameters<typeof resolveThreadPill>[0]> & { path?: string; title?: string; pinned?: boolean; settled?: boolean; projectDir?: string }) {
+function session(
+  over: Partial<Parameters<typeof resolveThreadPill>[0]> & {
+    path?: string;
+    title?: string;
+    pinned?: boolean;
+    settled?: boolean;
+    projectDir?: string;
+  },
+) {
   return {
     path: over.path ?? "/p/s.jsonl",
     title: over.title ?? "a session",
@@ -34,13 +47,29 @@ function session(over: Partial<Parameters<typeof resolveThreadPill>[0]> & { path
 
 describe("resolveThreadPill", () => {
   it("liveness states map to pills in T3 priority order", () => {
-    expect(resolveThreadPill({ status: "active", seen: true, timestampMs: 1 })).toEqual({ kind: "working", label: "Working", pulse: true });
-    expect(resolveThreadPill({ status: "attention", seen: true, timestampMs: 1 })).toEqual({ kind: "needs-attention", label: "Needs attention", pulse: false });
-    expect(resolveThreadPill({ status: "error", seen: true, timestampMs: 1 })).toEqual({ kind: "failed", label: "Failed", pulse: false });
+    expect(resolveThreadPill({ status: "active", seen: true, timestampMs: 1 })).toEqual({
+      kind: "working",
+      label: "Working",
+      pulse: true,
+    });
+    expect(resolveThreadPill({ status: "attention", seen: true, timestampMs: 1 })).toEqual({
+      kind: "needs-attention",
+      label: "Needs attention",
+      pulse: false,
+    });
+    expect(resolveThreadPill({ status: "error", seen: true, timestampMs: 1 })).toEqual({
+      kind: "failed",
+      label: "Failed",
+      pulse: false,
+    });
   });
 
   it("idle + unseen + recent change reads as Completed", () => {
-    expect(resolveThreadPill({ status: "idle", seen: false, timestampMs: 5_000 })).toEqual({ kind: "completed", label: "Completed", pulse: false });
+    expect(resolveThreadPill({ status: "idle", seen: false, timestampMs: 5_000 })).toEqual({
+      kind: "completed",
+      label: "Completed",
+      pulse: false,
+    });
   });
 
   it("idle + seen has no pill", () => {
@@ -50,18 +79,34 @@ describe("resolveThreadPill", () => {
 
 describe("resolveProjectPill", () => {
   it("picks the highest-priority pill across sessions", () => {
-    expect(resolveProjectPill([null, { kind: "completed", label: "Completed", pulse: false }, { kind: "working", label: "Working", pulse: true }]))
-      .toEqual({ kind: "working", label: "Working", pulse: true });
-    expect(resolveProjectPill([{ kind: "working", label: "Working", pulse: true }, { kind: "needs-attention", label: "Needs attention", pulse: false }]))
-      .toEqual({ kind: "needs-attention", label: "Needs attention", pulse: false });
+    expect(
+      resolveProjectPill([
+        null,
+        { kind: "completed", label: "Completed", pulse: false },
+        { kind: "working", label: "Working", pulse: true },
+      ]),
+    ).toEqual({ kind: "working", label: "Working", pulse: true });
+    expect(
+      resolveProjectPill([
+        { kind: "working", label: "Working", pulse: true },
+        { kind: "needs-attention", label: "Needs attention", pulse: false },
+      ]),
+    ).toEqual({ kind: "needs-attention", label: "Needs attention", pulse: false });
     expect(resolveProjectPill([null, null])).toBeNull();
   });
 });
 
 describe("filterSessionsByQuery", () => {
-  const list = [{ title: "Refactor parser" }, { title: "fix login bug" }, { title: "Add Parser tests" }];
+  const list = [
+    { title: "Refactor parser" },
+    { title: "fix login bug" },
+    { title: "Add Parser tests" },
+  ];
   it("narrows without reordering", () => {
-    expect(filterSessionsByQuery(list, "parser").map((s) => s.title)).toEqual(["Refactor parser", "Add Parser tests"]);
+    expect(filterSessionsByQuery(list, "parser").map((s) => s.title)).toEqual([
+      "Refactor parser",
+      "Add Parser tests",
+    ]);
   });
   it("empty query keeps everything", () => {
     expect(filterSessionsByQuery(list, "  ")).toHaveLength(3);
@@ -104,10 +149,10 @@ describe("groupSessionsByProject", () => {
 
 describe("splitSections", () => {
   it("settling is explicit: new/idle sessions stay in Active, archived ones in Settled", () => {
-    const s1 = session({ path: "/1", timestampMs: 100 });                          // idle, never settled
-    const s2 = session({ path: "/2", timestampMs: 300, status: "active" });        // live
-    const s3 = session({ path: "/3", timestampMs: 200, settled: true });           // explicitly archived
-    const s4 = session({ path: "/4", timestampMs: 400, pinned: true });            // pinned
+    const s1 = session({ path: "/1", timestampMs: 100 }); // idle, never settled
+    const s2 = session({ path: "/2", timestampMs: 300, status: "active" }); // live
+    const s3 = session({ path: "/3", timestampMs: 200, settled: true }); // explicitly archived
+    const s4 = session({ path: "/4", timestampMs: 400, pinned: true }); // pinned
     const s5 = session({ path: "/5", timestampMs: 500, pinned: true, settled: true }); // pinned wins over archived
     const sections = splitSections({ sessions: [s1, s2, s3, s4, s5], pinOrder: ["/4", "/2"] });
     expect(sections.pinned.map((s) => s.path)).toEqual(["/4", "/5"]);
@@ -120,7 +165,11 @@ describe("splitSections", () => {
 describe("toSidebarSessions + formatRelativeTime", () => {
   it("titles prefer name, then first message", () => {
     const out = toSidebarSessions({
-      infos: [info({ name: "named", firstMessage: "fallback" }), info({ path: "/2", firstMessage: "fallback" }), info({ path: "/3" })],
+      infos: [
+        info({ name: "named", firstMessage: "fallback" }),
+        info({ path: "/2", firstMessage: "fallback" }),
+        info({ path: "/3" }),
+      ],
       statusOf: () => "idle",
       pinnedSet: new Set(),
       settledSet: new Set(["/3"]),

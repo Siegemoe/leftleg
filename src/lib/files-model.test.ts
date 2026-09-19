@@ -52,7 +52,13 @@ describe("flattenTree", () => {
     const one = flattenTree(tree, new Set(["src"]));
     expect(one.map((n) => n.path)).toEqual(["src", "src/deep", "src/a.ts", "root.txt"]);
     const both = flattenTree(tree, new Set(["src", "src/deep"]));
-    expect(both.map((n) => n.path)).toEqual(["src", "src/deep", "src/deep/b.ts", "src/a.ts", "root.txt"]);
+    expect(both.map((n) => n.path)).toEqual([
+      "src",
+      "src/deep",
+      "src/deep/b.ts",
+      "src/a.ts",
+      "root.txt",
+    ]);
   });
 });
 

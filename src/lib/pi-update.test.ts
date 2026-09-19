@@ -7,8 +7,17 @@ const mocks = vi.hoisted(() => {
   const listeners = new Set<(v: boolean) => void>();
   let nav = false;
   const navigating = {
-    subscribe: (fn: (v: boolean) => void) => { listeners.add(fn); fn(nav); return () => { listeners.delete(fn); }; },
-    set: (v: boolean) => { nav = v; for (const l of listeners) l(v); },
+    subscribe: (fn: (v: boolean) => void) => {
+      listeners.add(fn);
+      fn(nav);
+      return () => {
+        listeners.delete(fn);
+      };
+    },
+    set: (v: boolean) => {
+      nav = v;
+      for (const l of listeners) l(v);
+    },
   };
   return {
     piIntegrityReport: vi.fn(),
@@ -71,7 +80,10 @@ describe("summarizeUpdateOutput", () => {
 describe("integrityGate", () => {
   it("passes when every source is npm-registry", async () => {
     mocks.piIntegrityReport.mockResolvedValue({
-      extensions: [{ source: "npm:@foo/bar", trusted: true }, { source: "npm:pi-distill", trusted: true }],
+      extensions: [
+        { source: "npm:@foo/bar", trusted: true },
+        { source: "npm:pi-distill", trusted: true },
+      ],
     });
     expect(await integrityGate()).toEqual({ ok: true, flagged: [] });
   });
@@ -142,10 +154,7 @@ describe("runStartupPiUpdate", () => {
     runStartupPiUpdate();
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
-    expect(mocks.pushNotification).toHaveBeenCalledWith(
-      "error",
-      expect.stringContaining("exit 1"),
-    );
+    expect(mocks.pushNotification).toHaveBeenCalledWith("error", expect.stringContaining("exit 1"));
   });
 
   it("skips entirely while the debounce window is fresh", async () => {

@@ -16,7 +16,9 @@ import { join, resolve } from "node:path";
 const COMPANION_SRC = resolve(process.cwd(), "companion", "leftleg-settings", "index.ts");
 const REPLY_MARKER = "LeftlegMgmt:";
 
-interface Jsonl { [k: string]: unknown }
+interface Jsonl {
+  [k: string]: unknown;
+}
 
 let agentDir = "";
 let projectDir = "";
@@ -29,7 +31,11 @@ function send(obj: Jsonl): void {
   child?.stdin?.write(JSON.stringify(obj) + "\n");
 }
 
-function waitEvent(type: string, predicate: (e: Jsonl) => boolean, timeoutMs: number): Promise<Jsonl> {
+function waitEvent(
+  type: string,
+  predicate: (e: Jsonl) => boolean,
+  timeoutMs: number,
+): Promise<Jsonl> {
   return new Promise((resolvePromise, rejectPromise) => {
     const listener = (e: Jsonl) => {
       if (e.type === type && predicate(e)) {
@@ -57,12 +63,23 @@ async function request(cmd: Jsonl, timeoutMs = 20000): Promise<Jsonl> {
   return p;
 }
 
-async function mgmtRequest(op: string, params: Record<string, unknown>, reqId: string): Promise<Record<string, unknown>> {
-  const accepted = request({ type: "prompt", message: `/settings-mgmt ${JSON.stringify({ v: 1, id: reqId, op, ...params })}` });
-  const reply = waitEvent("extension_ui_request", (e) => {
-    const msg = (e as { message?: string }).message ?? "";
-    return e.method === "notify" && msg.startsWith(REPLY_MARKER) && msg.includes(`"${reqId}"`);
-  }, 20000);
+async function mgmtRequest(
+  op: string,
+  params: Record<string, unknown>,
+  reqId: string,
+): Promise<Record<string, unknown>> {
+  const accepted = request({
+    type: "prompt",
+    message: `/settings-mgmt ${JSON.stringify({ v: 1, id: reqId, op, ...params })}`,
+  });
+  const reply = waitEvent(
+    "extension_ui_request",
+    (e) => {
+      const msg = (e as { message?: string }).message ?? "";
+      return e.method === "notify" && msg.startsWith(REPLY_MARKER) && msg.includes(`"${reqId}"`);
+    },
+    20000,
+  );
   await accepted;
   const raw = ((await reply) as { message?: string }).message ?? "";
   const parsed = JSON.parse(raw.slice(REPLY_MARKER.length)) as Record<string, unknown>;
@@ -101,7 +118,9 @@ beforeAll(async () => {
       try {
         const parsed = JSON.parse(line) as Jsonl;
         for (const l of [...listeners]) l(parsed);
-      } catch { /* non-JSON line */ }
+      } catch {
+        /* non-JSON line */
+      }
     }
   });
   child.stderr!.setEncoding("utf-8");
@@ -109,10 +128,16 @@ beforeAll(async () => {
     stderrTail = (stderrTail + chunk).slice(-4000);
   });
   const startupFailure = new Promise<never>((_, rejectPromise) => {
-    child!.once("error", (error) => rejectPromise(new Error(`failed to start pi: ${error.message}`)));
+    child!.once("error", (error) =>
+      rejectPromise(new Error(`failed to start pi: ${error.message}`)),
+    );
     child!.once("exit", (code, signal) => {
       const detail = stderrTail.trim();
-      rejectPromise(new Error(`pi exited before RPC became ready (code=${code}, signal=${signal})${detail ? `: ${detail}` : ""}`));
+      rejectPromise(
+        new Error(
+          `pi exited before RPC became ready (code=${code}, signal=${signal})${detail ? `: ${detail}` : ""}`,
+        ),
+      );
     });
   });
   // wait for the process to accept requests: a get_state response means RPC is live
@@ -123,7 +148,11 @@ afterAll(() => {
   child?.stdin?.end();
   child?.kill();
   for (const dir of [agentDir, projectDir]) {
-    try { if (dir) rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    try {
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
   }
 });
 
@@ -131,7 +160,9 @@ describe("settings companion over real pi RPC (isolated agent dir)", () => {
   it("handshake: the companion command is registered (extension loaded from the isolated agent dir)", async () => {
     const res = await request({ type: "get_commands" });
     expect(res.success).toBe(true);
-    const cmds = ((res.data as { commands?: Array<{ name: string }> }).commands ?? []).map((c) => c.name);
+    const cmds = ((res.data as { commands?: Array<{ name: string }> }).commands ?? []).map(
+      (c) => c.name,
+    );
     expect(cmds).toContain("settings-mgmt");
   });
 
@@ -151,11 +182,15 @@ describe("settings companion over real pi RPC (isolated agent dir)", () => {
     expect((first.data as { exists: boolean }).exists).toBe(false);
 
     // write 1: nested patch creates the file
-    const w1 = await mgmtRequest("write", {
-      target: "settings-global",
-      mode: "merge",
-      patch: { compaction: { enabled: false, reserveTokens: 8192 }, retry: { maxRetries: 5 } },
-    }, "t-write1");
+    const w1 = await mgmtRequest(
+      "write",
+      {
+        target: "settings-global",
+        mode: "merge",
+        patch: { compaction: { enabled: false, reserveTokens: 8192 }, retry: { maxRetries: 5 } },
+      },
+      "t-write1",
+    );
     expect(w1.ok).toBe(true);
     const file = (w1.data as { file: string }).file;
     expect(existsSync(file)).toBe(true);
@@ -166,10 +201,16 @@ describe("settings companion over real pi RPC (isolated agent dir)", () => {
     expect(after1.retry).toEqual({ maxRetries: 5 });
 
     // write 2 (stale revision): conflict, file untouched
-    const w2 = await mgmtRequest("write", {
-      target: "settings-global", mode: "merge", revision: "bogus:1",
-      patch: { theme: "light" },
-    }, "t-write2");
+    const w2 = await mgmtRequest(
+      "write",
+      {
+        target: "settings-global",
+        mode: "merge",
+        revision: "bogus:1",
+        patch: { theme: "light" },
+      },
+      "t-write2",
+    );
     expect(w2.ok).toBe(false);
     expect((w2 as { error?: string }).error).toContain("conflict");
     expect(JSON.parse(readFileSync(file, "utf-8")).theme).toBeUndefined();
@@ -183,7 +224,8 @@ describe("settings companion over real pi RPC (isolated agent dir)", () => {
   it("management exchanges never produce model messages or agent turns", async () => {
     let modelEvents = 0;
     const listener = (e: Jsonl) => {
-      if (e.type === "message_start" || e.type === "message_update" || e.type === "agent_start") modelEvents++;
+      if (e.type === "message_start" || e.type === "message_update" || e.type === "agent_start")
+        modelEvents++;
     };
     listeners.push(listener);
     await mgmtRequest("ping", {}, "t-quiet");
@@ -193,7 +235,11 @@ describe("settings companion over real pi RPC (isolated agent dir)", () => {
   });
 
   it("read-only and allowlist protections hold over the real process", async () => {
-    const store = await mgmtRequest("write", { target: "models-store", mode: "replace", content: "{}" }, "t-ro");
+    const store = await mgmtRequest(
+      "write",
+      { target: "models-store", mode: "replace", content: "{}" },
+      "t-ro",
+    );
     expect(store.ok).toBe(false);
     expect((store as { error?: string }).error).toContain("read-only");
 

@@ -19,7 +19,12 @@
           {/if}
         </span>
         <span class="msg">{n.message}</span>
-        <button class="ghost dismiss" onclick={() => dismissNotification(n.id)} title="Dismiss" aria-label="Dismiss notification">×</button>
+        <button
+          class="ghost dismiss"
+          onclick={() => dismissNotification(n.id)}
+          title="Dismiss"
+          aria-label="Dismiss notification">×</button
+        >
       </div>
     {/each}
   </div>
@@ -49,14 +54,34 @@
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
     font-size: 12.5px;
   }
-  .toast.info { border-left: 3px solid var(--accent); }
-  .toast.warning { border-left: 3px solid orange; }
-  .toast.error { border-left: 3px solid var(--danger); }
-  .toast.warning .icon { color: orange; }
-  .toast.error .icon { color: var(--danger); }
-  .toast.info .icon { color: var(--accent); }
-  .msg { flex: 1; min-width: 0; word-break: break-word; color: var(--text-2); }
-  .icon { flex-shrink: 0; font-size: 12px; }
+  .toast.info {
+    border-left: 3px solid var(--accent);
+  }
+  .toast.warning {
+    border-left: 3px solid orange;
+  }
+  .toast.error {
+    border-left: 3px solid var(--danger);
+  }
+  .toast.warning .icon {
+    color: orange;
+  }
+  .toast.error .icon {
+    color: var(--danger);
+  }
+  .toast.info .icon {
+    color: var(--accent);
+  }
+  .msg {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+    color: var(--text-2);
+  }
+  .icon {
+    flex-shrink: 0;
+    font-size: 12px;
+  }
   .dismiss {
     flex-shrink: 0;
     font-size: 13px;
@@ -64,5 +89,7 @@
     padding: 1px 4px;
     color: var(--text-3);
   }
-  .dismiss:hover { color: var(--text); }
+  .dismiss:hover {
+    color: var(--text);
+  }
 </style>

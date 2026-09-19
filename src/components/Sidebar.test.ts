@@ -9,8 +9,18 @@ vi.mock("../lib/api", async (importOriginal) => {
 
 import Sidebar from "./Sidebar.svelte";
 import {
-  activeSessionPath, connected, pins, projectDir, projectMeta, projectScope,
-  sessionQuery, sessionStates, sessions, settled, settledView, visitedAt,
+  activeSessionPath,
+  connected,
+  pins,
+  projectDir,
+  projectMeta,
+  projectScope,
+  sessionQuery,
+  sessionStates,
+  sessions,
+  settled,
+  settledView,
+  visitedAt,
 } from "../lib/stores";
 
 let instance: ReturnType<typeof mount> | null = null;
@@ -21,7 +31,9 @@ async function settle() {
 }
 
 beforeEach(() => {
-  mocks.gitRepoInfo.mockReset().mockResolvedValue({ repo: false, branch: "", dirty: 0, toplevel: "" });
+  mocks.gitRepoInfo
+    .mockReset()
+    .mockResolvedValue({ repo: false, branch: "", dirty: 0, toplevel: "" });
   activeSessionPath.set(null);
   connected.set(true);
   pins.set([]);
@@ -51,15 +63,29 @@ describe("sidebar project ownership", () => {
 
     document.body.querySelector<HTMLButtonElement>(".scope-btn.wide")!.click();
     flushSync();
-    expect([...document.body.querySelectorAll(".scope-item")].some((el) => el.textContent?.includes("Empty project"))).toBe(true);
+    expect(
+      [...document.body.querySelectorAll(".scope-item")].some((el) =>
+        el.textContent?.includes("Empty project"),
+      ),
+    ).toBe(true);
   });
 
   it("does not show a stale branch after switching projects", async () => {
     let resolveA!: (value: unknown) => void;
     let resolveB!: (value: unknown) => void;
     mocks.gitRepoInfo
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveA = resolve; }))
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve; }));
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveA = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveB = resolve;
+          }),
+      );
     projectDir.set("/a");
     instance = mount(Sidebar, { target: document.body });
     flushSync();

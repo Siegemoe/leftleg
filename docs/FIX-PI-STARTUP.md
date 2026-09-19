@@ -7,6 +7,7 @@ Containment validation still uses the canonical path, but the Node argument now 
 The existing updater wiring also needed its frontend imports restored and its Rust initialization changed to the public `Builder` API for the current checkout to compile.
 
 Verification:
+
 - `npm run build`: 0 Svelte errors/warnings, 132 tests passed, Vite build passed.
 - `npm run check:rust`: passed.
 - `npm run test:rust`: 35 tests passed, including executing the resolved npm entry with Node and bounded stderr retention.

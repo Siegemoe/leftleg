@@ -18,7 +18,10 @@ vi.mock("../lib/api", async (importOriginal) => {
 // deterministic asset URL for jsdom.
 vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tauri-apps/api/core")>();
-  return { ...actual, convertFileSrc: (path: string) => `http://asset.localhost/${encodeURIComponent(path)}` };
+  return {
+    ...actual,
+    convertFileSrc: (path: string) => `http://asset.localhost/${encodeURIComponent(path)}`,
+  };
 });
 
 import ToolCard from "./ToolCard.svelte";
@@ -58,15 +61,25 @@ async function settle() {
 
 describe("ToolCard image_generate rendering", () => {
   it("deduplicates repeated paths in stored image results", () => {
-    instances.push(mount(ToolCard, { target: document.body, props: { item: baseItem({
-      status: "done", details: { paths: ["C:\\i\\a.png", "C:\\i\\a.png"] },
-    }) } }));
+    instances.push(
+      mount(ToolCard, {
+        target: document.body,
+        props: {
+          item: baseItem({
+            status: "done",
+            details: { paths: ["C:\\i\\a.png", "C:\\i\\a.png"] },
+          }),
+        },
+      }),
+    );
     flushSync();
     expect(document.body.querySelectorAll(".imgbtn img")).toHaveLength(1);
   });
 
   it("running state shows the animated placeholder with aspect ratio and progress, no <img>", () => {
-    const item = baseItem({ output: "Rendering with google/gemini-3.1-flash-image… (typically 10-90s)" });
+    const item = baseItem({
+      output: "Rendering with google/gemini-3.1-flash-image… (typically 10-90s)",
+    });
     instances.push(mount(ToolCard, { target: document.body, props: { item } }));
     flushSync();
     const ph = document.body.querySelector<HTMLElement>(".imgph");
@@ -85,7 +98,9 @@ describe("ToolCard image_generate rendering", () => {
   });
 
   it("malformed aspect_ratio falls back to the default instead of injecting CSS", () => {
-    const item = baseItem({ args: JSON.stringify({ prompt: "a mug", aspect_ratio: "1); background: red" }) });
+    const item = baseItem({
+      args: JSON.stringify({ prompt: "a mug", aspect_ratio: "1); background: red" }),
+    });
     instances.push(mount(ToolCard, { target: document.body, props: { item } }));
     flushSync();
     const ph = document.body.querySelector<HTMLElement>(".imgph");
@@ -151,7 +166,12 @@ describe("Artifacts browser", () => {
     rightPanelOpen.set(true);
     instances.push(mount(Artifacts, { target: document.body }));
     await settle();
-    mocks.listArtifacts.mockResolvedValue({ images: [{ name: "new.png", path: "/proj/.pi/images/new.png", size: 1, modifiedMs: 2, exists: true }], docs: [] });
+    mocks.listArtifacts.mockResolvedValue({
+      images: [
+        { name: "new.png", path: "/proj/.pi/images/new.png", size: 1, modifiedMs: 2, exists: true },
+      ],
+      docs: [],
+    });
     items.set([baseItem({ status: "done", details: { paths: ["/proj/.pi/images/new.png"] } })]);
     await settle();
     expect(document.body.textContent).toContain("new.png");
@@ -159,7 +179,12 @@ describe("Artifacts browser", () => {
   });
 
   it("retries a failed thumbnail when Refresh is clicked", async () => {
-    mocks.listArtifacts.mockResolvedValue({ images: [{ name: "a.png", path: "/proj/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true }], docs: [] });
+    mocks.listArtifacts.mockResolvedValue({
+      images: [
+        { name: "a.png", path: "/proj/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true },
+      ],
+      docs: [],
+    });
     projectDir.set("/proj");
     rightPanelTab.set("artifacts");
     rightPanelOpen.set(true);
@@ -175,11 +200,19 @@ describe("Artifacts browser", () => {
 
   it("lists image tiles (streamed thumbnails) and docs with exists flags", async () => {
     mocks.listArtifacts.mockResolvedValue({
-      images: [{ name: "a.png", path: "C:\\i\\a.png", size: 120, modifiedMs: Date.now(), exists: true }],
+      images: [
+        { name: "a.png", path: "C:\\i\\a.png", size: 120, modifiedMs: Date.now(), exists: true },
+      ],
       docs: [
         { name: "AGENTS.md", path: "C:\\p\\AGENTS.md", size: 10, modifiedMs: 1, exists: true },
         { name: "SYSTEM.md", path: "C:\\p\\.pi\\SYSTEM.md", size: 0, modifiedMs: 0, exists: false },
-        { name: "APPEND_SYSTEM.md", path: "C:\\p\\.pi\\APPEND_SYSTEM.md", size: 0, modifiedMs: 0, exists: false },
+        {
+          name: "APPEND_SYSTEM.md",
+          path: "C:\\p\\.pi\\APPEND_SYSTEM.md",
+          size: 0,
+          modifiedMs: 0,
+          exists: false,
+        },
       ],
     });
     projectDir.set("/proj");
@@ -194,11 +227,15 @@ describe("Artifacts browser", () => {
     expect(img).toBeTruthy();
     expect(img!.getAttribute("src")).toContain("asset.localhost");
 
-    const docsTab = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.includes("Docs"));
+    const docsTab = [...document.body.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Docs"),
+    );
     docsTab!.click();
     flushSync();
     expect(document.body.querySelectorAll(".docrow").length).toBe(3);
-    const present = [...document.body.querySelectorAll(".docrow")].filter((r) => !r.classList.contains("missing"));
+    const present = [...document.body.querySelectorAll(".docrow")].filter(
+      (r) => !r.classList.contains("missing"),
+    );
     expect(present.length).toBe(1);
     expect(present[0].textContent).toContain("AGENTS.md");
   });
@@ -217,8 +254,18 @@ describe("Artifacts browser", () => {
     let resolveA!: (value: unknown) => void;
     let resolveB!: (value: unknown) => void;
     mocks.listArtifacts
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveA = resolve; }))
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve; }));
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveA = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveB = resolve;
+          }),
+      );
 
     projectDir.set("/a");
     rightPanelTab.set("artifacts");
@@ -229,9 +276,19 @@ describe("Artifacts browser", () => {
     projectDir.set("/b");
     flushSync();
     await vi.waitFor(() => expect(mocks.listArtifacts).toHaveBeenCalledWith("/b"));
-    resolveB({ images: [{ name: "b.png", path: "/b/.pi/images/b.png", size: 1, modifiedMs: 2, exists: true }], docs: [] });
+    resolveB({
+      images: [
+        { name: "b.png", path: "/b/.pi/images/b.png", size: 1, modifiedMs: 2, exists: true },
+      ],
+      docs: [],
+    });
     await settle();
-    resolveA({ images: [{ name: "a.png", path: "/a/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true }], docs: [] });
+    resolveA({
+      images: [
+        { name: "a.png", path: "/a/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true },
+      ],
+      docs: [],
+    });
     await settle();
 
     expect(document.body.textContent).toContain("b.png");
@@ -243,8 +300,16 @@ describe("Artifacts browser", () => {
     // whatever project is focused when the call lands. A project switch now
     // clears the list until the new load lands (cross-project leak fix), so
     // the row is exercised within its own project's session.
-    mocks.listArtifacts.mockResolvedValueOnce({ images: [{ name: "a.png", path: "/a/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true }], docs: [] });
-    vi.stubGlobal("confirm", vi.fn(() => true));
+    mocks.listArtifacts.mockResolvedValueOnce({
+      images: [
+        { name: "a.png", path: "/a/.pi/images/a.png", size: 1, modifiedMs: 1, exists: true },
+      ],
+      docs: [],
+    });
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
 
     projectDir.set("/a");
     rightPanelTab.set("artifacts");
@@ -253,7 +318,9 @@ describe("Artifacts browser", () => {
     await settle();
 
     document.body.querySelector<HTMLButtonElement>('button[title="Delete"]')!.click();
-    await vi.waitFor(() => expect(mocks.deleteArtifact).toHaveBeenCalledWith("/a", "/a/.pi/images/a.png"));
+    await vi.waitFor(() =>
+      expect(mocks.deleteArtifact).toHaveBeenCalledWith("/a", "/a/.pi/images/a.png"),
+    );
     await settle();
     vi.unstubAllGlobals();
   });

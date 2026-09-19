@@ -1,27 +1,61 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
-vi.mock("./api", () => ({ piRequest: vi.fn(), piSend: vi.fn().mockResolvedValue(undefined), listSessions: vi.fn().mockResolvedValue([]) }));
+vi.mock("./api", () => ({
+  piRequest: vi.fn(),
+  piSend: vi.fn().mockResolvedValue(undefined),
+  listSessions: vi.fn().mockResolvedValue([]),
+}));
 import * as api from "./api";
-import { projectDir, recordProcess, rpcState, refreshRpcState, handleEvent, handlePiExit,
-  extDialog, respondToExtDialog, statusNote, setModel, items, streaming, retryFailedUser, connected, reloadMessages } from "./stores";
+import {
+  projectDir,
+  recordProcess,
+  rpcState,
+  refreshRpcState,
+  handleEvent,
+  handlePiExit,
+  extDialog,
+  respondToExtDialog,
+  statusNote,
+  setModel,
+  items,
+  streaming,
+  retryFailedUser,
+  connected,
+  reloadMessages,
+} from "./stores";
 beforeEach(() => {
   vi.mocked(api.piRequest).mockReset().mockResolvedValue({ success: true, data: {} });
   vi.mocked(api.piSend).mockClear();
-  projectDir.set("/a"); recordProcess("/a", 1); rpcState.set(null); extDialog.set(null);
-  items.set([]); streaming.set(false); statusNote.set(""); connected.set(true);
+  projectDir.set("/a");
+  recordProcess("/a", 1);
+  rpcState.set(null);
+  extDialog.set(null);
+  items.set([]);
+  streaming.set(false);
+  statusNote.set("");
+  connected.set(true);
 });
 it("a delayed get_state cannot overwrite another project's identity", async () => {
   let resolve!: (data: unknown) => void;
-  vi.mocked(api.piRequest).mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+  vi.mocked(api.piRequest).mockReturnValueOnce(
+    new Promise((r) => {
+      resolve = r;
+    }),
+  );
   const result = expect(refreshRpcState()).rejects.toThrow("View changed");
-  projectDir.set("/b"); recordProcess("/b", 2);
+  projectDir.set("/b");
+  recordProcess("/b", 2);
   resolve({ success: true, data: { sessionFile: "/a/session.jsonl" } });
   await result;
   expect(get(rpcState)).toBeNull();
 });
 it("a stale state snapshot cannot reverse a newer agent_start", async () => {
   let resolve!: (data: unknown) => void;
-  vi.mocked(api.piRequest).mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+  vi.mocked(api.piRequest).mockReturnValueOnce(
+    new Promise((r) => {
+      resolve = r;
+    }),
+  );
   const pending = refreshRpcState();
   await handleEvent({ type: "agent_start" });
   resolve({ success: true, data: { isStreaming: false } });
@@ -29,10 +63,18 @@ it("a stale state snapshot cannot reverse a newer agent_start", async () => {
   expect(get(streaming)).toBe(true);
 });
 it("queues extension dialogs and targets responses to their originating process", async () => {
-  for (const id of ["first", "second"]) await handleEvent({ type: "extension_ui_request", method: "confirm", id }, { project: "/a", proc: 1 });
+  for (const id of ["first", "second"])
+    await handleEvent(
+      { type: "extension_ui_request", method: "confirm", id },
+      { project: "/a", proc: 1 },
+    );
   expect(get(extDialog)?.id).toBe("first");
   await respondToExtDialog({ confirmed: true });
-  expect(api.piSend).toHaveBeenCalledWith({ type: "extension_ui_response", id: "first", confirmed: true }, "/a", 1);
+  expect(api.piSend).toHaveBeenCalledWith(
+    { type: "extension_ui_response", id: "first", confirmed: true },
+    "/a",
+    1,
+  );
   expect(get(extDialog)?.id).toBe("second");
 });
 it("drops late events after process death", async () => {
@@ -53,7 +95,11 @@ it("retains a failed message when retrying while disconnected", async () => {
 });
 it("does not overwrite new streaming events with an older history snapshot", async () => {
   let resolve!: (data: unknown) => void;
-  vi.mocked(api.piRequest).mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+  vi.mocked(api.piRequest).mockReturnValueOnce(
+    new Promise((r) => {
+      resolve = r;
+    }),
+  );
   const pending = reloadMessages();
   await handleEvent({ type: "agent_start" });
   await handleEvent({ type: "message_start", message: { role: "assistant" } });

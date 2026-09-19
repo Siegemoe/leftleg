@@ -20,7 +20,7 @@ describe("renderMarkdown", () => {
   });
 
   it("strips <script> injection", () => {
-    const html = renderMarkdown('hello <script>alert(1)</script> world');
+    const html = renderMarkdown("hello <script>alert(1)</script> world");
     expect(html).not.toMatch(/<script/i);
     expect(html).not.toContain("alert(1)");
   });

@@ -28,7 +28,12 @@ beforeEach(() => {
 
 it("blocks prompts, navigation, and app installation for the entire Pi update", async () => {
   let failUpdate!: (error: Error) => void;
-  vi.mocked(api.runPiManager).mockImplementation(() => new Promise((_, reject) => { failUpdate = reject; }));
+  vi.mocked(api.runPiManager).mockImplementation(
+    () =>
+      new Promise((_, reject) => {
+        failUpdate = reject;
+      }),
+  );
   runStartupPiUpdate();
   await vi.waitFor(() => expect(api.runPiManager).toHaveBeenCalledOnce());
   const heldDuringUpdate = get(updateInstallLock);

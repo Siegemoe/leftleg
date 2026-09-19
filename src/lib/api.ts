@@ -10,10 +10,19 @@ export function piRequest<T = unknown>(
   project?: string | null,
   expectedProc?: number,
 ): Promise<T> {
-  return invoke("pi_request", { command, timeoutSecs, project: project ?? null, expectedProc: expectedProc ?? null });
+  return invoke("pi_request", {
+    command,
+    timeoutSecs,
+    project: project ?? null,
+    expectedProc: expectedProc ?? null,
+  });
 }
 
-export function piSend(line: Record<string, unknown>, project?: string | null, expectedProc?: number): Promise<void> {
+export function piSend(
+  line: Record<string, unknown>,
+  project?: string | null,
+  expectedProc?: number,
+): Promise<void> {
   return invoke("pi_send", { line, project: project ?? null, expectedProc: expectedProc ?? null });
 }
 
@@ -54,7 +63,9 @@ export function writeGuiState(state: Record<string, unknown>): Promise<void> {
   guiWritesPending++;
   const write = guiWriteTail
     .then(() => invoke<void>("write_gui_state", { state: snapshot }))
-    .finally(() => { guiWritesPending--; });
+    .finally(() => {
+      guiWritesPending--;
+    });
   guiWriteTail = write.catch(() => {});
   return write;
 }

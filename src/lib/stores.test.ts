@@ -27,11 +27,39 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 import * as api from "./api";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
-  activeSessionByProject, activeSessionPath, compact, connected, exportSessionHtml, extDialog,
-  forgetProject, goHome, handleEvent, homePanelCollapsed, items, newSession, openRightPanel,
-  projectDir, projectMeta, projectScope, queue, rebuildFromMessages, refreshStats, restartPi,
-  rightPanelOpen, rightPanelTab, rpcState, sessionStates, sendPrompt, sessions, stats, statusNote,
-  streaming, switchToProject, collectUpdateInstallBlockers, handlePiExit, recordProcess,
+  activeSessionByProject,
+  activeSessionPath,
+  compact,
+  connected,
+  exportSessionHtml,
+  extDialog,
+  forgetProject,
+  goHome,
+  handleEvent,
+  homePanelCollapsed,
+  items,
+  newSession,
+  openRightPanel,
+  projectDir,
+  projectMeta,
+  projectScope,
+  queue,
+  rebuildFromMessages,
+  refreshStats,
+  restartPi,
+  rightPanelOpen,
+  rightPanelTab,
+  rpcState,
+  sessionStates,
+  sendPrompt,
+  sessions,
+  stats,
+  statusNote,
+  streaming,
+  switchToProject,
+  collectUpdateInstallBlockers,
+  handlePiExit,
+  recordProcess,
   updateInstallLock,
 } from "./stores";
 import { composerDraftFor } from "./composer-drafts";
@@ -73,7 +101,9 @@ describe("update install safety", () => {
 
     const blockers = collectUpdateInstallBlockers();
 
-    expect(blockers.some((message) => message.includes("background has an active agent turn"))).toBe(true);
+    expect(
+      blockers.some((message) => message.includes("background has an active agent turn")),
+    ).toBe(true);
     expect(blockers.some((message) => message.includes("unsent text"))).toBe(true);
     draft.set({ text: "", sending: false, lastExtensionNonce: 0, attachments: [] });
     handlePiExit("C:\\work\\background", 2, true);
@@ -84,7 +114,10 @@ describe("update install safety", () => {
     projectDir.set("C:\\work\\front");
     updateInstallLock.set(true);
 
-    expect(await sendPrompt("too late", [])).toEqual({ ok: false, error: "Update installation is preparing" });
+    expect(await sendPrompt("too late", [])).toEqual({
+      ok: false,
+      error: "Update installation is preparing",
+    });
     expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
   });
 });
@@ -108,9 +141,18 @@ describe("handleEvent: streaming lifecycle", () => {
 
   it("accumulates text deltas into the streaming assistant item", async () => {
     await handleEvent({ type: "message_start", message: { role: "assistant" } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Hel" } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "lo" } });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+    });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Hel" },
+    });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "lo" },
+    });
 
     const item = get(items)[0] as AssistantItem;
     expect(item.kind).toBe("assistant");
@@ -120,8 +162,14 @@ describe("handleEvent: streaming lifecycle", () => {
 
   it("finalizes the item from the authoritative message on message_end", async () => {
     await handleEvent({ type: "message_start", message: { role: "assistant" } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "part" } });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+    });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "part" },
+    });
 
     await handleEvent({
       type: "message_end",
@@ -149,8 +197,14 @@ describe("handleEvent: streaming lifecycle", () => {
 
   it("regression: agent_settled finalizes dangling streaming blocks (toolcall blocks must not crash)", async () => {
     await handleEvent({ type: "message_start", message: { role: "assistant" } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_start", id: "tc1", toolName: "bash" } });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+    });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "toolcall_start", id: "tc1", toolName: "bash" },
+    });
 
     await handleEvent({ type: "agent_settled" });
 
@@ -167,19 +221,49 @@ describe("handleEvent: streaming lifecycle", () => {
     await handleEvent({ type: "message_start", message: { role: "assistant" } });
     await handleEvent({
       type: "message_end",
-      message: { role: "assistant", content: [], usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 3 } },
+      message: {
+        role: "assistant",
+        content: [],
+        usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 3 },
+      },
     });
     await vi.waitFor(() => {
-      expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith({ type: "get_session_stats" }, 30, "/proj", undefined);
+      expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith(
+        { type: "get_session_stats" },
+        30,
+        "/proj",
+        undefined,
+      );
     });
   });
 
   it("keeps content indexes dense when text follows a tool call", async () => {
     await handleEvent({ type: "message_start", message: { role: "assistant" } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, id: "tc1", toolName: "read" } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 0, toolCall: { id: "tc1", name: "read", arguments: { path: "a.txt" } } } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 1 } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "Checking the file." } });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "toolcall_start",
+        contentIndex: 0,
+        id: "tc1",
+        toolName: "read",
+      },
+    });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        contentIndex: 0,
+        toolCall: { id: "tc1", name: "read", arguments: { path: "a.txt" } },
+      },
+    });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_start", contentIndex: 1 },
+    });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "Checking the file." },
+    });
     const assistant = get(items)[0] as AssistantItem;
     const blocks = assistant.blocks;
     // Capture the interrupted-stream path too: it used to dereference a hole.
@@ -188,7 +272,12 @@ describe("handleEvent: streaming lifecycle", () => {
     await handleEvent({ type: "message_end", message: { role: "assistant", content: [] } });
     await expect(settled).resolves.toBeUndefined();
     expect(Array.from(blocks)).toEqual([
-      { type: "toolcall", toolCallId: "tc1", name: "read", args: JSON.stringify({ path: "a.txt" }, null, 2) },
+      {
+        type: "toolcall",
+        toolCallId: "tc1",
+        name: "read",
+        args: JSON.stringify({ path: "a.txt" }, null, 2),
+      },
       { type: "text", text: "Checking the file.", done: true },
     ]);
   });
@@ -197,14 +286,20 @@ describe("handleEvent: streaming lifecycle", () => {
 describe("handleEvent: tool lifecycle", () => {
   async function startToolCall(id: string, name: string) {
     await handleEvent({ type: "message_start", message: { role: "assistant" } });
-    await handleEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_start", id, toolName: name } });
+    await handleEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "toolcall_start", id, toolName: name },
+    });
   }
 
   it("creates a running tool item on toolcall_start and fills args on toolcall_end", async () => {
     await startToolCall("tc1", "tool");
     await handleEvent({
       type: "message_update",
-      assistantMessageEvent: { type: "toolcall_end", toolCall: { id: "tc1", name: "read", arguments: { path: "a.txt" } } },
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        toolCall: { id: "tc1", name: "read", arguments: { path: "a.txt" } },
+      },
     });
 
     const tool = get(items).find((x) => x.kind === "tool") as ToolItem;
@@ -215,8 +310,18 @@ describe("handleEvent: tool lifecycle", () => {
 
   it("tracks execution start → output → end", async () => {
     await startToolCall("tc1", "bash");
-    await handleEvent({ type: "tool_execution_start", toolCallId: "tc1", toolName: "bash", args: { cmd: "ls" } });
-    await handleEvent({ type: "tool_execution_end", toolCallId: "tc1", isError: false, result: { content: [{ type: "text", text: "out.txt" }] } });
+    await handleEvent({
+      type: "tool_execution_start",
+      toolCallId: "tc1",
+      toolName: "bash",
+      args: { cmd: "ls" },
+    });
+    await handleEvent({
+      type: "tool_execution_end",
+      toolCallId: "tc1",
+      isError: false,
+      result: { content: [{ type: "text", text: "out.txt" }] },
+    });
 
     const tool = get(items).find((x) => x.kind === "tool") as ToolItem;
     expect(tool.status).toBe("done");
@@ -226,8 +331,18 @@ describe("handleEvent: tool lifecycle", () => {
 
   it("marks errored tool results", async () => {
     await startToolCall("tc1", "bash");
-    await handleEvent({ type: "tool_execution_start", toolCallId: "tc1", toolName: "bash", args: {} });
-    await handleEvent({ type: "tool_execution_end", toolCallId: "tc1", isError: true, result: { content: [{ type: "text", text: "nope" }] } });
+    await handleEvent({
+      type: "tool_execution_start",
+      toolCallId: "tc1",
+      toolName: "bash",
+      args: {},
+    });
+    await handleEvent({
+      type: "tool_execution_end",
+      toolCallId: "tc1",
+      isError: true,
+      result: { content: [{ type: "text", text: "nope" }] },
+    });
 
     const tool = get(items).find((x) => x.kind === "tool") as ToolItem;
     expect(tool.status).toBe("error");
@@ -236,8 +351,17 @@ describe("handleEvent: tool lifecycle", () => {
 
   it("updates partial output while running", async () => {
     await startToolCall("tc1", "bash");
-    await handleEvent({ type: "tool_execution_start", toolCallId: "tc1", toolName: "bash", args: {} });
-    await handleEvent({ type: "tool_execution_update", toolCallId: "tc1", partialResult: { content: [{ type: "text", text: "partial" }] } });
+    await handleEvent({
+      type: "tool_execution_start",
+      toolCallId: "tc1",
+      toolName: "bash",
+      args: {},
+    });
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "tc1",
+      partialResult: { content: [{ type: "text", text: "partial" }] },
+    });
 
     const tool = get(items).find((x) => x.kind === "tool") as ToolItem;
     expect(tool.output).toBe("partial");
@@ -245,39 +369,56 @@ describe("handleEvent: tool lifecycle", () => {
   });
 
   it("ignores updates for unknown tool ids", async () => {
-    await handleEvent({ type: "tool_execution_update", toolCallId: "ghost", partialResult: { content: [] } });
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "ghost",
+      partialResult: { content: [] },
+    });
     expect(get(items)).toEqual([]);
   });
 });
 
 describe("rebuildFromMessages: timing derivation", () => {
-  it.each([false, true])("measures a live turn through completion (turn_start=%s)", async (hasTurnStart) => {
-    vi.useFakeTimers();
-    let displayedDuration: number | undefined;
-    const unsubscribe = items.subscribe((value) => {
-      displayedDuration = (value.find((item) => item.kind === "assistant") as AssistantItem | undefined)?.turnDurationMs;
-    });
-    try {
-      vi.setSystemTime(1000);
-      await handleEvent({ type: "agent_start" });
-      if (hasTurnStart) await handleEvent({ type: "turn_start", timestamp: 1000 } as never);
-      vi.setSystemTime(2000);
-      await handleEvent({ type: "message_start", message: { role: "assistant" } });
-      await handleEvent({ type: "message_end", message: { role: "assistant", timestamp: 2000, content: [] } });
-      vi.setSystemTime(16000);
-      await handleEvent({ type: "agent_end" });
-      const assistant = get(items).find((item) => item.kind === "assistant") as AssistantItem;
-      expect(assistant.turnDurationMs).toBe(15000);
-      expect(displayedDuration).toBe(15000);
-    } finally { unsubscribe(); vi.useRealTimers(); }
-  });
+  it.each([false, true])(
+    "measures a live turn through completion (turn_start=%s)",
+    async (hasTurnStart) => {
+      vi.useFakeTimers();
+      let displayedDuration: number | undefined;
+      const unsubscribe = items.subscribe((value) => {
+        displayedDuration = (
+          value.find((item) => item.kind === "assistant") as AssistantItem | undefined
+        )?.turnDurationMs;
+      });
+      try {
+        vi.setSystemTime(1000);
+        await handleEvent({ type: "agent_start" });
+        if (hasTurnStart) await handleEvent({ type: "turn_start", timestamp: 1000 } as never);
+        vi.setSystemTime(2000);
+        await handleEvent({ type: "message_start", message: { role: "assistant" } });
+        await handleEvent({
+          type: "message_end",
+          message: { role: "assistant", timestamp: 2000, content: [] },
+        });
+        vi.setSystemTime(16000);
+        await handleEvent({ type: "agent_end" });
+        const assistant = get(items).find((item) => item.kind === "assistant") as AssistantItem;
+        expect(assistant.turnDurationMs).toBe(15000);
+        expect(displayedDuration).toBe(15000);
+      } finally {
+        unsubscribe();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("derives tool execution duration from call → result message timestamps", () => {
     rebuildFromMessages([
       {
         role: "assistant",
         timestamp: 1_000,
-        content: [{ type: "toolCall", id: "tc1", name: "image_generate", arguments: { prompt: "x" } }],
+        content: [
+          { type: "toolCall", id: "tc1", name: "image_generate", arguments: { prompt: "x" } },
+        ],
       },
       {
         role: "toolResult",
@@ -324,7 +465,10 @@ describe("handleEvent: misc events", () => {
       await handleEvent({ type: "compaction_start" });
       expect(get(statusNote)).toContain("Compacting");
 
-      await handleEvent({ type: "compaction_end", result: { tokensBefore: 100, estimatedTokensAfter: 40 } });
+      await handleEvent({
+        type: "compaction_end",
+        result: { tokensBefore: 100, estimatedTokensAfter: 40 },
+      });
       expect(get(statusNote)).toBe("Compacted: 100 → 40 tokens");
 
       vi.advanceTimersByTime(6000);
@@ -337,12 +481,27 @@ describe("handleEvent: misc events", () => {
   it("extension_ui_request opens the dialog for interactive methods only", async () => {
     await handleEvent({
       type: "extension_ui_request",
-      id: "e1", method: "select", title: "Pick", options: ["a", "b"], message: "choose one",
+      id: "e1",
+      method: "select",
+      title: "Pick",
+      options: ["a", "b"],
+      message: "choose one",
     } as never);
     const d = get(extDialog);
-    expect(d).toMatchObject({ id: "e1", method: "select", title: "Pick", options: ["a", "b"], message: "choose one" });
+    expect(d).toMatchObject({
+      id: "e1",
+      method: "select",
+      title: "Pick",
+      options: ["a", "b"],
+      message: "choose one",
+    });
 
-    await handleEvent({ type: "extension_ui_request", id: "e2", method: "setTitle", title: "x" } as never);
+    await handleEvent({
+      type: "extension_ui_request",
+      id: "e2",
+      method: "setTitle",
+      title: "x",
+    } as never);
     expect(get(extDialog)).toMatchObject({ id: "e1" }); // unchanged — setTitle is fire-and-forget
   });
 
@@ -399,7 +558,12 @@ describe("rebuildFromMessages", () => {
         ],
         stopReason: "toolUse",
       },
-      { role: "toolResult", toolCallId: "t1", content: [{ type: "text", text: "file.txt" }], isError: false },
+      {
+        role: "toolResult",
+        toolCallId: "t1",
+        content: [{ type: "text", text: "file.txt" }],
+        isError: false,
+      },
     ];
 
     rebuildFromMessages(msgs);
@@ -415,7 +579,11 @@ describe("rebuildFromMessages", () => {
 
   it("inlines normal images as data urls", () => {
     rebuildFromMessages([
-      { role: "user", content: "pic", attachments: [{ type: "image", content: "QUJD", fileName: "x.png", mimeType: "image/png" }] },
+      {
+        role: "user",
+        content: "pic",
+        attachments: [{ type: "image", content: "QUJD", fileName: "x.png", mimeType: "image/png" }],
+      },
     ]);
     const [u] = get(items) as Array<{ images: Array<{ dataUrl: string; name: string }> }>;
     expect(u.images[0].dataUrl).toBe("data:image/png;base64,QUJD");
@@ -423,26 +591,48 @@ describe("rebuildFromMessages", () => {
   });
 
   it("restores images from Pi user content blocks", () => {
-    rebuildFromMessages([{ role: "user", content: [
-      { type: "text", text: "Inspect this" },
-      { type: "image", data: "QUJD", mimeType: "image/jpeg" },
-    ] }]);
+    rebuildFromMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Inspect this" },
+          { type: "image", data: "QUJD", mimeType: "image/jpeg" },
+        ],
+      },
+    ]);
     expect(get(items)[0]).toMatchObject({
-      kind: "user", text: "Inspect this",
+      kind: "user",
+      text: "Inspect this",
       images: [{ name: "image", dataUrl: "data:image/jpeg;base64,QUJD" }],
     });
   });
 
   it("limits previews for images in Pi content blocks", () => {
-    rebuildFromMessages([{ role: "user", content: [
-      { type: "image", data: "A".repeat(1_500_001), mimeType: "image/png" },
-    ] }]);
-    expect(get(items)[0]).toMatchObject({ images: [{ dataUrl: "", name: expect.stringContaining("too large to preview") }] });
+    rebuildFromMessages([
+      {
+        role: "user",
+        content: [{ type: "image", data: "A".repeat(1_500_001), mimeType: "image/png" }],
+      },
+    ]);
+    expect(get(items)[0]).toMatchObject({
+      images: [{ dataUrl: "", name: expect.stringContaining("too large to preview") }],
+    });
   });
 
   it("strips oversized images into a chip", () => {
     rebuildFromMessages([
-      { role: "user", content: "pic", attachments: [{ type: "image", content: "A".repeat(1_500_001), fileName: "big.png", mimeType: "image/png" }] },
+      {
+        role: "user",
+        content: "pic",
+        attachments: [
+          {
+            type: "image",
+            content: "A".repeat(1_500_001),
+            fileName: "big.png",
+            mimeType: "image/png",
+          },
+        ],
+      },
     ]);
     const [u] = get(items) as Array<{ images: Array<{ dataUrl: string; name: string }> }>;
     expect(u.images[0].dataUrl).toBe("");
@@ -450,8 +640,15 @@ describe("rebuildFromMessages", () => {
   });
 
   it("renders bash executions with error state from exit code", () => {
-    rebuildFromMessages([{ role: "bashExecution", command: "ls", output: "boom", exitCode: 1 } as never]);
-    const [b] = get(items) as Array<{ kind: string; command: string; output: string; isError: boolean }>;
+    rebuildFromMessages([
+      { role: "bashExecution", command: "ls", output: "boom", exitCode: 1 } as never,
+    ]);
+    const [b] = get(items) as Array<{
+      kind: string;
+      command: string;
+      output: string;
+      isError: boolean;
+    }>;
     expect(b).toMatchObject({ kind: "bash", command: "ls", output: "boom", isError: true });
   });
 });
@@ -547,7 +744,10 @@ describe("handlePiExit: session chip on process death", () => {
     handlePiExit("C:\\work\\front", 1, false);
 
     // "Needs attention" instead of the pulsing Working chip.
-    expect(get(sessionStates)["/s1.jsonl"]).toEqual({ status: "attention", note: "process exited" });
+    expect(get(sessionStates)["/s1.jsonl"]).toEqual({
+      status: "attention",
+      note: "process exited",
+    });
   });
 
   it("an expected background exit settles the owning session's chip too", () => {
@@ -565,7 +765,15 @@ describe("handlePiExit: session chip on process death", () => {
 
   // Session → project mapping for the exit sweep.
   function sessionInfo(path: string, cwd: string) {
-    return { path, cwd, timestamp: "", fileModified: 0, sessionId: path, name: null, firstMessage: null };
+    return {
+      path,
+      cwd,
+      timestamp: "",
+      fileModified: 0,
+      sessionId: path,
+      name: null,
+      firstMessage: null,
+    };
   }
 
   it("settles a session switched away from mid-turn on an expected exit, leaving the current one alone", async () => {
@@ -615,14 +823,20 @@ describe("handlePiExit: session chip on process death", () => {
 
     handlePiExit("C:\\work\\front", 1, true);
 
-    expect(get(sessionStates)["/s1.jsonl"]).toEqual({ status: "attention", note: "error in response" });
+    expect(get(sessionStates)["/s1.jsonl"]).toEqual({
+      status: "attention",
+      note: "error in response",
+    });
   });
 
   it("restartPi starts the resumed session's status clean", async () => {
     projectDir.set("C:\\work\\front");
     activeSessionPath.set("/s1.jsonl");
     sessionStates.set({ "/s1.jsonl": { status: "attention", note: "process exited" } });
-    vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: { sessionFile: "/s1.jsonl" } } as never);
+    vi.mocked(api.piRequest).mockResolvedValue({
+      success: true,
+      data: { sessionFile: "/s1.jsonl" },
+    } as never);
 
     try {
       await restartPi();
@@ -686,22 +900,27 @@ describe("newSession", () => {
   it.each([
     [{ success: false, error: "session creation failed" }, "session creation failed"],
     [{ success: true, data: { cancelled: true } }, "cancelled"],
-  ])("preserves the session and model when new_session does not proceed: %j", async (response, note) => {
-    const history = [{ kind: "user" as const, id: "keep-1", text: "Keep this conversation", images: [] }];
-    items.set(history);
-    activeSessionPath.set("/existing.jsonl");
-    // newSession stands down with no project open (start view) — these tests
-    // exercise the session path, so a project must be active.
-    projectDir.set("C:\\work\\front");
-    vi.mocked(api.piRequest).mockResolvedValueOnce(response);
+  ])(
+    "preserves the session and model when new_session does not proceed: %j",
+    async (response, note) => {
+      const history = [
+        { kind: "user" as const, id: "keep-1", text: "Keep this conversation", images: [] },
+      ];
+      items.set(history);
+      activeSessionPath.set("/existing.jsonl");
+      // newSession stands down with no project open (start view) — these tests
+      // exercise the session path, so a project must be active.
+      projectDir.set("C:\\work\\front");
+      vi.mocked(api.piRequest).mockResolvedValueOnce(response);
 
-    await newSession();
+      await newSession();
 
-    expect(get(items)).toEqual(history);
-    expect(get(activeSessionPath)).toBe("/existing.jsonl");
-    expect(get(statusNote)).toContain(note);
-    expect(vi.mocked(api.piRequest).mock.calls.map(([c]) => c.type)).toEqual(["new_session"]);
-  });
+      expect(get(items)).toEqual(history);
+      expect(get(activeSessionPath)).toBe("/existing.jsonl");
+      expect(get(statusNote)).toContain(note);
+      expect(vi.mocked(api.piRequest).mock.calls.map(([c]) => c.type)).toEqual(["new_session"]);
+    },
+  );
 
   it("pins the default GLM model on fresh sessions", async () => {
     projectDir.set("C:\\work\\front");
@@ -711,7 +930,10 @@ describe("newSession", () => {
 
     const calls = vi.mocked(api.piRequest).mock.calls;
     const setModelCall = calls.find(([c]) => (c as { type: string }).type === "set_model");
-    expect(setModelCall?.[0]).toMatchObject({ provider: "openrouter", modelId: "z-ai/glm-5.3-flash" });
+    expect(setModelCall?.[0]).toMatchObject({
+      provider: "openrouter",
+      modelId: "z-ai/glm-5.3-flash",
+    });
   });
 
   it("skips the model switch when already on the default model", async () => {

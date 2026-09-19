@@ -16,15 +16,20 @@ import type { AssistantItem, ToolItem, UserItem } from "./types";
 vi.mock("./api", () => {
   const t = () => {
     const impl = (globalThis as unknown as Record<string, unknown>).__leftlegApiTransport as
-      | ApiShape
-      | undefined;
+      ApiShape | undefined;
     if (!impl) throw new Error("api transport not wired");
     return impl;
   };
   return {
-    piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null, expectedProc?: number) => t().piRequest(command, timeoutSecs, project, expectedProc),
+    piRequest: (
+      command: Record<string, unknown>,
+      timeoutSecs?: number,
+      project?: string | null,
+      expectedProc?: number,
+    ) => t().piRequest(command, timeoutSecs, project, expectedProc),
     piSend: (line: Record<string, unknown>, project?: string | null) => t().piSend(line, project),
-    piStart: (cwd: string, sessionPath?: string | null, forceRestart?: boolean) => t().piStart(cwd, sessionPath, forceRestart),
+    piStart: (cwd: string, sessionPath?: string | null, forceRestart?: boolean) =>
+      t().piStart(cwd, sessionPath, forceRestart),
     piStop: () => t().piStop(),
     piStatus: () => t().piStatus(),
     listSessions: () => t().listSessions(),
@@ -35,19 +40,64 @@ vi.mock("./api", () => {
 });
 
 import {
-  abort, activeSessionPath, boot, cloneSession, commands, composerDraft, connected,
-  dismissFailedUser, dismissNotification, disconnected, exportSessionHtml, extDialog,
-  extStatuses, extWidgets, handleEvent, handlePiExit, items, lastProcByProject, lastSessionFor, newSession,
-  notifications, openSession, pins, projectDir, projectMeta, projectScope, queue, restartPi,
-  retryFailedUser, rpcState, sendPrompt, sessionQuery, sessionStates, settled, settledView,
-  settleSession, sessions, sidebarWidth, statusNote, streaming, activeSessionByProject,
-  switchToProject, unsettleSession, visitedAt, togglePin,
+  abort,
+  activeSessionPath,
+  boot,
+  cloneSession,
+  commands,
+  composerDraft,
+  connected,
+  dismissFailedUser,
+  dismissNotification,
+  disconnected,
+  exportSessionHtml,
+  extDialog,
+  extStatuses,
+  extWidgets,
+  handleEvent,
+  handlePiExit,
+  items,
+  lastProcByProject,
+  lastSessionFor,
+  newSession,
+  notifications,
+  openSession,
+  pins,
+  projectDir,
+  projectMeta,
+  projectScope,
+  queue,
+  restartPi,
+  retryFailedUser,
+  rpcState,
+  sendPrompt,
+  sessionQuery,
+  sessionStates,
+  settled,
+  settledView,
+  settleSession,
+  sessions,
+  sidebarWidth,
+  statusNote,
+  streaming,
+  activeSessionByProject,
+  switchToProject,
+  unsettleSession,
+  visitedAt,
+  togglePin,
 } from "./stores";
 import type { FakePi } from "./test/fake-pi";
 import { FakePiHub, OTHER_PROJECT, type FakePiHubOptions } from "./test/fake-pi-hub";
 import {
-  FIXTURE_COMMANDS, FIXTURE_SESSIONS, PROJECT_DIR, RECORDED_ERROR_RUN, RECORDED_EXTENSION_EVENTS,
-  RECORDED_RUN, SESSION_A, SESSION_B, SESSION_OTHER,
+  FIXTURE_COMMANDS,
+  FIXTURE_SESSIONS,
+  PROJECT_DIR,
+  RECORDED_ERROR_RUN,
+  RECORDED_EXTENSION_EVENTS,
+  RECORDED_RUN,
+  SESSION_A,
+  SESSION_B,
+  SESSION_OTHER,
 } from "./test/fixtures";
 
 // exportSessionHtml opens a save dialog; pin it for deterministic journeys.
@@ -57,9 +107,18 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 type ApiShape = {
-  piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null, expectedProc?: number) => Promise<unknown>;
+  piRequest: (
+    command: Record<string, unknown>,
+    timeoutSecs?: number,
+    project?: string | null,
+    expectedProc?: number,
+  ) => Promise<unknown>;
   piSend: (line: Record<string, unknown>, project?: string | null) => Promise<void>;
-  piStart: (project: string, sessionPath?: string | null, forceRestart?: boolean) => Promise<number>;
+  piStart: (
+    project: string,
+    sessionPath?: string | null,
+    forceRestart?: boolean,
+  ) => Promise<number>;
   piStop: (project?: string | null) => Promise<void>;
   piStatus: (project?: string | null) => Promise<boolean>;
   listSessions: () => Promise<SessionInfo[]>;
@@ -91,8 +150,12 @@ function activeFake(h: FakePiHub): FakePi {
 /** Wire the hub into the api module + App.svelte's event plumbing. */
 function wire(h: FakePiHub) {
   (globalThis as unknown as Record<string, unknown>).__leftlegApiTransport = {
-    piRequest: (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null, expectedProc?: number) =>
-      h.piRequest(command, timeoutSecs, project, expectedProc),
+    piRequest: (
+      command: Record<string, unknown>,
+      timeoutSecs?: number,
+      project?: string | null,
+      expectedProc?: number,
+    ) => h.piRequest(command, timeoutSecs, project, expectedProc),
     piSend: (line: Record<string, unknown>, project?: string | null) => h.piSend(line, project),
     piStart: (project: string, sessionPath?: string | null, forceRestart?: boolean) =>
       h.piStart(project, sessionPath, forceRestart),
@@ -241,7 +304,10 @@ describe("journey: startup and session identity", () => {
 
   it("resumes the most recent project session when the remembered one is gone", async () => {
     hub = makeHub({
-      guiState: { projectDir: PROJECT_DIR, lastSessionByProject: { [PROJECT_DIR]: "/gone/deleted.jsonl" } },
+      guiState: {
+        projectDir: PROJECT_DIR,
+        lastSessionByProject: { [PROJECT_DIR]: "/gone/deleted.jsonl" },
+      },
     });
     wire(hub);
     fake = activeFake(hub);
@@ -340,7 +406,10 @@ describe("journey: prompt delivery", () => {
     expect(last.kind).toBe("assistant");
     expect(last.blocks[0]).toEqual({ type: "text", text: "Here is the summary.", done: true });
     expect(fake.messages.get(SESSION_A)?.at(-1)).toMatchObject({ role: "assistant" });
-    expect(fake.messages.get(SESSION_A)?.at(-2)).toMatchObject({ role: "user", content: "Summarize the session" });
+    expect(fake.messages.get(SESSION_A)?.at(-2)).toMatchObject({
+      role: "user",
+      content: "Summarize the session",
+    });
   });
 
   it("rejected prompt: result reports failure, bubble stays visible with the error, retry resends it", async () => {
@@ -372,7 +441,9 @@ describe("journey: prompt delivery", () => {
     fake.failNextPrompt = "temporarily rejected";
     await sendPrompt("first attempt", []);
     await drain();
-    let failed = get(items).find((i) => i.kind === "user" && (i as UserItem).status === "failed") as UserItem | undefined;
+    let failed = get(items).find(
+      (i) => i.kind === "user" && (i as UserItem).status === "failed",
+    ) as UserItem | undefined;
     expect(failed?.text).toBe("first attempt");
 
     // An unrelated successful send must NOT remove the failed attempt — it was
@@ -380,7 +451,8 @@ describe("journey: prompt delivery", () => {
     fake.runPlan = [{ kind: "text", text: "ok" }];
     await sendPrompt("second attempt", []);
     await drain();
-    failed = get(items).find((i) => i.kind === "user" && (i as UserItem).status === "failed") as UserItem | undefined;
+    failed = get(items).find((i) => i.kind === "user" && (i as UserItem).status === "failed") as
+      UserItem | undefined;
     expect(failed?.text).toBe("first attempt");
     expect(failed?.id).toBeTruthy();
 
@@ -388,22 +460,34 @@ describe("journey: prompt delivery", () => {
     const retry = await retryFailedUser(failed!.id!);
     await drain();
     expect(retry.ok).toBe(true);
-    expect(get(items).some((i) => i.kind === "user" && (i as UserItem).status === "failed")).toBe(false);
+    expect(get(items).some((i) => i.kind === "user" && (i as UserItem).status === "failed")).toBe(
+      false,
+    );
     const users = get(items).filter((i) => i.kind === "user") as UserItem[];
-    expect(users.map((u) => u.text)).toEqual(["List the files in src", "second attempt", "first attempt"]);
+    expect(users.map((u) => u.text)).toEqual([
+      "List the files in src",
+      "second attempt",
+      "first attempt",
+    ]);
   });
 
   it("a failed bubble can be dismissed without re-sending it", async () => {
     fake.failNextPrompt = "rejected";
     await sendPrompt("doomed", []);
     await drain();
-    const failed = get(items).find((i) => i.kind === "user" && (i as UserItem).status === "failed") as UserItem;
+    const failed = get(items).find(
+      (i) => i.kind === "user" && (i as UserItem).status === "failed",
+    ) as UserItem;
 
     dismissFailedUser(failed.id!);
 
-    expect(get(items).some((i) => i.kind === "user" && (i as UserItem).status === "failed")).toBe(false);
+    expect(get(items).some((i) => i.kind === "user" && (i as UserItem).status === "failed")).toBe(
+      false,
+    );
     // Dismissing never sends anything.
-    expect(fake.messages.get(SESSION_A)?.some((m) => m.role === "user" && m.content === "doomed")).toBe(false);
+    expect(
+      fake.messages.get(SESSION_A)?.some((m) => m.role === "user" && m.content === "doomed"),
+    ).toBe(false);
   });
 
   it("prompt while pi is down: no bubble, explicit failure", async () => {
@@ -443,7 +527,11 @@ describe("journey: steering and abort", () => {
     expect(get(streaming)).toBe(false);
     expect(get(queue).steering).toEqual([]);
     const users = get(items).filter((i) => i.kind === "user") as UserItem[];
-    expect(users.map((u) => u.text)).toEqual(["List the files in src", "run the tests", "also lint"]);
+    expect(users.map((u) => u.text)).toEqual([
+      "List the files in src",
+      "run the tests",
+      "also lint",
+    ]);
     expect(get(items).filter((i) => i.kind === "assistant")).toHaveLength(4); // 2 history + 2 new runs
   });
 
@@ -565,7 +653,11 @@ describe("journey: extension surfaces", () => {
     // set_editor_text → composer draft request
     expect(get(composerDraft)?.text).toBe("Continue with step 2");
     // interactive dialog still opens
-    expect(get(extDialog)).toMatchObject({ id: "d1", method: "select", options: ["Allow", "Deny"] });
+    expect(get(extDialog)).toMatchObject({
+      id: "d1",
+      method: "select",
+      options: ["Allow", "Deny"],
+    });
 
     dismissNotification(notes[2].id);
     expect(get(notifications)).toHaveLength(2);
@@ -577,12 +669,28 @@ describe("journey: extension surfaces", () => {
   });
 
   it("extension state dies with the process", async () => {
-    fake.emit({ type: "extension_ui_request", id: "s1", method: "setStatus", statusKey: "review", statusText: "busy" } as never);
     fake.emit({
-      type: "extension_ui_request", id: "w1", method: "setWidget", widgetKey: "plan",
-      widgetLines: ["--- Plan ---"], widgetPlacement: "aboveEditor",
+      type: "extension_ui_request",
+      id: "s1",
+      method: "setStatus",
+      statusKey: "review",
+      statusText: "busy",
     } as never);
-    fake.emit({ type: "extension_ui_request", id: "d2", method: "confirm", title: "Allow?", message: "run cmd" } as never);
+    fake.emit({
+      type: "extension_ui_request",
+      id: "w1",
+      method: "setWidget",
+      widgetKey: "plan",
+      widgetLines: ["--- Plan ---"],
+      widgetPlacement: "aboveEditor",
+    } as never);
+    fake.emit({
+      type: "extension_ui_request",
+      id: "d2",
+      method: "confirm",
+      title: "Allow?",
+      message: "run cmd",
+    } as never);
     await drain();
     expect(get(extStatuses)).toEqual({ review: "busy" });
     expect(get(extDialog)).not.toBeNull();
@@ -627,7 +735,10 @@ describe("recorded protocol replay (compatibility drift guard)", () => {
     const assistant = get(items)[0] as AssistantItem;
     expect(assistant.stopReason).toBe("error");
     expect(assistant.errorMessage).toBe("provider quota exceeded");
-    expect(get(sessionStates)[SESSION_A]).toEqual({ status: "attention", note: "error in response" });
+    expect(get(sessionStates)[SESSION_A]).toEqual({
+      status: "attention",
+      note: "error in response",
+    });
   });
 });
 
@@ -671,23 +782,45 @@ describe("journey: multi-project orchestration", () => {
     demo.busy = true;
     demo.emit({ type: "agent_start" });
     demo.emit({ type: "message_start", message: { role: "assistant" } });
-    demo.emit({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
-    demo.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Before " } });
+    demo.emit({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+    });
+    demo.emit({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Before " },
+    });
     await openSession(SESSION_OTHER);
-    demo.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "during " } });
+    demo.emit({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "during " },
+    });
     await openSession(SESSION_A);
     expect(get(streaming)).toBe(true);
-    demo.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "after" } });
+    demo.emit({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "after" },
+    });
     const last = get(items).at(-1) as AssistantItem;
     expect(last.blocks).toEqual([{ type: "text", text: "Before during after", done: false }]);
   });
 
   it("restores background extension questions, without leaking widgets to another project", async () => {
     const demo = hub.forProject(PROJECT_DIR)!;
-    demo.emit({ type: "extension_ui_request", method: "setWidget", widgetKey: "plan", widgetLines: ["Demo only"] });
+    demo.emit({
+      type: "extension_ui_request",
+      method: "setWidget",
+      widgetKey: "plan",
+      widgetLines: ["Demo only"],
+    });
     await openSession(SESSION_OTHER);
     expect(get(extWidgets)).toEqual({});
-    demo.emit({ type: "extension_ui_request", id: "question", method: "confirm", title: "Proceed?" });
+    demo.emit({
+      type: "extension_ui_request",
+      id: "question",
+      method: "confirm",
+      title: "Proceed?",
+    });
     expect(get(extDialog)).toBeNull();
     expect(get(sessionStates)[SESSION_A].status).toBe("attention");
     await openSession(SESSION_A);
@@ -735,7 +868,14 @@ describe("journey: multi-project orchestration", () => {
     await drain();
     expect(get(projectDir)).toBe(PROJECT_DIR);
     expect(hub.spawnCount(PROJECT_DIR)).toBe(spawnsBefore);
-    expect(get(items).map((i) => i.kind)).toEqual(["user", "assistant", "tool", "assistant", "user", "assistant"]);
+    expect(get(items).map((i) => i.kind)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
   });
 
   it("a background project's crash marks its session without touching the active chat", async () => {

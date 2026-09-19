@@ -76,7 +76,10 @@ export function resolveProjectPill(pills: ReadonlyArray<SidebarPill | null>): Si
 
 /** T3's searchSidebarThreads: filter the ALREADY-ORDERED list by title; the
  * query only narrows, it never reorders. */
-export function filterSessionsByQuery<T extends { title: string }>(sessions: readonly T[], query: string): T[] {
+export function filterSessionsByQuery<T extends { title: string }>(
+  sessions: readonly T[],
+  query: string,
+): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return [...sessions];
   return sessions.filter((s) => s.title.toLowerCase().includes(q));
@@ -161,7 +164,9 @@ export function splitSections(input: {
     const i = input.pinOrder.indexOf(s.path);
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
-  const pinnedInOrder = input.sessions.filter((s) => s.pinned).sort((a, b) => pinnedIndex(a) - pinnedIndex(b));
+  const pinnedInOrder = input.sessions
+    .filter((s) => s.pinned)
+    .sort((a, b) => pinnedIndex(a) - pinnedIndex(b));
   const settled = input.sessions
     .filter((s) => s.settled && !s.pinned)
     .sort((a, b) => b.timestampMs - a.timestampMs);
@@ -185,7 +190,12 @@ export function formatRelativeTime(timestampMs: number, now: number): string {
   if (days < 7) return `${days}d`;
   const d = new Date(timestampMs);
   const sameYear = d.getFullYear() === new Date(now).getFullYear();
-  return d.toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+  return d.toLocaleDateString(
+    undefined,
+    sameYear
+      ? { month: "short", day: "numeric" }
+      : { year: "numeric", month: "short", day: "numeric" },
+  );
 }
 
 /** Build SidebarSessions from the raw session list + GUI state. */

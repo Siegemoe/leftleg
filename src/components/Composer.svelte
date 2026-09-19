@@ -1,5 +1,18 @@
 <script lang="ts">
-  import { sendPrompt, abort, streaming, statusNote, transientNote, queue, extWidgets, composerDraft, commands, clearQueue, navigating, updateInstallLock } from "../lib/stores";
+  import {
+    sendPrompt,
+    abort,
+    streaming,
+    statusNote,
+    transientNote,
+    queue,
+    extWidgets,
+    composerDraft,
+    commands,
+    clearQueue,
+    navigating,
+    updateInstallLock,
+  } from "../lib/stores";
   import { buildPromptMessage } from "../lib/prompt-message";
   import { FileText, Paperclip, Send, Square } from "@lucide/svelte";
   import { pickAttachments, type PickedAttachment } from "../lib/api";
@@ -57,7 +70,10 @@
         continue;
       }
       const isImage = IMAGE_TYPES.has(ext(f.name));
-      $draftState.attachments = [...$draftState.attachments, { name: f.name, mimeType: isImage ? mimeFor(f.name) : "text/plain", data: f.data, isImage }];
+      $draftState.attachments = [
+        ...$draftState.attachments,
+        { name: f.name, mimeType: isImage ? mimeFor(f.name) : "text/plain", data: f.data, isImage },
+      ];
     }
   }
 
@@ -71,7 +87,11 @@
 
   async function doSend() {
     if ($navigating || $updateInstallLock) return;
-    if ($draftState.sending || $streaming && !$draftState.text.trim() && $draftState.attachments.length === 0) return;
+    if (
+      $draftState.sending ||
+      ($streaming && !$draftState.text.trim() && $draftState.attachments.length === 0)
+    )
+      return;
     if (!$draftState.text.trim() && $draftState.attachments.length === 0) return;
     $draftState.sending = true;
     try {
@@ -86,7 +106,10 @@
       const res = await sendPrompt(msg, images);
       // A rejected submission keeps text + attachments so the user can fix or retry.
       if (res.ok) {
-        if ($draftState.text === submittedText && $draftState.attachments === submittedAttachments) {
+        if (
+          $draftState.text === submittedText &&
+          $draftState.attachments === submittedAttachments
+        ) {
           // Untouched while in flight — clear everything.
           $draftState.text = "";
           $draftState.attachments = [];
@@ -97,7 +120,9 @@
             $draftState.text = $draftState.text.slice(submittedText.length);
           }
           if (submittedAttachments.length > 0) {
-            $draftState.attachments = $draftState.attachments.filter((a) => !submittedAttachments.includes(a));
+            $draftState.attachments = $draftState.attachments.filter(
+              (a) => !submittedAttachments.includes(a),
+            );
           }
         }
         // The store clears synchronously but the textarea's bound value only
@@ -111,14 +136,26 @@
 
   function onKeydown(e: KeyboardEvent) {
     if (slashOpen && slashMatches.length > 0) {
-      if (e.key === "ArrowDown") { e.preventDefault(); slashIdx = (slashIdx + 1) % slashMatches.length; return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); slashIdx = (slashIdx - 1 + slashMatches.length) % slashMatches.length; return; }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        slashIdx = (slashIdx + 1) % slashMatches.length;
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        slashIdx = (slashIdx - 1 + slashMatches.length) % slashMatches.length;
+        return;
+      }
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
         applySlash(slashMatches[Math.min(slashIdx, slashMatches.length - 1)]);
         return;
       }
-      if (e.key === "Escape") { e.preventDefault(); slashSuppressed = true; return; }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        slashSuppressed = true;
+        return;
+      }
     }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -143,21 +180,34 @@
     textareaEl?.focus();
   });
 
-  const aboveWidgets = $derived(Object.entries($extWidgets).filter(([, w]) => w.placement === "aboveEditor"));
-  const belowWidgets = $derived(Object.entries($extWidgets).filter(([, w]) => w.placement === "belowEditor"));
+  const aboveWidgets = $derived(
+    Object.entries($extWidgets).filter(([, w]) => w.placement === "aboveEditor"),
+  );
+  const belowWidgets = $derived(
+    Object.entries($extWidgets).filter(([, w]) => w.placement === "belowEditor"),
+  );
 
   // ---- slash-command palette (commands come from pi via get_commands) ----
   let slashSuppressed = $state(false);
   let slashIdx = $state(0);
   let paletteEl: HTMLDivElement | null = $state(null);
-  const slashOpen = $derived($draftState.text.startsWith("/") && !$draftState.text.includes(" ") && !$draftState.text.includes("\n") && !slashSuppressed);
+  const slashOpen = $derived(
+    $draftState.text.startsWith("/") &&
+      !$draftState.text.includes(" ") &&
+      !$draftState.text.includes("\n") &&
+      !slashSuppressed,
+  );
   const slashToken = $derived(slashOpen ? $draftState.text.slice(1).toLowerCase() : "");
   const slashMatches = $derived(
     slashOpen
       ? slashToken === ""
         ? $commands
-        : $commands.filter((c) => c.name.toLowerCase().startsWith(slashToken) || c.name.toLowerCase().includes(slashToken))
-      : []
+        : $commands.filter(
+            (c) =>
+              c.name.toLowerCase().startsWith(slashToken) ||
+              c.name.toLowerCase().includes(slashToken),
+          )
+      : [],
   );
 
   // Keep the keyboard-highlighted command in view when the list overflows —
@@ -166,7 +216,8 @@
     const idx = slashIdx;
     const matches = slashMatches;
     if (!slashOpen || !paletteEl || matches.length === 0) return;
-    const el = paletteEl.querySelectorAll<HTMLElement>(".slash-item")[Math.min(idx, matches.length - 1)];
+    const el =
+      paletteEl.querySelectorAll<HTMLElement>(".slash-item")[Math.min(idx, matches.length - 1)];
     el?.scrollIntoView({ block: "nearest" });
   });
 
@@ -192,7 +243,10 @@
     if (files.length === 0) return;
     e.preventDefault();
     for (const f of files) {
-      if (f.size > 20 * 1024 * 1024) { transientNote("Pasted image exceeds 20 MiB limit"); continue; }
+      if (f.size > 20 * 1024 * 1024) {
+        transientNote("Pasted image exceeds 20 MiB limit");
+        continue;
+      }
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result as string);
@@ -201,15 +255,17 @@
         r.readAsDataURL(f);
       });
       const b64 = dataUrl.split(",")[1] ?? "";
-      $draftState.attachments = [...$draftState.attachments, {
-        name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
-        mimeType: f.type || "image/png",
-        data: b64,
-        isImage: true,
-      }];
+      $draftState.attachments = [
+        ...$draftState.attachments,
+        {
+          name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
+          mimeType: f.type || "image/png",
+          data: b64,
+          isImage: true,
+        },
+      ];
     }
   }
-
 </script>
 
 {#if $statusNote}
@@ -222,9 +278,15 @@
       <div class="pending-chip"><span class="tag">steer</span><span class="ptext">{s}</span></div>
     {/each}
     {#each $queue.followUp as s, i (s + ":" + i)}
-      <div class="pending-chip"><span class="tag">follow-up</span><span class="ptext">{s}</span></div>
+      <div class="pending-chip">
+        <span class="tag">follow-up</span><span class="ptext">{s}</span>
+      </div>
     {/each}
-    <button class="ghost clear-btn" onclick={clearQueue} title="Remove queued messages (they are not sent)">Clear queue</button>
+    <button
+      class="ghost clear-btn"
+      onclick={clearQueue}
+      title="Remove queued messages (they are not sent)">Clear queue</button
+    >
   </div>
 {/if}
 
@@ -273,7 +335,12 @@
   {/if}
 
   <div class="input-row">
-    <button class="ghost add" disabled={$updateInstallLock} onclick={addFiles} title="Attach images or files">
+    <button
+      class="ghost add"
+      disabled={$updateInstallLock}
+      onclick={addFiles}
+      title="Attach images or files"
+    >
       <Paperclip size={18} strokeWidth={2} />
     </button>
     <textarea
@@ -284,9 +351,10 @@
       onpaste={onPaste}
       spellcheck="true"
       disabled={$updateInstallLock}
-      placeholder={$streaming ? "Streaming… press Enter to steer, or wait" : "Message Leftleg…  (Enter to send, Shift+Enter for newline)"}
-      rows="1"
-    ></textarea>
+      placeholder={$streaming
+        ? "Streaming… press Enter to steer, or wait"
+        : "Message Leftleg…  (Enter to send, Shift+Enter for newline)"}
+      rows="1"></textarea>
     {#if $streaming}
       <button class="danger stop" onclick={abort} title="Abort current run">
         <Square size={14} strokeWidth={2} />
@@ -295,7 +363,10 @@
     {:else}
       <button
         class="primary send"
-        disabled={$navigating || $updateInstallLock || (!$draftState.text.trim() && $draftState.attachments.length === 0) || $draftState.sending}
+        disabled={$navigating ||
+          $updateInstallLock ||
+          (!$draftState.text.trim() && $draftState.attachments.length === 0) ||
+          $draftState.sending}
         onclick={doSend}
         title="Send"
       >
@@ -417,8 +488,13 @@
     cursor: pointer;
     font-size: 12.5px;
   }
-  .slash-item.selected { background: var(--bg-surface-2); }
-  .s-name { color: var(--accent); flex-shrink: 0; }
+  .slash-item.selected {
+    background: var(--bg-surface-2);
+  }
+  .s-name {
+    color: var(--accent);
+    flex-shrink: 0;
+  }
   .s-src {
     font-size: 10px;
     color: var(--text-3);
@@ -457,10 +533,26 @@
     object-fit: cover;
     border-radius: 4px;
   }
-  .chip :global(svg) { flex-shrink: 0; color: var(--text-3); }
-  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
-  .rm { padding: 0 4px; font-size: 13px; line-height: 1; border: none; color: var(--text-3); }
-  .rm:hover { color: var(--danger); }
+  .chip :global(svg) {
+    flex-shrink: 0;
+    color: var(--text-3);
+  }
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-2);
+  }
+  .rm {
+    padding: 0 4px;
+    font-size: 13px;
+    line-height: 1;
+    border: none;
+    color: var(--text-3);
+  }
+  .rm:hover {
+    color: var(--danger);
+  }
   .input-row {
     display: flex;
     align-items: flex-end;
@@ -471,7 +563,9 @@
     padding: 8px;
     transition: border-color 0.15s;
   }
-  .input-row:focus-within { border-color: var(--accent); }
+  .input-row:focus-within {
+    border-color: var(--accent);
+  }
   .add {
     padding: 7px;
     display: inline-flex;
@@ -479,7 +573,9 @@
     border-radius: 10px;
     flex-shrink: 0;
   }
-  .add:hover { color: var(--accent); }
+  .add:hover {
+    color: var(--accent);
+  }
   textarea {
     flex: 1;
     background: transparent;
@@ -490,8 +586,11 @@
     line-height: 1.5;
     max-height: 220px;
   }
-  textarea:focus { border: none; }
-  .send, .stop {
+  textarea:focus {
+    border: none;
+  }
+  .send,
+  .stop {
     display: inline-flex;
     align-items: center;
     gap: 6px;

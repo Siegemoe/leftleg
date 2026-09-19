@@ -11,18 +11,18 @@ Use Node 22 (`.nvmrc`) and the Rust toolchain pinned in
 `rust-toolchain.toml`. Install Pi 0.85.1 globally before running the real RPC
 integration test.
 
-| Command | Purpose | Current status |
-| --- | --- | --- |
-| `npm run build:web` | Svelte checks, tests that do not spawn Pi, production web build | Required and green |
-| `npm run test:integration` | Five tests against a real isolated `pi --mode rpc` process | Required and green |
-| `npm run test:rust` | Native unit and integration tests with the lockfile enforced | Required; green locally, one timing-sensitive test failed on the first hosted run |
-| `npm run verify:functional` | Complete local functional gate | Required; green locally |
-| `npm run format:check` | Prettier check for frontend, companion, config, and documentation files | Advisory until baseline cleanup |
-| `npm run lint` | ESLint recommended rules plus typed promise checks at the application TypeScript boundary | Advisory until baseline cleanup |
-| `npm run format:rust:check` | Rustfmt check | Advisory until baseline cleanup |
-| `npm run lint:rust` | Clippy for all targets and features with warnings denied | Advisory until baseline cleanup |
-| `npm run test:coverage` | Vitest V8 coverage report; no arbitrary percentage threshold | Reporting only |
-| `npm run verify` | All frontend and Rust hygiene plus functional checks | Target end state |
+| Command                     | Purpose                                                                                   | Current status                                                                    |
+| --------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `npm run build:web`         | Svelte checks, tests that do not spawn Pi, production web build                           | Required and green                                                                |
+| `npm run test:integration`  | Five tests against a real isolated `pi --mode rpc` process                                | Required and green                                                                |
+| `npm run test:rust`         | Native unit and integration tests with the lockfile enforced                              | Required; green locally, one timing-sensitive test failed on the first hosted run |
+| `npm run verify:functional` | Complete local functional gate                                                            | Required; green locally                                                           |
+| `npm run format:check`      | Prettier check for frontend, companion, config, and documentation files                   | Advisory until baseline cleanup                                                   |
+| `npm run lint`              | ESLint recommended rules plus typed promise checks at the application TypeScript boundary | Advisory until baseline cleanup                                                   |
+| `npm run format:rust:check` | Rustfmt check                                                                             | Advisory until baseline cleanup                                                   |
+| `npm run lint:rust`         | Clippy for all targets and features with warnings denied                                  | Advisory until baseline cleanup                                                   |
+| `npm run test:coverage`     | Vitest V8 coverage report; no arbitrary percentage threshold                              | Reporting only                                                                    |
+| `npm run verify`            | All frontend and Rust hygiene plus functional checks                                      | Target end state                                                                  |
 
 `npm run build` remains the frontend gate required by `AGENTS.md`; it includes
 all 313 tests and therefore needs Pi on `PATH`. The split commands exist so CI
@@ -115,7 +115,7 @@ CodeRabbit reviewed the PR that introduced this pipeline; findings triaged on
   on a structurally-comparing implementation.
 - `src/lib/settings/mgmt.ts`: re-reading `commands`/`companionAvailable()`
   after `await ensureAgentDir()` validates against whatever project is
-  foreground *then* — validate against the captured project's state, or
+  foreground _then_ — validate against the captured project's state, or
   bail out when the foreground changed.
 
 Clean each category in a separate commit. For promise findings, confirm whether
@@ -147,14 +147,14 @@ The initial CodeQL scan on 2026-09-19 completed successfully and opened 105
 findings for the existing default branch. This is a triage queue, not 105
 confirmed vulnerabilities:
 
-| Rule | Severity | Findings |
-| --- | --- | ---: |
-| Rust command-line injection | Critical | 3 |
-| Rust path injection | High | 80 |
-| JavaScript path injection | High | 19 |
-| JavaScript file-system race | High | 1 |
-| JavaScript file access to HTTP | Medium | 1 |
-| JavaScript prototype-pollution utility | Medium | 1 |
+| Rule                                   | Severity | Findings |
+| -------------------------------------- | -------- | -------: |
+| Rust command-line injection            | Critical |        3 |
+| Rust path injection                    | High     |       80 |
+| JavaScript path injection              | High     |       19 |
+| JavaScript file-system race            | High     |        1 |
+| JavaScript file access to HTTP         | Medium   |        1 |
+| JavaScript prototype-pollution utility | Medium   |        1 |
 
 Most findings cluster in `src-tauri/src/sessions.rs` (69),
 `companion/leftleg-settings/index.ts` (18), and `src-tauri/src/pi.rs` (9).

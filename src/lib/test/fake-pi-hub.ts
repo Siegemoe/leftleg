@@ -9,7 +9,12 @@ export const OTHER_PROJECT = "/other";
 /** Default per-project fixtures (session histories for the demo project). */
 function defaultOptionsFor(project: string): Partial<FakePiOptions> {
   if (project === PROJECT_DIR) {
-    return { messagesBySession: { [`${PROJECT_DIR}/sessions/a.jsonl`]: SESSION_A_MESSAGES, [`${PROJECT_DIR}/sessions/b.jsonl`]: SESSION_B_MESSAGES } };
+    return {
+      messagesBySession: {
+        [`${PROJECT_DIR}/sessions/a.jsonl`]: SESSION_A_MESSAGES,
+        [`${PROJECT_DIR}/sessions/b.jsonl`]: SESSION_B_MESSAGES,
+      },
+    };
   }
   return {};
 }
@@ -72,16 +77,26 @@ export class FakePiHub {
     return this.spawnCounts.get(project) ?? 0;
   }
 
-  piRequest = (command: Record<string, unknown>, timeoutSecs?: number, project?: string | null, expectedProc?: number): Promise<unknown> => {
+  piRequest = (
+    command: Record<string, unknown>,
+    timeoutSecs?: number,
+    project?: string | null,
+    expectedProc?: number,
+  ): Promise<unknown> => {
     const key = project ?? this.activeProject;
-    if (expectedProc !== undefined && this.fakes.get(key ?? "")?.pid !== expectedProc) return Promise.reject(new Error("pi process replaced before request dispatch"));
+    if (expectedProc !== undefined && this.fakes.get(key ?? "")?.pid !== expectedProc)
+      return Promise.reject(new Error("pi process replaced before request dispatch"));
     return this.resolve(project).piRequest(command, timeoutSecs);
   };
 
   piSend = (line: Record<string, unknown>, project?: string | null): Promise<void> =>
     this.resolve(project).piSend(line);
 
-  piStart = async (project: string, sessionPath?: string | null, forceRestart?: boolean): Promise<number> => {
+  piStart = async (
+    project: string,
+    sessionPath?: string | null,
+    forceRestart?: boolean,
+  ): Promise<number> => {
     const existing = this.fakes.get(project);
     if (existing && existing.fake.alive && !forceRestart) {
       this.activeProject = project;
@@ -108,7 +123,8 @@ export class FakePiHub {
   piStop = async (project?: string | null): Promise<void> => {
     const key = project ?? this.activeProject;
     const entry = key ? this.fakes.get(key) : undefined;
-    if (!entry || !key) throw new Error(key ? `pi process not running for ${key}` : "no active pi process");
+    if (!entry || !key)
+      throw new Error(key ? `pi process not running for ${key}` : "no active pi process");
     this.fakes.delete(key);
     if (this.activeProject === key) this.activeProject = null;
     await entry.fake.piStop();
@@ -142,7 +158,8 @@ export class FakePiHub {
     }
     return Promise.resolve([...this.sessions, ...extras]);
   };
-  readGuiState = (): Promise<Record<string, unknown>> => Promise.resolve(JSON.parse(JSON.stringify(this.gui)));
+  readGuiState = (): Promise<Record<string, unknown>> =>
+    Promise.resolve(JSON.parse(JSON.stringify(this.gui)));
   writeGuiState = async (state: Record<string, unknown>): Promise<void> => {
     this.gui = JSON.parse(JSON.stringify(state));
   };

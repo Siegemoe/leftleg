@@ -32,7 +32,8 @@ declare module "@earendil-works/pi-coding-agent" {
         toolCallId: string,
         params: unknown,
         signal: AbortSignal | undefined,
-        onUpdate: ((update: { content: Array<{ type: string; text?: string }> }) => void) | undefined,
+        onUpdate:
+          ((update: { content: Array<{ type: string; text?: string }> }) => void) | undefined,
         ctx: ExtensionToolContext,
       ) => Promise<unknown> | unknown;
       [key: string]: unknown;
@@ -44,10 +45,9 @@ declare module "@earendil-works/pi-coding-agent" {
   export interface ExtensionToolContext {
     cwd?: string;
     modelRegistry: {
-      getProviderAuth(provider: string): Promise<
-        | { auth: { apiKey?: string; baseUrl?: string }; source?: string }
-        | undefined
-      >;
+      getProviderAuth(
+        provider: string,
+      ): Promise<{ auth: { apiKey?: string; baseUrl?: string }; source?: string } | undefined>;
     };
     [key: string]: unknown;
   }

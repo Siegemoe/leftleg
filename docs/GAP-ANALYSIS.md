@@ -17,16 +17,16 @@ types.ts) and pi 0.85.1's RPC surface.
 
 ## RPC methods — unused, and what they unlock
 
-| Method | Unlock |
-| --- | --- |
-| `steer` | Dedicated steering call; today steering piggybacks on `prompt` + streamingBehavior. Equivalent outcome, but the dedicated method is the documented path once multi-harness arrives (each harness may not have the piggyback). |
-| `follow_up` | Same story for follow-up mode. |
-| `cycle_model` / `cycle_thinking_level` | One-key model/thinking cycling — cheap keyboard shortcuts (title bar or Ctrl+M/Ctrl+T style). |
-| `get_available_thinking_levels` | Render the real per-model thinking levels instead of the fixed list; feeds the settings card and cycle_thinking_level. |
-| `bash` / `abort_bash` | pi-managed background bash sessions with GUI cards — long-running commands with live output the agent can poll. Distinct from tool-call cards. |
-| `fork` / `get_fork_messages` | Session branching UI: try an alternative path from any point, keep both branches. Biggest missing session-management feature. |
-| `get_entries` / `get_tree` | Entry-tree replay: exact full-history rebuild (GUI today rebuilds from `get_messages` and can lose compacted/entry detail), plus a branch tree view for forked sessions. |
-| `get_last_assistant_text` | Cheap retry/quote affordances (quote-last-answer into the composer). |
+| Method                                 | Unlock                                                                                                                                                                                                                        |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `steer`                                | Dedicated steering call; today steering piggybacks on `prompt` + streamingBehavior. Equivalent outcome, but the dedicated method is the documented path once multi-harness arrives (each harness may not have the piggyback). |
+| `follow_up`                            | Same story for follow-up mode.                                                                                                                                                                                                |
+| `cycle_model` / `cycle_thinking_level` | One-key model/thinking cycling — cheap keyboard shortcuts (title bar or Ctrl+M/Ctrl+T style).                                                                                                                                 |
+| `get_available_thinking_levels`        | Render the real per-model thinking levels instead of the fixed list; feeds the settings card and cycle_thinking_level.                                                                                                        |
+| `bash` / `abort_bash`                  | pi-managed background bash sessions with GUI cards — long-running commands with live output the agent can poll. Distinct from tool-call cards.                                                                                |
+| `fork` / `get_fork_messages`           | Session branching UI: try an alternative path from any point, keep both branches. Biggest missing session-management feature.                                                                                                 |
+| `get_entries` / `get_tree`             | Entry-tree replay: exact full-history rebuild (GUI today rebuilds from `get_messages` and can lose compacted/entry detail), plus a branch tree view for forked sessions.                                                      |
+| `get_last_assistant_text`              | Cheap retry/quote affordances (quote-last-answer into the composer).                                                                                                                                                          |
 
 ## Events — handled
 
@@ -37,11 +37,11 @@ extension_error, notify, set_editor_text, auto_retry_start, auto_retry_end.
 
 ## Events — unhandled (consequences)
 
-| Event | Consequence of not handling |
-| --- | --- |
-| `turn_end` | Turn lifecycle is inferred from message_end/agent_end with a turnStartTs fallback. A turn that ends without either emits (or a harness that only sends turn_end) would leave turn timing/streaming indicators wrong. Wire it as a first-class turn close: clear streaming, close the turn meta line, fire the artifacts refresh. |
-| `bash_execution_update` | pi's native bash tool streams updates on its own event; GUI only renders tool_execution_* cards, so native-bash progress shows at completion granularity (and the BashItem type is barely used). |
-| `summarization_retry_start` / `..._retry_end` | Auto-compaction retry is invisible: the status note shows compaction_start/end, but a retry pass reads as a stall. Cheap: status-note text + session status pill. |
+| Event                                         | Consequence of not handling                                                                                                                                                                                                                                                                                                      |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `turn_end`                                    | Turn lifecycle is inferred from message_end/agent_end with a turnStartTs fallback. A turn that ends without either emits (or a harness that only sends turn_end) would leave turn timing/streaming indicators wrong. Wire it as a first-class turn close: clear streaming, close the turn meta line, fire the artifacts refresh. |
+| `bash_execution_update`                       | pi's native bash tool streams updates on its own event; GUI only renders tool_execution_* cards, so native-bash progress shows at completion granularity (and the BashItem type is barely used).                                                                                                                                 |
+| `summarization_retry_start` / `..._retry_end` | Auto-compaction retry is invisible: the status note shows compaction_start/end, but a retry pass reads as a stall. Cheap: status-note text + session status pill.                                                                                                                                                                |
 
 ## Ranked gaps for the next sweep
 

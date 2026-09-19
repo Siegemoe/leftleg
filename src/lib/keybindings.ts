@@ -5,8 +5,13 @@
 
 /** Every action that can carry a keyboard shortcut. */
 export type ActionId =
-  | "newSession" | "newProject" | "toggleSidebar"
-  | "openArtifacts" | "openStatus" | "openDiff" | "openFiles";
+  | "newSession"
+  | "newProject"
+  | "toggleSidebar"
+  | "openArtifacts"
+  | "openStatus"
+  | "openDiff"
+  | "openFiles";
 
 export interface ActionDef {
   id: ActionId;
@@ -36,9 +41,16 @@ export const DEFAULT_BINDINGS: Record<ActionId, string | null> = Object.fromEntr
 /** Bare modifier toggles and lock keys never form a binding on their own,
  * and IME/dead-key tokens the webview synthesizes never name a real key. */
 const NON_KEY_NAMES = new Set([
-  "Control", "Shift", "Meta", "Alt",
-  "CapsLock", "NumLock", "ScrollLock",
-  "Dead", "Process", "Unidentified",
+  "Control",
+  "Shift",
+  "Meta",
+  "Alt",
+  "CapsLock",
+  "NumLock",
+  "ScrollLock",
+  "Dead",
+  "Process",
+  "Unidentified",
 ]);
 
 /** Canonical key token: single characters uppercase, " " becomes "Space",
@@ -53,18 +65,26 @@ function keyToken(key: string): string {
   return /^f\d{1,2}$/.test(key) ? key.toUpperCase() : key;
 }
 
-interface ParsedBinding { ctrl: boolean; shift: boolean; key: string }
+interface ParsedBinding {
+  ctrl: boolean;
+  shift: boolean;
+  key: string;
+}
 
 /** Tolerant parse of a stored binding. Requires a Ctrl/Cmd modifier (every
  * binding needs one, mirroring the accelerators this registry replaces) and
  * rejects Alt chords. Returns null when the string cannot be a binding. */
 function parseBinding(binding: string): ParsedBinding | null {
-  const parts = binding.split("+").map((p) => p.trim()).filter(Boolean);
+  const parts = binding
+    .split("+")
+    .map((p) => p.trim())
+    .filter(Boolean);
   if (parts.length === 0) return null;
   const out: ParsedBinding = { ctrl: false, shift: false, key: "" };
   for (const part of parts) {
     const lower = part.toLowerCase();
-    if (lower === "ctrl" || lower === "control" || lower === "meta" || lower === "cmd") out.ctrl = true;
+    if (lower === "ctrl" || lower === "control" || lower === "meta" || lower === "cmd")
+      out.ctrl = true;
     else if (lower === "shift") out.shift = true;
     else if (lower === "alt") return null;
     else out.key = keyToken(part);
@@ -99,7 +119,10 @@ export function effectiveBindings(
  * tests can pass plain objects. `code` is optional: when present, Latin-letter
  * bindings also match the physical key so shortcuts survive non-Latin
  * keyboard layouts (where e.key is the local glyph, but e.code stays "KeyN"). */
-export type KeyEventLike = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"> & { code?: string };
+export type KeyEventLike = Pick<
+  KeyboardEvent,
+  "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"
+> & { code?: string };
 
 /** Match a keydown against the effective bindings. Requires Ctrl or Cmd
  * (treated as equivalent — the app is Windows-first but webview Cmd users
@@ -109,11 +132,14 @@ export type KeyEventLike = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "
  * the OS reports e.key as the local glyph; punctuation has no reliable code
  * mapping and keeps matching on e.key alone. Entries that are absent/null/
  * unknown are ignored. Returns the first match in registry order, or null. */
-export function matchKeybinding(e: KeyEventLike, bindings: Partial<Record<ActionId, string | null>>): ActionId | null {
+export function matchKeybinding(
+  e: KeyEventLike,
+  bindings: Partial<Record<ActionId, string | null>>,
+): ActionId | null {
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
   if (!e.key) return null;
   const key = keyToken(e.key).toLowerCase();
-  const codeLetter = e.code ? /^Key([A-Z])$/.exec(e.code)?.[1] ?? null : null;
+  const codeLetter = e.code ? (/^Key([A-Z])$/.exec(e.code)?.[1] ?? null) : null;
   for (const a of ACTIONS) {
     const binding = bindings[a.id];
     if (!binding) continue;

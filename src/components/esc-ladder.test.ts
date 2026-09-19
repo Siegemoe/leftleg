@@ -32,7 +32,9 @@ const mocks = vi.hoisted(() => ({
     gitDiffSummary: vi.fn(),
     repoFiles: vi.fn(),
     fileStats: vi.fn(),
-    readTextFile: vi.fn().mockResolvedValue({ path: "src/a.ts", content: "a\n", loc: 1, size: 2, truncated: false }),
+    readTextFile: vi
+      .fn()
+      .mockResolvedValue({ path: "src/a.ts", content: "a\n", loc: 1, size: 2, truncated: false }),
     createProjectDir: vi.fn(),
   },
 }));
@@ -50,7 +52,12 @@ vi.mock("../lib/settings/mgmt", () => ({
   abortPendingMgmt: () => {},
   pendingManagementCount: () => 0,
   primeAgentDir: () => {},
-  agentDirStore: { subscribe: (fn: (v: string | null) => void) => { fn(null); return () => {}; } },
+  agentDirStore: {
+    subscribe: (fn: (v: string | null) => void) => {
+      fn(null);
+      return () => {};
+    },
+  },
   isCompanionCommand: () => false,
 }));
 
@@ -67,13 +74,21 @@ import ProjectSettingsCard from "./ProjectSettingsCard.svelte";
 import SettingsModal from "./SettingsModal.svelte";
 import ExtDialog from "./ExtDialog.svelte";
 import {
-  aboutOpen, extDialog, fileCardFile, fileCardOpen, newProjectOpen,
-  projectSettingsDir, settingsOpen,
+  aboutOpen,
+  extDialog,
+  fileCardFile,
+  fileCardOpen,
+  newProjectOpen,
+  projectSettingsDir,
+  settingsOpen,
 } from "../lib/stores";
 
 let host: HTMLDivElement;
 const mounted: ReturnType<typeof mount>[] = [];
-const settle = async () => { await new Promise((r) => setTimeout(r, 0)); flushSync(); };
+const settle = async () => {
+  await new Promise((r) => setTimeout(r, 0));
+  flushSync();
+};
 const esc = () => {
   const ev = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
   window.dispatchEvent(ev);
@@ -264,7 +279,9 @@ describe("Esc ladder — exactly one layer closes per keypress", () => {
   it("open File menu over FileCard: the menu closes and the card stands down", () => {
     bootAlways();
     openFileCard();
-    [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "File")!.click();
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "File")!
+      .click();
     flushSync();
     expect(host.querySelector(".dropdown")).not.toBeNull();
 

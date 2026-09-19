@@ -40,7 +40,8 @@ export function buildPromptMessage(text: string, attachments: ComposerAttachment
     for (const f of skipped) parts.push(`(attachment skipped — no content: ${f.name})`);
     for (const f of textFiles) {
       let content = decodeBase64Utf8(f.data);
-      if (content.length > MAX_TEXT_FILE_CHARS) content = content.slice(0, MAX_TEXT_FILE_CHARS) + "\n… (truncated)";
+      if (content.length > MAX_TEXT_FILE_CHARS)
+        content = content.slice(0, MAX_TEXT_FILE_CHARS) + "\n… (truncated)";
       const lang = (f.name.split(".").pop() ?? "").toLowerCase() || "";
       // The wrapper fence must out-run any backtick run inside the file, or
       // an embedded ``` pair would terminate the block early.

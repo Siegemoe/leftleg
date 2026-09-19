@@ -14,19 +14,19 @@ Totals: 46 production alerts, 59 test-or-fixture alerts.
 
 ## Inventory (rule × file × count)
 
-| Rule | Sev | File | Count | Prod / Test |
-|---|---|---|---|---|
-| `rust/path-injection` | high | `src-tauri/src/sessions.rs` | 68 | 21 / 47 |
-| | | `src-tauri/src/pi.rs` | 7 | 1 / 6 |
-| | | `src-tauri/src/lib.rs` | 4 | 4 / 0 |
-| | | `src-tauri/src/pimgr.rs` | 1 | 1 / 0 |
-| `js/path-injection` | high | `companion/leftleg-settings/index.ts` | 18 | 18 / 0 |
-| | | `companion/leftleg-media/index.ts` | 1 | 1 / 0 |
-| `rust/command-line-injection` | critical | `src-tauri/src/pi.rs` | 2 | 0 / 2 |
-| | | `src-tauri/src/sessions.rs` | 1 | 1 / 0 |
-| `js/file-system-race` | high | `companion/leftleg-media/index.ts` | 1 | 1 |
-| `js/file-access-to-http` | medium | `companion/leftleg-media/index.ts` | 1 | 1 |
-| `js/prototype-pollution-utility` | medium | `src/lib/settings/state.ts` | 1 | 1 |
+| Rule                             | Sev      | File                                  | Count | Prod / Test |
+| -------------------------------- | -------- | ------------------------------------- | ----- | ----------- |
+| `rust/path-injection`            | high     | `src-tauri/src/sessions.rs`           | 68    | 21 / 47     |
+|                                  |          | `src-tauri/src/pi.rs`                 | 7     | 1 / 6       |
+|                                  |          | `src-tauri/src/lib.rs`                | 4     | 4 / 0       |
+|                                  |          | `src-tauri/src/pimgr.rs`              | 1     | 1 / 0       |
+| `js/path-injection`              | high     | `companion/leftleg-settings/index.ts` | 18    | 18 / 0      |
+|                                  |          | `companion/leftleg-media/index.ts`    | 1     | 1 / 0       |
+| `rust/command-line-injection`    | critical | `src-tauri/src/pi.rs`                 | 2     | 0 / 2       |
+|                                  |          | `src-tauri/src/sessions.rs`           | 1     | 1 / 0       |
+| `js/file-system-race`            | high     | `companion/leftleg-media/index.ts`    | 1     | 1           |
+| `js/file-access-to-http`         | medium   | `companion/leftleg-media/index.ts`    | 1     | 1           |
+| `js/prototype-pollution-utility` | medium   | `src/lib/settings/state.ts`           | 1     | 1           |
 
 ## The three critical command-line-injection alerts
 
@@ -36,8 +36,8 @@ Totals: 46 production alerts, 59 test-or-fixture alerts.
   (`Command::new("node").args(...)`), no shell.
 - `sessions.rs:635` (`run_git_bytes` → `cmd.arg("-C").arg(dir)`) — **real
   gap, one-line fix.** Not classic shell injection (argv is fixed and Rust
-  escapes argv on Windows), but the value controls *which directory git runs
-  in*, and the taint source is a webview-supplied `project_dir` string:
+  escapes argv on Windows), but the value controls _which directory git runs
+  in_, and the taint source is a webview-supplied `project_dir` string:
   `git_repo_info` passes the renderer string straight through with no
   `project_dir_allowed` gate, unlike its siblings (`git_diff_summary`,
   `repo_files`, `file_stats_batch`, `read_text_file` all validate). Running
@@ -53,7 +53,7 @@ them — each is a missing gate, one line each:
 1. `git_repo_info` — add the gate (closes the real critical above).
 2. `list_artifacts` — add the gate. **Highest-value gap in the set:** it also
    performs the unvalidated `scope.allow_directory(<proj>/.pi/images,
-   recursive)` grant (sessions.rs:601–616), the only production path here
+recursive)` grant (sessions.rs:601–616), the only production path here
    that hands the webview read access to a renderer-chosen directory tree.
 3. `delete_artifact` — add the gate. Its per-file containment is real, but
    the project root is not checked, and delete is strictly more dangerous
@@ -65,15 +65,15 @@ Everything else in the Rust production set already passes through
 
 ## Path-injection classes (Rust production)
 
-| Class | Source | Alerts | Disposition |
-|---|---|---|---|
-| R1: agent-dir env resolution (`PI_CODING_AGENT_DIR`/`HOME`) | user env, not webview-reachable | 6 | dismiss — the "taint" is the user's own env var |
-| R2: GUI-state atomic write (`app_data_dir` + fixed filename) | app-derived only | 4 | dismiss — path fully determined by the app |
-| R3: dialog-picked attachments | user-picked via native dialog (documented intent) | 1 | accept as designed |
-| R4: unvalidated webview `project_dir` | free-typed webview string | 5 | **fix** (gates above) |
-| R5: validated-then-reflowed project dir | validated before every sink | 3 | dismiss with justification |
-| R6: `create_project_dir` parent | dialog-picked normally; free-typed from a compromised webview | 4 | keep accepted risk (documented: dirs-only creation, name validated, no containment on parent) |
-| T1: test-region alerts (53) | in-test temp fixtures | 53 | dismiss — cannot path-exclude (inline `#[cfg(test)]` modules share the file) |
+| Class                                                        | Source                                                        | Alerts | Disposition                                                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
+| R1: agent-dir env resolution (`PI_CODING_AGENT_DIR`/`HOME`)  | user env, not webview-reachable                               | 6      | dismiss — the "taint" is the user's own env var                                               |
+| R2: GUI-state atomic write (`app_data_dir` + fixed filename) | app-derived only                                              | 4      | dismiss — path fully determined by the app                                                    |
+| R3: dialog-picked attachments                                | user-picked via native dialog (documented intent)             | 1      | accept as designed                                                                            |
+| R4: unvalidated webview `project_dir`                        | free-typed webview string                                     | 5      | **fix** (gates above)                                                                         |
+| R5: validated-then-reflowed project dir                      | validated before every sink                                   | 3      | dismiss with justification                                                                    |
+| R6: `create_project_dir` parent                              | dialog-picked normally; free-typed from a compromised webview | 4      | keep accepted risk (documented: dirs-only creation, name validated, no containment on parent) |
+| T1: test-region alerts (53)                                  | in-test temp fixtures                                         | 53     | dismiss — cannot path-exclude (inline `#[cfg(test)]` modules share the file)                  |
 
 ## Path-injection classes (JS, 19 alerts)
 
@@ -83,7 +83,7 @@ Everything else in the Rust production set already passes through
   as the justification. Sources are env/homedir-derived agent dir and the
   user-picked project dir, not the webview request.
 - **J2 (1): media config read** — `readFileSync(join(agentDir, "extensions",
-  "leftleg-media", "config.json"))` from env; same rationale as R1. Dismiss.
+"leftleg-media", "config.json"))` from env; same rationale as R1. Dismiss.
 
 ## The three non-path alerts
 

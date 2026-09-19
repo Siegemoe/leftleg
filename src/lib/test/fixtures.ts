@@ -83,12 +83,28 @@ export const RECORDED_RUN: PiEvent[] = [
   { type: "agent_start" },
   { type: "message_start", message: { role: "assistant" } },
   { type: "message_update", assistantMessageEvent: { type: "thinking_start", contentIndex: 0 } },
-  { type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "Need to inspect first." } },
+  {
+    type: "message_update",
+    assistantMessageEvent: {
+      type: "thinking_delta",
+      contentIndex: 0,
+      delta: "Need to inspect first.",
+    },
+  },
   { type: "message_update", assistantMessageEvent: { type: "thinking_end", contentIndex: 0 } },
   { type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 1 } },
-  { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "Editing " } },
-  { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "stores.ts…" } },
-  { type: "message_update", assistantMessageEvent: { type: "text_end", contentIndex: 1, content: "Editing stores.ts…" } },
+  {
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "Editing " },
+  },
+  {
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "stores.ts…" },
+  },
+  {
+    type: "message_update",
+    assistantMessageEvent: { type: "text_end", contentIndex: 1, content: "Editing stores.ts…" },
+  },
   {
     type: "message_update",
     assistantMessageEvent: { type: "toolcall_start", id: "call-2", toolName: "edit" },
@@ -130,7 +146,12 @@ export const RECORDED_RUN: PiEvent[] = [
       content: [
         { type: "thinking", thinking: "Need to inspect first." },
         { type: "text", text: "Editing stores.ts…" },
-        { type: "toolCall", id: "call-2", name: "edit", arguments: { path: "src/stores.ts", changes: 1 } },
+        {
+          type: "toolCall",
+          id: "call-2",
+          name: "edit",
+          arguments: { path: "src/stores.ts", changes: 1 },
+        },
       ],
       stopReason: "toolUse",
       usage: { input: 200, output: 80, cacheRead: 10, cacheWrite: 0, totalTokens: 290 },
@@ -162,11 +183,41 @@ export const RECORDED_ERROR_RUN: PiEvent[] = [
  * setWidget, setTitle, set_editor_text) plus one interactive select dialog.
  */
 export const RECORDED_EXTENSION_EVENTS: PiEvent[] = [
-  { type: "extension_ui_request", id: "n1", method: "notify", message: "Command blocked by user", notifyType: "warning" } as never,
-  { type: "extension_ui_request", id: "n2", method: "notify", message: "Deployment finished", notifyType: "info" } as never,
-  { type: "extension_ui_request", id: "n3", method: "notify", message: "Provider auth expired", notifyType: "error" } as never,
-  { type: "extension_ui_request", id: "s1", method: "setStatus", statusKey: "review", statusText: "Turn 3 running..." } as never,
-  { type: "extension_ui_request", id: "s2", method: "setStatus", statusKey: "draft", statusText: "stale" } as never,
+  {
+    type: "extension_ui_request",
+    id: "n1",
+    method: "notify",
+    message: "Command blocked by user",
+    notifyType: "warning",
+  } as never,
+  {
+    type: "extension_ui_request",
+    id: "n2",
+    method: "notify",
+    message: "Deployment finished",
+    notifyType: "info",
+  } as never,
+  {
+    type: "extension_ui_request",
+    id: "n3",
+    method: "notify",
+    message: "Provider auth expired",
+    notifyType: "error",
+  } as never,
+  {
+    type: "extension_ui_request",
+    id: "s1",
+    method: "setStatus",
+    statusKey: "review",
+    statusText: "Turn 3 running...",
+  } as never,
+  {
+    type: "extension_ui_request",
+    id: "s2",
+    method: "setStatus",
+    statusKey: "draft",
+    statusText: "stale",
+  } as never,
   { type: "extension_ui_request", id: "s3", method: "setStatus", statusKey: "draft" } as never, // clears "draft"
   {
     type: "extension_ui_request",
@@ -191,7 +242,12 @@ export const RECORDED_EXTENSION_EVENTS: PiEvent[] = [
     widgetKey: "timer",
   } as never, // clears "timer"
   { type: "extension_ui_request", id: "t1", method: "setTitle", title: "pi - demo" } as never,
-  { type: "extension_ui_request", id: "e9", method: "set_editor_text", text: "Continue with step 2" } as never,
+  {
+    type: "extension_ui_request",
+    id: "e9",
+    method: "set_editor_text",
+    text: "Continue with step 2",
+  } as never,
   {
     type: "extension_ui_request",
     id: "d1",

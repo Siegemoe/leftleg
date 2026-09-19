@@ -43,6 +43,7 @@ The manual process below is recovery guidance when GitHub Actions is unavailable
    version) and requires the tag to be exactly `v<version>`.
 2. **Build signed artifacts** (new shell so the env var applies; `setx` only
    affects future shells):
+
    ```powershell
    $env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\leftleg.key"
    npm.cmd run tauri build     # npm.cmd avoids the Windows PowerShell 5.1 .ps1 execution-policy block
@@ -55,6 +56,7 @@ The manual process below is recovery guidance when GitHub Actions is unavailable
    tell-tale is a finished `Leftleg_<V>_x64-setup.exe` with **no** `.sig`
    beside it — an unsigned build cannot serve updates. In an interactive or
    PTY session, press Enter at the prompt and signing completes.
+
 3. **Artifacts** (in `src-tauri/target/release/bundle/nsis/`):
    - `Leftleg_<V>_x64-setup.exe`
    - `Leftleg_<V>_x64-setup.exe.sig` ← proof the signing env var was set. If
@@ -65,7 +67,7 @@ The manual process below is recovery guidance when GitHub Actions is unavailable
    `signature`. See the file from the last release as the working example.
 5. **Publish**: push the repo, create a GitHub release tagged `v<V>`, and attach
    exactly three files: the setup `.exe`, its `.sig`, and `latest.json`.
-6. **Verify from an older install**: the banner only appears when the *installed*
+6. **Verify from an older install**: the banner only appears when the _installed_
    version is lower than `latest.json`'s version — same-version installs are
    told "up to date" (see Settings → Updates for the check result either way).
 

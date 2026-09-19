@@ -47,8 +47,13 @@
   } = $props();
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter") { e.preventDefault(); onrenamecommit(); }
-    else if (e.key === "Escape") { e.preventDefault(); onrenamecancel(); }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onrenamecommit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onrenamecancel();
+    }
   }
 
   /** Focus action (replaces the autofocus attribute; avoids the a11y warning). */
@@ -63,15 +68,23 @@
   class:dragging
   class:drop-target={dropTarget}
   draggable={!renaming}
-  ondragstart={ondragstart}
-  ondragend={ondragend}
+  {ondragstart}
+  {ondragend}
   ondragover={(e) => e.preventDefault()}
-  ondrop={(e) => { e.preventDefault(); ondroprow(); }}
+  ondrop={(e) => {
+    e.preventDefault();
+    ondroprow();
+  }}
   role="button"
   tabindex="0"
   onclick={() => onopen()}
-  onkeydown={(e) => { if (e.key === "Enter" && !renaming) onopen(); }}
-  oncontextmenu={(e) => { e.preventDefault(); onmenu(e); }}
+  onkeydown={(e) => {
+    if (e.key === "Enter" && !renaming) onopen();
+  }}
+  oncontextmenu={(e) => {
+    e.preventDefault();
+    onmenu(e);
+  }}
 >
   <span class="row-top">
     {#if pill}
@@ -108,11 +121,21 @@
       class="ghost act pin"
       class:pinned={session.pinned}
       title={session.pinned ? "Unpin" : "Pin"}
-      onclick={(e) => { e.stopPropagation(); onpintoggle(); }}
+      onclick={(e) => {
+        e.stopPropagation();
+        onpintoggle();
+      }}
     >
       <Pin size={12} strokeWidth={2} />
     </button>
-    <button class="ghost act" title="More actions" onclick={(e) => { e.stopPropagation(); onmenu(e); }}>
+    <button
+      class="ghost act"
+      title="More actions"
+      onclick={(e) => {
+        e.stopPropagation();
+        onmenu(e);
+      }}
+    >
       <Ellipsis size={12} strokeWidth={2} />
     </button>
   </span>
@@ -129,11 +152,22 @@
     border: 1px solid transparent;
     user-select: none;
   }
-  .row:hover { background: var(--bg-surface-2); }
-  .row:hover .act { opacity: 1; }
-  .row.active { background: var(--bg-surface-2); border-color: var(--border); }
-  .row.dragging { opacity: 0.45; }
-  .row.drop-target { border-color: var(--accent); }
+  .row:hover {
+    background: var(--bg-surface-2);
+  }
+  .row:hover .act {
+    opacity: 1;
+  }
+  .row.active {
+    background: var(--bg-surface-2);
+    border-color: var(--border);
+  }
+  .row.dragging {
+    opacity: 0.45;
+  }
+  .row.drop-target {
+    border-color: var(--accent);
+  }
   .row-top {
     display: flex;
     align-items: center;
@@ -148,12 +182,30 @@
     background: var(--text-3);
     opacity: 0.5;
   }
-  .pill-dot.working { background: var(--accent); opacity: 1; }
-  .pill-dot.working.pulse { animation: pulse 1.2s infinite; }
-  .pill-dot.needs-attention { background: orange; opacity: 1; }
-  .pill-dot.failed { background: var(--danger); opacity: 1; }
-  .pill-dot.completed { background: var(--ok); opacity: 1; }
-  @keyframes pulse { 50% { opacity: 0.3; } }
+  .pill-dot.working {
+    background: var(--accent);
+    opacity: 1;
+  }
+  .pill-dot.working.pulse {
+    animation: pulse 1.2s infinite;
+  }
+  .pill-dot.needs-attention {
+    background: orange;
+    opacity: 1;
+  }
+  .pill-dot.failed {
+    background: var(--danger);
+    opacity: 1;
+  }
+  .pill-dot.completed {
+    background: var(--ok);
+    opacity: 1;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.3;
+    }
+  }
   .s-title {
     flex: 1;
     font-size: 12.5px;
@@ -162,7 +214,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .row.active .s-title { color: var(--text); }
+  .row.active .s-title {
+    color: var(--text);
+  }
   .rename {
     flex: 1;
     min-width: 0;
@@ -191,10 +245,18 @@
     border-radius: 99px;
     padding: 0 6px;
   }
-  .pill-label { letter-spacing: 0.2px; }
-  .pill-label.needs-attention { color: orange; }
-  .pill-label.failed { color: var(--danger); }
-  .pill-label.completed { color: var(--ok); }
+  .pill-label {
+    letter-spacing: 0.2px;
+  }
+  .pill-label.needs-attention {
+    color: orange;
+  }
+  .pill-label.failed {
+    color: var(--danger);
+  }
+  .pill-label.completed {
+    color: var(--ok);
+  }
   /* Per-row "working" cue (moved from the status bar): muted label only —
      the row-top pill-dot already pulses, so the chip stays text. */
   .working-chip {
@@ -203,14 +265,23 @@
     color: var(--text-3);
     letter-spacing: 0.2px;
   }
-  .spacer { flex: 1; }
+  .spacer {
+    flex: 1;
+  }
   .act {
     opacity: 0;
     padding: 2px;
     color: var(--text-3);
     display: inline-flex;
   }
-  .act:hover { color: var(--text); }
-  .act.pin.pinned { opacity: 1; color: var(--accent); }
-  .act.pin.pinned :global(svg) { fill: currentColor; }
+  .act:hover {
+    color: var(--text);
+  }
+  .act.pin.pinned {
+    opacity: 1;
+    color: var(--accent);
+  }
+  .act.pin.pinned :global(svg) {
+    fill: currentColor;
+  }
 </style>

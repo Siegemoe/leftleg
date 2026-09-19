@@ -1,11 +1,27 @@
 import { writable, readable, get, type Writable } from "svelte/store";
 import type {
-  AgentMessage, PiEvent, RpcState, SessionInfo, SessionStats, UiItem,
-  ToolItem, AssistantItem, Block, ModelInfo, ThinkingLevel, ExtCommand, UserItem,
+  AgentMessage,
+  PiEvent,
+  RpcState,
+  SessionInfo,
+  SessionStats,
+  UiItem,
+  ToolItem,
+  AssistantItem,
+  Block,
+  ModelInfo,
+  ThinkingLevel,
+  ExtCommand,
+  UserItem,
 } from "./types";
 import * as api from "./api";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
-import { handleMgmtNotify, abortPendingMgmt, pendingManagementCount, primeAgentDir } from "./settings/mgmt";
+import {
+  handleMgmtNotify,
+  abortPendingMgmt,
+  pendingManagementCount,
+  primeAgentDir,
+} from "./settings/mgmt";
 import { composerDraftBlockers, pruneEmptyComposerDrafts } from "./composer-drafts";
 import { ACTION_IDS, type ActionId } from "./keybindings";
 
@@ -27,7 +43,8 @@ export const settingsOpen = writable<boolean>(false);
  * state, so the Esc ladder's lower layers (FileCard) can stand down for it. */
 export const aboutOpen = writable<boolean>(false);
 /** Right panel (Status / Artifacts / placeholder docks beside the chat). */
-export type RightPanelTab = "status" | "subagents" | "artifacts" | "diff" | "browser" | "terminal" | "files";
+export type RightPanelTab =
+  "status" | "subagents" | "artifacts" | "diff" | "browser" | "terminal" | "files";
 export const rightPanelOpen = writable<boolean>(false);
 export const rightPanelTab = writable<RightPanelTab>("status");
 export const rightPanelWidth = writable<number>(420);
@@ -74,7 +91,12 @@ export function setKeybinding(action: ActionId, binding: string | null): void {
  * with new content rather than stacking windows. Its rect persists in gui
  * state (screen coordinates are window-relative CSS px, clamped by the
  * component on open) so the card reopens where the user left it. */
-export interface FileCardRect { x: number; y: number; w: number; h: number }
+export interface FileCardRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 export const fileCardOpen = writable<boolean>(false);
 export const fileCardFile = writable<{ projectDir: string; path: string } | null>(null);
 export const fileCardRect = writable<FileCardRect>({ x: 120, y: 80, w: 720, h: 540 });
@@ -132,7 +154,10 @@ export const items = writable<UiItem[]>([]);
  * published by Chat) — powers the prompt rail's active tick. */
 export const activePromptId = writable<string | null>(null);
 export const streaming = writable<boolean>(false);
-export const queue = writable<{ steering: string[]; followUp: string[] }>({ steering: [], followUp: [] });
+export const queue = writable<{ steering: string[]; followUp: string[] }>({
+  steering: [],
+  followUp: [],
+});
 export const sessions = writable<SessionInfo[]>([]);
 export const models = writable<ModelInfo[]>([]);
 export const stats = writable<SessionStats | null>(null);
@@ -296,7 +321,10 @@ export const composerDraft = writable<{ text: string; nonce: number } | null>(nu
 let notifSeq = 0;
 const NOTIFY_TTL_MS: Record<string, number> = { info: 6000, warning: 12000, error: 0 }; // 0 = sticky
 
-export function pushNotification(notifyType: "info" | "warning" | "error" | undefined, message: string): string {
+export function pushNotification(
+  notifyType: "info" | "warning" | "error" | undefined,
+  message: string,
+): string {
   const type = notifyType ?? "info";
   const id = `ntf-${++notifSeq}`;
   notifications.update((a) => [...a.slice(-4), { id, notifyType: type, message }]);
@@ -336,7 +364,15 @@ export const extDialog: Writable<ExtDialogData | null> = writable(null);
 // Keeping their reducers alive avoids losing partial messages and extension
 // questions while a project is in the background. Nothing here is persisted.
 const mainSurface = {
-  items, streaming, queue, extStatuses, extWidgets, extDialog, composerDraft, activeSessionPath, statusNote,
+  items,
+  streaming,
+  queue,
+  extStatuses,
+  extWidgets,
+  extDialog,
+  composerDraft,
+  activeSessionPath,
+  statusNote,
   assistant: null as AssistantItem | null,
   dialogs: [] as ExtDialogData[],
   /** GUI-measured turn start (turn_start timestamp); cleared when the turn settles. */
@@ -363,8 +399,10 @@ export function collectUpdateInstallBlockers(opts: { ignoreNavigating?: boolean 
     if (get(surface.streaming)) blockers.push(`${label} has an active agent turn`);
     const queued = get(surface.queue);
     const queuedCount = queued.steering.length + queued.followUp.length;
-    if (queuedCount > 0) blockers.push(`${label} has ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}`);
-    if (surface.dialogs.length > 0 || get(surface.extDialog)) blockers.push(`${label} has an unanswered extension question`);
+    if (queuedCount > 0)
+      blockers.push(`${label} has ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}`);
+    if (surface.dialogs.length > 0 || get(surface.extDialog))
+      blockers.push(`${label} has an unanswered extension question`);
     if (get(surface.items).some((item) => item.kind === "user" && item.status === "sending")) {
       blockers.push(`${label} has a prompt still being delivered`);
     }
@@ -377,41 +415,67 @@ export function collectUpdateInstallBlockers(opts: { ignoreNavigating?: boolean 
   for (const draft of composerDraftBlockers()) {
     if (draft.sending) blockers.push(`${draft.key} has a prompt still being submitted`);
     else {
-      const parts = [draft.text ? "unsent text" : "", draft.attachments ? `${draft.attachments} attachment${draft.attachments === 1 ? "" : "s"}` : ""].filter(Boolean);
+      const parts = [
+        draft.text ? "unsent text" : "",
+        draft.attachments
+          ? `${draft.attachments} attachment${draft.attachments === 1 ? "" : "s"}`
+          : "",
+      ].filter(Boolean);
       blockers.push(`${draft.key} has ${parts.join(" and ")}`);
     }
   }
-  if (!opts.ignoreNavigating && get(navigating)) blockers.push("a project or session is still opening");
+  if (!opts.ignoreNavigating && get(navigating))
+    blockers.push("a project or session is still opening");
   const management = pendingManagementCount();
-  if (management > 0) blockers.push(`${management} settings operation${management === 1 ? " is" : "s are"} still pending`);
+  if (management > 0)
+    blockers.push(
+      `${management} settings operation${management === 1 ? " is" : "s are"} still pending`,
+    );
   const guiWrites = api.pendingGuiWriteCount();
-  if (guiWrites > 0) blockers.push(`${guiWrites} GUI preference write${guiWrites === 1 ? " is" : "s are"} still pending`);
+  if (guiWrites > 0)
+    blockers.push(
+      `${guiWrites} GUI preference write${guiWrites === 1 ? " is" : "s are"} still pending`,
+    );
   return [...new Set(blockers)];
 }
 
 function blankSurface(): RenderSurface {
-  return { items: writable<UiItem[]>([]), streaming: writable(false),
+  return {
+    items: writable<UiItem[]>([]),
+    streaming: writable(false),
     queue: writable({ steering: [] as string[], followUp: [] as string[] }),
-    extStatuses: writable({}), extWidgets: writable({}), extDialog: writable(null),
-    composerDraft: writable(null), activeSessionPath: writable(null), statusNote: writable(""), assistant: null, dialogs: [], turnStartTs: null };
+    extStatuses: writable({}),
+    extWidgets: writable({}),
+    extDialog: writable(null),
+    composerDraft: writable(null),
+    activeSessionPath: writable(null),
+    statusNote: writable(""),
+    assistant: null,
+    dialogs: [],
+    turnStartTs: null,
+  };
 }
 function saveSurface() {
-  const dir = get(projectDir), proc = get(lastProcByProject)[dir];
+  const dir = get(projectDir),
+    proc = get(lastProcByProject)[dir];
   if (!dir || proc === undefined) return;
-  backgroundSurfaces.set(dir, { proc, surface: {
-    items: writable(get(items)),
-    streaming: writable(get(streaming)),
-    queue: writable(get(queue)),
-    extStatuses: writable(get(extStatuses)),
-    extWidgets: writable(get(extWidgets)),
-    extDialog: writable(get(extDialog)),
-    composerDraft: writable(get(composerDraft)),
-    activeSessionPath: writable(get(activeSessionPath)),
-    statusNote: writable(get(statusNote)),
-    assistant: mainSurface.assistant,
-    dialogs: mainSurface.dialogs,
-    turnStartTs: mainSurface.turnStartTs,
-  } });
+  backgroundSurfaces.set(dir, {
+    proc,
+    surface: {
+      items: writable(get(items)),
+      streaming: writable(get(streaming)),
+      queue: writable(get(queue)),
+      extStatuses: writable(get(extStatuses)),
+      extWidgets: writable(get(extWidgets)),
+      extDialog: writable(get(extDialog)),
+      composerDraft: writable(get(composerDraft)),
+      activeSessionPath: writable(get(activeSessionPath)),
+      statusNote: writable(get(statusNote)),
+      assistant: mainSurface.assistant,
+      dialogs: mainSurface.dialogs,
+      turnStartTs: mainSurface.turnStartTs,
+    },
+  });
 }
 function surfaceFor(dir: string, proc: number): RenderSurface {
   const cached = backgroundSurfaces.get(dir);
@@ -448,14 +512,19 @@ function removeDialog(owner: { project?: string; proc?: number }, id: string) {
 
 // ---------- helpers ----------
 
-function toolResultText(result: { content?: Array<{ type: string; text?: string }> } | undefined): { text: string; truncated: boolean; diff?: string } {
+function toolResultText(result: { content?: Array<{ type: string; text?: string }> } | undefined): {
+  text: string;
+  truncated: boolean;
+  diff?: string;
+} {
   if (!result?.content) return { text: "", truncated: false };
   const full = result.content
     .filter((c) => c.type === "text")
     .map((c) => c.text ?? "")
     .join("\n");
-  const diff = (result as { details?: { diff?: string; patch?: string } }).details?.diff
-    ?? (result as { details?: { patch?: string } }).details?.patch;
+  const diff =
+    (result as { details?: { diff?: string; patch?: string } }).details?.diff ??
+    (result as { details?: { patch?: string } }).details?.patch;
   const truncated = full.length > 6000;
   return { text: truncated ? full.slice(0, 6000) : full, truncated, diff };
 }
@@ -463,7 +532,10 @@ function toolResultText(result: { content?: Array<{ type: string; text?: string 
 function contentText(content: string | Array<{ type: string; text?: string }> | undefined): string {
   if (!content) return "";
   if (typeof content === "string") return content;
-  return content.filter((c) => c.type === "text").map((c) => (c as { text?: string }).text ?? "").join("");
+  return content
+    .filter((c) => c.type === "text")
+    .map((c) => (c as { text?: string }).text ?? "")
+    .join("");
 }
 
 // Base64 data URLs above this size are rendered as file chips instead of <img>.
@@ -478,9 +550,14 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
   for (const m of messages) {
     if (m.role === "user") {
       const contentImages = Array.isArray(m.content)
-        ? m.content.filter((c) => c.type === "image").map((c) => ({
-          type: "image", content: c.data, mimeType: c.mimeType, fileName: "image",
-        }))
+        ? m.content
+            .filter((c) => c.type === "image")
+            .map((c) => ({
+              type: "image",
+              content: c.data,
+              mimeType: c.mimeType,
+              fileName: "image",
+            }))
         : [];
       const images = [...contentImages, ...(m.attachments ?? [])]
         .filter((a) => a.type === "image" && a.content)
@@ -488,26 +565,52 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
           const data = a.content ?? "";
           if (data.length > MAX_INLINE_IMAGE_BASE64) {
             // too big to inline: show a chip with the payload stripped
-            return { name: `${a.fileName ?? "image"} (${Math.round(data.length * 0.75 / 1e6)} MB — too large to preview)`, dataUrl: "" };
+            return {
+              name: `${a.fileName ?? "image"} (${Math.round((data.length * 0.75) / 1e6)} MB — too large to preview)`,
+              dataUrl: "",
+            };
           }
-          return { name: a.fileName ?? "image", dataUrl: `data:${a.mimeType ?? "image/png"};base64,${data}` };
+          return {
+            name: a.fileName ?? "image",
+            dataUrl: `data:${a.mimeType ?? "image/png"};base64,${data}`,
+          };
         });
-      out.push({ kind: "user", id: newId(), text: contentText(m.content as never), images, timestamp: m.timestamp });
+      out.push({
+        kind: "user",
+        id: newId(),
+        text: contentText(m.content as never),
+        images,
+        timestamp: m.timestamp,
+      });
     } else if (m.role === "assistant") {
       const blocks: Block[] = [];
       const content = m.content ?? [];
       const arr = Array.isArray(content) ? content : [{ type: "text", text: content as string }];
       for (const c of arr) {
-        if (c.type === "text") blocks.push({ type: "text", text: (c as { text?: string }).text ?? "", done: true });
-        else if (c.type === "thinking") blocks.push({ type: "thinking", text: (c as { thinking?: string }).thinking ?? "", done: true });
+        if (c.type === "text")
+          blocks.push({ type: "text", text: (c as { text?: string }).text ?? "", done: true });
+        else if (c.type === "thinking")
+          blocks.push({
+            type: "thinking",
+            text: (c as { thinking?: string }).thinking ?? "",
+            done: true,
+          });
         else if (c.type === "toolCall") {
           const tc = c as { id: string; name: string; arguments: Record<string, unknown> };
-          blocks.push({ type: "toolcall", toolCallId: tc.id, name: tc.name, args: JSON.stringify(tc.arguments ?? {}, null, 2) });
+          blocks.push({
+            type: "toolcall",
+            toolCallId: tc.id,
+            name: tc.name,
+            args: JSON.stringify(tc.arguments ?? {}, null, 2),
+          });
         }
       }
       const item: AssistantItem = {
-        kind: "assistant", id: newId(), blocks,
-        usage: m.usage, stopReason: m.stopReason,
+        kind: "assistant",
+        id: newId(),
+        blocks,
+        usage: m.usage,
+        stopReason: m.stopReason,
         errorMessage: m.stopReason === "error" ? m.errorMessage : undefined,
         streaming: false,
         timestamp: m.timestamp,
@@ -518,9 +621,15 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         if (c.type === "toolCall") {
           const tc = c as { id: string; name: string; arguments: Record<string, unknown> };
           const tool: ToolItem = {
-            kind: "tool", id: newId(), toolCallId: tc.id, name: tc.name,
+            kind: "tool",
+            id: newId(),
+            toolCallId: tc.id,
+            name: tc.name,
             args: JSON.stringify(tc.arguments ?? {}, null, 2),
-            status: "running", output: "", outputTruncated: false, isError: false,
+            status: "running",
+            output: "",
+            outputTruncated: false,
+            isError: false,
             startedAt: m.timestamp,
           };
           toolIndex.set(tc.id, tool);
@@ -540,14 +649,20 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
         existing.timestamp = m.timestamp;
         // History has no live start event — derive execution time from the
         // call-issuance → result-recorded message timestamps.
-        if (existing.startedAt !== undefined && m.timestamp !== undefined && m.timestamp >= existing.startedAt) {
+        if (
+          existing.startedAt !== undefined &&
+          m.timestamp !== undefined &&
+          m.timestamp >= existing.startedAt
+        ) {
           existing.endedAt = m.timestamp;
           existing.durationMs = m.timestamp - existing.startedAt;
         }
       }
     } else if (m.role === "bashExecution") {
       out.push({
-        kind: "bash", id: newId(), command: (m as { command?: string }).command ?? "",
+        kind: "bash",
+        id: newId(),
+        command: (m as { command?: string }).command ?? "",
         output: (m as { output?: string }).output ?? "",
         exitCode: (m as { exitCode?: number }).exitCode ?? 0,
         isError: ((m as { exitCode?: number }).exitCode ?? 0) !== 0,
@@ -568,8 +683,6 @@ export function rebuildFromMessages(messages: AgentMessage[]) {
 
 // ---------- event handling ----------
 
-
-
 function currentTextBlock(item: AssistantItem, contentIndex: number | undefined): Block | null {
   if (contentIndex === undefined) return null;
   return item.blocks[contentIndex] ?? null;
@@ -587,7 +700,8 @@ function finalizeStreaming(surface = mainSurface) {
   // Stamp the total turn duration on the last assistant item before closing out.
   if (surface.turnStartTs !== null) {
     const a = surface.items;
-    const lastAssistant = [...get(a)].reverse().find((x) => x.kind === "assistant") as AssistantItem | undefined;
+    const lastAssistant = [...get(a)].reverse().find((x) => x.kind === "assistant") as
+      AssistantItem | undefined;
     if (lastAssistant) {
       lastAssistant.turnDurationMs = Math.max(0, Date.now() - surface.turnStartTs);
       changed = true;
@@ -628,11 +742,23 @@ function errorText(e: unknown): string {
 }
 
 export async function handleEvent(evt: PiEvent, origin?: { project: string; proc: number }) {
-  const owner = origin ?? { project: get(projectDir), proc: get(lastProcByProject)[get(projectDir)] };
+  const owner = origin ?? {
+    project: get(projectDir),
+    proc: get(lastProcByProject)[get(projectDir)],
+  };
   if (origin) {
     const known = get(lastProcByProject)[origin.project];
-    if (known !== undefined && known !== origin.proc || deadProcesses.get(origin.project) === origin.proc) return;
-    if (evt.type === "extension_ui_request" && evt.method === "notify" && handleMgmtNotify(String(evt.message ?? ""), origin)) return;
+    if (
+      (known !== undefined && known !== origin.proc) ||
+      deadProcesses.get(origin.project) === origin.proc
+    )
+      return;
+    if (
+      evt.type === "extension_ui_request" &&
+      evt.method === "notify" &&
+      handleMgmtNotify(String(evt.message ?? ""), origin)
+    )
+      return;
     if (origin.project !== get(projectDir)) {
       renderEvent(evt, surfaceFor(origin.project, origin.proc), false, owner);
       return;
@@ -641,9 +767,25 @@ export async function handleEvent(evt: PiEvent, origin?: { project: string; proc
   renderEvent(evt, mainSurface, true, owner);
 }
 
-function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, owner: { project: string; proc?: number }) {
-  const { items, streaming, queue, extStatuses, extWidgets, extDialog, composerDraft, activeSessionPath, statusNote } = surface;
-  if (foreground && (evt.type.startsWith("message_") || evt.type.startsWith("tool_execution_"))) transcriptRevision++;
+function renderEvent(
+  evt: PiEvent,
+  surface: RenderSurface,
+  foreground: boolean,
+  owner: { project: string; proc?: number },
+) {
+  const {
+    items,
+    streaming,
+    queue,
+    extStatuses,
+    extWidgets,
+    extDialog,
+    composerDraft,
+    activeSessionPath,
+    statusNote,
+  } = surface;
+  if (foreground && (evt.type.startsWith("message_") || evt.type.startsWith("tool_execution_")))
+    transcriptRevision++;
   if (foreground && evt.type.startsWith("agent_")) activityRevision++;
   switch (evt.type) {
     case "agent_start":
@@ -655,12 +797,19 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     case "agent_end":
     case "agent_settled": {
       awaitingAgentStart.delete(owner.project);
-      const continuing = evt.type === "agent_end" && (evt.willRetry === true || get(queue).steering.length + get(queue).followUp.length > 0);
+      const continuing =
+        evt.type === "agent_end" &&
+        (evt.willRetry === true || get(queue).steering.length + get(queue).followUp.length > 0);
       streaming.set(continuing);
       // Don't clobber an "attention" mark (e.g. an errored response that just
       // ended) — the user still needs to see it until the next action.
       const cur = get(sessionStates)[get(activeSessionPath) ?? ""];
-      if (cur?.status !== "attention") setSessionStatus(get(activeSessionPath), continuing ? "active" : "idle", continuing ? "continuing" : "");
+      if (cur?.status !== "attention")
+        setSessionStatus(
+          get(activeSessionPath),
+          continuing ? "active" : "idle",
+          continuing ? "continuing" : "",
+        );
       finalizeStreaming(surface);
       if (evt.type === "agent_settled") void refreshSessions();
       if (foreground && evt.type === "agent_settled" && historyNeedsRefresh) void reloadMessages();
@@ -669,7 +818,13 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     case "message_start": {
       const m = typeof evt.message === "object" ? evt.message : undefined;
       if (m?.role === "assistant") {
-        const item: AssistantItem = { kind: "assistant", id: newId(), blocks: [], streaming: true, timestamp: Date.now() };
+        const item: AssistantItem = {
+          kind: "assistant",
+          id: newId(),
+          blocks: [],
+          streaming: true,
+          timestamp: Date.now(),
+        };
         surface.assistant = item;
         items.update((a) => [...a, item]);
       }
@@ -677,7 +832,8 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     }
     case "turn_start": {
       // pi's authoritative turn boundary; fall back to our own clock.
-      surface.turnStartTs = typeof evt.timestamp === "number" ? evt.timestamp : (surface.turnStartTs ?? Date.now());
+      surface.turnStartTs =
+        typeof evt.timestamp === "number" ? evt.timestamp : (surface.turnStartTs ?? Date.now());
       break;
     }
     case "message_update": {
@@ -693,7 +849,10 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         if (b && b.type === "text") b.text += d.delta ?? "";
       } else if (d.type === "text_end") {
         const b = currentTextBlock(item, d.contentIndex);
-        if (b && b.type === "text") { b.text = (d as { content?: string }).content ?? b.text; b.done = true; }
+        if (b && b.type === "text") {
+          b.text = (d as { content?: string }).content ?? b.text;
+          b.done = true;
+        }
       } else if (d.type === "thinking_start") {
         const i = d.contentIndex ?? item.blocks.length;
         fillBlockHoles(item, i);
@@ -716,11 +875,21 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         const i = d.contentIndex ?? item.blocks.length;
         fillBlockHoles(item, i);
         item.blocks[i] = {
-          type: "toolcall", toolCallId: d.id ?? "", name: d.toolName ?? "tool", args: "",
+          type: "toolcall",
+          toolCallId: d.id ?? "",
+          name: d.toolName ?? "tool",
+          args: "",
         };
         const tool: ToolItem = {
-          kind: "tool", id: newId(), toolCallId: d.id ?? "", name: d.toolName ?? "tool",
-          args: "", status: "running", output: "", outputTruncated: false, isError: false,
+          kind: "tool",
+          id: newId(),
+          toolCallId: d.id ?? "",
+          name: d.toolName ?? "tool",
+          args: "",
+          status: "running",
+          output: "",
+          outputTruncated: false,
+          isError: false,
         };
         items.update((a) => [...a, tool]);
       } else if (d.type === "toolcall_delta") {
@@ -728,17 +897,22 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
       } else if (d.type === "toolcall_end") {
         const tc = d.toolCall;
         if (tc) {
-          const b = d.contentIndex === undefined
-            ? item.blocks.find((b) => b.type === "toolcall" && b.toolCallId === tc.id)
-            : currentTextBlock(item, d.contentIndex);
+          const b =
+            d.contentIndex === undefined
+              ? item.blocks.find((b) => b.type === "toolcall" && b.toolCallId === tc.id)
+              : currentTextBlock(item, d.contentIndex);
           if (b?.type === "toolcall") {
             b.toolCallId = tc.id;
             b.name = tc.name;
             b.args = JSON.stringify(tc.arguments ?? {}, null, 2);
           }
           items.update((a) => {
-            const t = a.find((x) => x.kind === "tool" && x.toolCallId === tc.id) as ToolItem | undefined;
-            if (t) { t.name = tc.name; t.args = JSON.stringify(tc.arguments ?? {}, null, 2); }
+            const t = a.find((x) => x.kind === "tool" && x.toolCallId === tc.id) as
+              ToolItem | undefined;
+            if (t) {
+              t.name = tc.name;
+              t.args = JSON.stringify(tc.arguments ?? {}, null, 2);
+            }
             return a;
           });
         }
@@ -757,18 +931,30 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         const arr = Array.isArray(content) ? content : [];
         const blocks: Block[] = [];
         for (const c of arr) {
-          if (c.type === "text") blocks.push({ type: "text", text: (c as { text?: string }).text ?? "", done: true });
-          else if (c.type === "thinking") blocks.push({ type: "thinking", text: (c as { thinking?: string }).thinking ?? "", done: true });
+          if (c.type === "text")
+            blocks.push({ type: "text", text: (c as { text?: string }).text ?? "", done: true });
+          else if (c.type === "thinking")
+            blocks.push({
+              type: "thinking",
+              text: (c as { thinking?: string }).thinking ?? "",
+              done: true,
+            });
           else if (c.type === "toolCall") {
             const tc = c as { id: string; name: string; arguments: Record<string, unknown> };
-            blocks.push({ type: "toolcall", toolCallId: tc.id, name: tc.name, args: JSON.stringify(tc.arguments ?? {}, null, 2) });
+            blocks.push({
+              type: "toolcall",
+              toolCallId: tc.id,
+              name: tc.name,
+              args: JSON.stringify(tc.arguments ?? {}, null, 2),
+            });
           }
         }
         surface.assistant.blocks = blocks;
         surface.assistant.usage = m.usage;
         surface.assistant.stopReason = m.stopReason;
         surface.assistant.errorMessage = m.stopReason === "error" ? m.errorMessage : undefined;
-        surface.assistant.timestamp = typeof m.timestamp === "number" ? m.timestamp : surface.assistant.timestamp;
+        surface.assistant.timestamp =
+          typeof m.timestamp === "number" ? m.timestamp : surface.assistant.timestamp;
         surface.assistant.streaming = false;
         surface.assistant = null;
         items.update((a) => a);
@@ -778,9 +964,20 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     }
     case "tool_execution_start": {
       items.update((a) => {
-        let t = a.find((x) => x.kind === "tool" && x.toolCallId === evt.toolCallId) as ToolItem | undefined;
+        let t = a.find((x) => x.kind === "tool" && x.toolCallId === evt.toolCallId) as
+          ToolItem | undefined;
         if (!t) {
-          t = { kind: "tool", id: newId(), toolCallId: evt.toolCallId ?? "", name: evt.toolName ?? "", args: JSON.stringify(evt.args ?? {}, null, 2), status: "running", output: "", outputTruncated: false, isError: false };
+          t = {
+            kind: "tool",
+            id: newId(),
+            toolCallId: evt.toolCallId ?? "",
+            name: evt.toolName ?? "",
+            args: JSON.stringify(evt.args ?? {}, null, 2),
+            status: "running",
+            output: "",
+            outputTruncated: false,
+            isError: false,
+          };
           a.push(t);
         }
         t.args = JSON.stringify(evt.args ?? {}, null, 2);
@@ -792,10 +989,12 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     }
     case "tool_execution_update": {
       items.update((a) => {
-        const t = a.find((x) => x.kind === "tool" && x.toolCallId === evt.toolCallId) as ToolItem | undefined;
+        const t = a.find((x) => x.kind === "tool" && x.toolCallId === evt.toolCallId) as
+          ToolItem | undefined;
         if (t) {
           const { text, truncated, diff } = toolResultText(evt.partialResult as never);
-          t.output = text; t.outputTruncated = truncated;
+          t.output = text;
+          t.outputTruncated = truncated;
           if (diff) t.diff = diff;
         }
         return a;
@@ -804,10 +1003,12 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
     }
     case "tool_execution_end": {
       items.update((a) => {
-        const t = a.find((x) => x.kind === "tool" && x.toolCallId === evt.toolCallId) as ToolItem | undefined;
+        const t = a.find((x) => x.kind === "tool" && x.toolCallId === evt.toolCallId) as
+          ToolItem | undefined;
         if (t) {
           const { text, truncated, diff } = toolResultText(evt.result as never);
-          t.output = text; t.outputTruncated = truncated;
+          t.output = text;
+          t.outputTruncated = truncated;
           t.diff = diff;
           t.isError = !!evt.isError;
           t.status = evt.isError ? "error" : "done";
@@ -821,7 +1022,10 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
       break;
     }
     case "queue_update":
-      queue.set({ steering: (evt.steering as string[]) ?? [], followUp: (evt.followUp as string[]) ?? [] });
+      queue.set({
+        steering: (evt.steering as string[]) ?? [],
+        followUp: (evt.followUp as string[]) ?? [],
+      });
       break;
     case "compaction_start":
       statusNote.set("Compacting context…");
@@ -833,7 +1037,9 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
       statusNote.set(note);
       // Clear only our own note — an unguarded wipe would eat a newer note
       // (e.g. a "Prompt not delivered" error) set while the timer ran.
-      setTimeout(() => { if (get(statusNote) === note) statusNote.set(""); }, 6000);
+      setTimeout(() => {
+        if (get(statusNote) === note) statusNote.set("");
+      }, 6000);
       if (foreground) void refreshStats();
       break;
     }
@@ -844,7 +1050,8 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
       if (evt.success === false) {
         // Exhausted retries can end with no errored assistant message — without
         // this the turn just quietly goes idle.
-        const detail = typeof evt.finalError === "string" && evt.finalError ? evt.finalError : "unknown error";
+        const detail =
+          typeof evt.finalError === "string" && evt.finalError ? evt.finalError : "unknown error";
         if (foreground) transientNote(`Retries failed: ${detail}`);
         setSessionStatus(get(activeSessionPath), "attention", "retries failed");
       } else if (get(statusNote).startsWith("Retrying")) {
@@ -860,7 +1067,10 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
       const method = evt.method as string;
       if (["select", "confirm", "input", "editor"].includes(method)) {
         const dialog: ExtDialogData = {
-          id, method, project: owner.project, proc: owner.proc,
+          id,
+          method,
+          project: owner.project,
+          proc: owner.proc,
           title: (evt.title as string) ?? "",
           options: evt.options as string[],
           message: (evt as { message?: string }).message as string,
@@ -871,7 +1081,8 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
         if (!surface.dialogs.some((d) => d.id === id)) surface.dialogs.push(dialog);
         extDialog.set(surface.dialogs[0]);
         setSessionStatus(get(activeSessionPath), "attention", "extension question");
-        if (typeof evt.timeout === "number" && evt.timeout > 0) setTimeout(() => removeDialog(owner, id), evt.timeout);
+        if (typeof evt.timeout === "number" && evt.timeout > 0)
+          setTimeout(() => removeDialog(owner, id), evt.timeout);
         break;
       }
       // Fire-and-forget methods: surface what extensions already publish.
@@ -880,7 +1091,10 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
           // Management-channel replies are consumed here — they must never
           // surface as user toasts.
           if (handleMgmtNotify((evt as { message?: string }).message ?? "")) break;
-          pushNotification(evt.notifyType as "info" | "warning" | "error" | undefined, (evt as { message?: string }).message ?? "");
+          pushNotification(
+            evt.notifyType as "info" | "warning" | "error" | undefined,
+            (evt as { message?: string }).message ?? "",
+          );
           break;
         case "setStatus": {
           const key = (evt.statusKey as string) ?? "";
@@ -901,7 +1115,13 @@ function renderEvent(evt: PiEvent, surface: RenderSurface, foreground: boolean, 
           extWidgets.update((w) => {
             const next = { ...w };
             if (!lines) delete next[key];
-            else next[key] = { lines, placement: (evt.widgetPlacement as "aboveEditor" | "belowEditor" | undefined) ?? "aboveEditor" };
+            else
+              next[key] = {
+                lines,
+                placement:
+                  (evt.widgetPlacement as "aboveEditor" | "belowEditor" | undefined) ??
+                  "aboveEditor",
+              };
             return next;
           });
           break;
@@ -956,7 +1176,10 @@ function isViewChangedError(e: unknown): boolean {
 }
 
 /** An RPC response may only update the view that issued it. */
-async function requestForView<T = unknown>(command: Record<string, unknown>, timeout = 120): Promise<T> {
+async function requestForView<T = unknown>(
+  command: Record<string, unknown>,
+  timeout = 120,
+): Promise<T> {
   const project = get(projectDir);
   // With no open project there is no view to answer: passing `project || null`
   // would route to Rust's active-process pointer and silently mutate a project
@@ -965,7 +1188,11 @@ async function requestForView<T = unknown>(command: Record<string, unknown>, tim
   const proc = get(lastProcByProject)[project];
   const revision = viewRevision;
   const res = await api.piRequest<T>(command, timeout, project || null, proc);
-  if (project !== get(projectDir) || proc !== get(lastProcByProject)[project] || revision !== viewRevision) {
+  if (
+    project !== get(projectDir) ||
+    proc !== get(lastProcByProject)[project] ||
+    revision !== viewRevision
+  ) {
     throw new Error(VIEW_CHANGED_MSG);
   }
   return res;
@@ -975,23 +1202,34 @@ async function requestForView<T = unknown>(command: Record<string, unknown>, tim
 
 export function applyTheme(t: "light" | "dark" | "system") {
   const root = document.documentElement;
-  const resolved = t === "system"
-    ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-    : t;
+  const resolved =
+    t === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light"
+      : t;
   root.dataset.theme = resolved;
   theme.set(t);
 }
 
 export async function refreshStats() {
   try {
-    const res = await requestForView<{ success: boolean; data?: SessionStats }>({ type: "get_session_stats" }, 30);
+    const res = await requestForView<{ success: boolean; data?: SessionStats }>(
+      { type: "get_session_stats" },
+      30,
+    );
     if (res.success && res.data) stats.set(res.data);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function refreshRpcState() {
   const activity = activityRevision;
-  const res = await requestForView<{ success: boolean; data?: RpcState }>({ type: "get_state" }, 30);
+  const res = await requestForView<{ success: boolean; data?: RpcState }>(
+    { type: "get_state" },
+    30,
+  );
   if (!res.success || !res.data) throw new Error("Could not read Pi runtime state");
   if (res.success && res.data) {
     rpcState.set(res.data);
@@ -1005,14 +1243,23 @@ export async function refreshRpcState() {
 }
 
 export async function refreshSessions() {
-  try { sessions.set(await api.listSessions()); } catch { /* ignore */ }
+  try {
+    sessions.set(await api.listSessions());
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function refreshModels() {
   try {
-    const res = await requestForView<{ success: boolean; data?: { models: ModelInfo[] } }>({ type: "get_available_models" }, 30);
+    const res = await requestForView<{ success: boolean; data?: { models: ModelInfo[] } }>(
+      { type: "get_available_models" },
+      30,
+    );
     if (res.success && res.data) models.set(res.data.models);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 export interface PromptResult {
@@ -1026,7 +1273,10 @@ export interface PromptResult {
  * (kept on screen with its error so the composer text and Retry stay meaningful).
  * Never throws; callers get `{ ok, error }` and only clear their draft on ok.
  */
-export async function sendPrompt(text: string, images: { data: string; mimeType: string; name: string }[]): Promise<PromptResult> {
+export async function sendPrompt(
+  text: string,
+  images: { data: string; mimeType: string; name: string }[],
+): Promise<PromptResult> {
   if (get(updateInstallLock)) return { ok: false, error: "Update installation is preparing" };
   if (get(navigating)) return { ok: false, error: "Wait for the session to finish opening" };
   const trimmed = text.trim();
@@ -1048,18 +1298,36 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
   if (isStreaming) cmd.streamingBehavior = "steer";
   // Optimistic user bubble, visibly in flight until pi answers.
   const bubbleId = newId();
-  items.update((a) => [...a, {
-    kind: "user", text: trimmed, id: bubbleId, status: "sending", timestamp: Date.now(),
-    images: images.map((i) => ({ name: i.name, dataUrl: `data:${i.mimeType};base64,${i.data}` })),
-  }]);
+  items.update((a) => [
+    ...a,
+    {
+      kind: "user",
+      text: trimmed,
+      id: bubbleId,
+      status: "sending",
+      timestamp: Date.now(),
+      images: images.map((i) => ({ name: i.name, dataUrl: `data:${i.mimeType};base64,${i.data}` })),
+    },
+  ]);
   function delivery(patch: Partial<UserItem>) {
-    const surface = originProject === get(projectDir) ? mainSurface : backgroundSurfaces.get(originProject)?.surface;
-    surface?.items.update((a) => a.map((x) => x.kind === "user" && x.id === bubbleId ? { ...x, ...patch } : x));
-    if (patch.error && originProject === get(projectDir)) transientNote(`Prompt not delivered: ${patch.error}`);
+    const surface =
+      originProject === get(projectDir)
+        ? mainSurface
+        : backgroundSurfaces.get(originProject)?.surface;
+    surface?.items.update((a) =>
+      a.map((x) => (x.kind === "user" && x.id === bubbleId ? { ...x, ...patch } : x)),
+    );
+    if (patch.error && originProject === get(projectDir))
+      transientNote(`Prompt not delivered: ${patch.error}`);
   }
   let result: PromptResult;
   try {
-    const res = await api.piRequest<{ success: boolean; error?: string }>(cmd, 600, originProject, originProc);
+    const res = await api.piRequest<{ success: boolean; error?: string }>(
+      cmd,
+      600,
+      originProject,
+      originProc,
+    );
     if (res.success) {
       awaitingStartAdjust(originProject, 1);
       delivery({ status: "accepted" });
@@ -1078,15 +1346,22 @@ export async function sendPrompt(text: string, images: { data: string; mimeType:
   }
   // pi may die between the response and this refresh; never let it escalate
   // into an unhandled rejection.
-  if (originProject === get(projectDir) && originProc === get(lastProcByProject)[originProject] && originRevision === viewRevision) void refreshRpcState().catch(() => {});
+  if (
+    originProject === get(projectDir) &&
+    originProc === get(lastProcByProject)[originProject] &&
+    originRevision === viewRevision
+  )
+    void refreshRpcState().catch(() => {});
   return result;
 }
 
 /** Re-send a failed bubble's content, dropping the failed bubble first. */
 export async function retryFailedUser(id: string): Promise<PromptResult> {
-  const item = get(items).find((x) => x.kind === "user" && x.id === id) as import("./types").UserItem | undefined;
+  const item = get(items).find((x) => x.kind === "user" && x.id === id) as
+    import("./types").UserItem | undefined;
   if (!item || item.status !== "failed") return { ok: false, error: "not retryable" };
-  if (!get(connected) || get(navigating) || get(updateInstallLock)) return { ok: false, error: "pi process not ready" };
+  if (!get(connected) || get(navigating) || get(updateInstallLock))
+    return { ok: false, error: "pi process not ready" };
   const images = item.images
     .filter((i) => i.dataUrl)
     .map((i) => {
@@ -1099,7 +1374,9 @@ export async function retryFailedUser(id: string): Promise<PromptResult> {
 
 /** Discard a failed bubble without re-sending it (the user gave up on it). */
 export function dismissFailedUser(id: string) {
-  items.update((a) => a.filter((x) => !(x.kind === "user" && x.id === id && x.status === "failed")));
+  items.update((a) =>
+    a.filter((x) => !(x.kind === "user" && x.id === id && x.status === "failed")),
+  );
 }
 
 export async function abort() {
@@ -1123,7 +1400,11 @@ export function newSession() {
 async function newSessionImpl() {
   const outgoing = get(activeSessionPath);
   try {
-    const res = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "new_session" }, 120);
+    const res = await requestForView<{
+      success: boolean;
+      error?: string;
+      data?: { cancelled: boolean };
+    }>({ type: "new_session" }, 120);
     if (!res.success) {
       transientNote(`Couldn't create session: ${res.error ?? "rejected by pi"}`);
       return;
@@ -1165,7 +1446,9 @@ async function newSessionImpl() {
  * no app reload, and background projects keep running with their events
  * feeding only the sidebar.
  */
-export function switchToProject(dir: string, sessionPath?: string) { return navigate(() => switchToProjectImpl(dir, sessionPath)); }
+export function switchToProject(dir: string, sessionPath?: string) {
+  return navigate(() => switchToProjectImpl(dir, sessionPath));
+}
 
 async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<boolean> {
   let resumedFallback = false;
@@ -1208,10 +1491,11 @@ async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<b
     // Trust pi: on a reused process it may not be in the requested session.
     if (requestedSession && get(activeSessionPath) !== requestedSession) {
       try {
-        const r = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>(
-          { type: "switch_session", sessionPath },
-          120,
-        );
+        const r = await requestForView<{
+          success: boolean;
+          error?: string;
+          data?: { cancelled: boolean };
+        }>({ type: "switch_session", sessionPath }, 120);
         if (r.success && !r.data?.cancelled) {
           // The restored surface belonged to the session pi had active before
           // (possibly mid-stream). After a successful switch, drop those
@@ -1224,7 +1508,9 @@ async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<b
           await reloadMessages();
           switched = true;
         } else transientNote(`Couldn't open session: ${r.error ?? "cancelled by extension"}`);
-      } catch { /* pi's own state wins */ }
+      } catch {
+        /* pi's own state wins */
+      }
     }
     await refreshModels();
     await refreshCommands();
@@ -1234,7 +1520,7 @@ async function switchToProjectImpl(dir: string, sessionPath?: string): Promise<b
     // Keep projects with no persisted session yet available in the startup and
     // sidebar pickers. Project metadata is GUI-owned; Pi remains authoritative
     // for the session itself.
-    projectMeta.update((m) => m[dir] ? m : { ...m, [dir]: {} });
+    projectMeta.update((m) => (m[dir] ? m : { ...m, [dir]: {} }));
     if (get(activeSessionPath)) markVisited(get(activeSessionPath)!);
     void persistLastSession(get(activeSessionPath));
     if (resumedFallback) {
@@ -1284,7 +1570,9 @@ export function goHome() {
   });
 }
 
-export function openSession(path: string) { return navigate(() => openSessionImpl(path)); }
+export function openSession(path: string) {
+  return navigate(() => openSessionImpl(path));
+}
 
 async function openSessionImpl(path: string) {
   if (get(activeSessionPath) === path) return;
@@ -1296,7 +1584,11 @@ async function openSessionImpl(path: string) {
     return;
   }
   try {
-    const res = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "switch_session", sessionPath: path }, 120);
+    const res = await requestForView<{
+      success: boolean;
+      error?: string;
+      data?: { cancelled: boolean };
+    }>({ type: "switch_session", sessionPath: path }, 120);
     if (!res.success) {
       transientNote(`Couldn't open session: ${res.error ?? "rejected by pi"}`);
       return;
@@ -1324,7 +1616,10 @@ async function openSessionImpl(path: string) {
 export async function reloadMessages() {
   const revision = transcriptRevision;
   try {
-    const res = await requestForView<{ success: boolean; data?: { messages: AgentMessage[] } }>({ type: "get_messages" }, 60);
+    const res = await requestForView<{ success: boolean; data?: { messages: AgentMessage[] } }>(
+      { type: "get_messages" },
+      60,
+    );
     if (res.success && Array.isArray(res.data?.messages)) {
       if (revision === transcriptRevision) {
         rebuildFromMessages(res.data.messages);
@@ -1334,7 +1629,9 @@ export async function reloadMessages() {
         if (!get(streaming)) queueMicrotask(() => void reloadMessages());
       }
     }
-  } catch (e) { transientNote(`Couldn't load session history: ${errorText(e)}`); }
+  } catch (e) {
+    transientNote(`Couldn't load session history: ${errorText(e)}`);
+  }
 }
 
 export async function renameSession(name: string, path = get(activeSessionPath) ?? undefined) {
@@ -1343,7 +1640,7 @@ export async function renameSession(name: string, path = get(activeSessionPath) 
     return;
   }
   if (!name.trim()) return;
-  if (!await rpcAction({ type: "set_session_name", name: name.trim() })) return;
+  if (!(await rpcAction({ type: "set_session_name", name: name.trim() }))) return;
   await refreshRpcStateForView();
   await refreshSessions();
 }
@@ -1405,8 +1702,12 @@ export async function compact() {
     await refreshStats();
   }
 }
-export async function abortRetry() { await rpcAction({ type: "abort_retry" }); }
-export async function clearQueue() { await rpcAction({ type: "clear_queue" }); }
+export async function abortRetry() {
+  await rpcAction({ type: "abort_retry" });
+}
+export async function clearQueue() {
+  await rpcAction({ type: "clear_queue" });
+}
 
 /** Export the active session to a user-chosen HTML file (pi renders it). */
 export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string; error?: string }> {
@@ -1443,11 +1744,17 @@ export async function exportSessionHtml(): Promise<{ ok: boolean; path?: string;
 }
 
 /** Duplicate the active branch into a new session and switch to it. */
-export function cloneSession() { return navigate(cloneSessionImpl); }
+export function cloneSession() {
+  return navigate(cloneSessionImpl);
+}
 
 async function cloneSessionImpl(): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "clone" }, 120);
+    const res = await requestForView<{
+      success: boolean;
+      error?: string;
+      data?: { cancelled: boolean };
+    }>({ type: "clone" }, 120);
     if (!res.success) {
       transientNote(`Couldn't clone session: ${res.error ?? "rejected by pi"}`);
       return { ok: false, error: res.error ?? "clone failed" };
@@ -1486,7 +1793,11 @@ export async function respondToExtDialog(response: Record<string, unknown>) {
   }
   answeringDialogId = d.id;
   try {
-    await api.piSend({ type: "extension_ui_response", id: d.id, ...response }, d.project ?? get(projectDir), d.proc);
+    await api.piSend(
+      { type: "extension_ui_response", id: d.id, ...response },
+      d.project ?? get(projectDir),
+      d.proc,
+    );
   } catch (e) {
     // Send failed: keep the dialog open (the extension is still waiting) and
     // release the one-shot guard so the answer can be retried.
@@ -1513,7 +1824,11 @@ export function guiStateValue(key: string): unknown {
 export async function setGuiStateValue(key: string, value: unknown): Promise<void> {
   if (!guiStateCache || guiStateCache[key] === value) return;
   guiStateCache[key] = value;
-  try { await api.writeGuiState(guiStateCache); } catch { /* ignore */ }
+  try {
+    await api.writeGuiState(guiStateCache);
+  } catch {
+    /* ignore */
+  }
 }
 
 async function persistLastSession(path: string | null) {
@@ -1521,18 +1836,28 @@ async function persistLastSession(path: string | null) {
   if (!dir || !guiStateCache) return;
   const changedProject = guiStateCache.projectDir !== dir;
   guiStateCache.projectDir = dir;
-  if (!path) { await api.writeGuiState(guiStateCache); return; }
+  if (!path) {
+    await api.writeGuiState(guiStateCache);
+    return;
+  }
   const map = (guiStateCache.lastSessionByProject as Record<string, string> | undefined) ?? {};
   if (map[dir] === path && !changedProject) return;
   map[dir] = path;
   guiStateCache.lastSessionByProject = map;
-  try { await api.writeGuiState(guiStateCache); } catch { /* ignore */ }
+  try {
+    await api.writeGuiState(guiStateCache);
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Fetch pi's executable command list (extension commands, templates, skills). */
 export async function refreshCommands() {
   try {
-    const res = await requestForView<{ success: boolean; data?: { commands: ExtCommand[] } }>({ type: "get_commands" }, 30);
+    const res = await requestForView<{ success: boolean; data?: { commands: ExtCommand[] } }>(
+      { type: "get_commands" },
+      30,
+    );
     commands.set(res.success && res.data ? (res.data.commands ?? []) : []);
   } catch {
     commands.set([]);
@@ -1619,7 +1944,8 @@ export function handlePiExit(project: string, pid: number, expected: boolean, er
       if (it.kind === "tool" && (it as ToolItem).status === "running") {
         (it as ToolItem).status = "error";
         (it as ToolItem).isError = true;
-        if (!(it as ToolItem).output) (it as ToolItem).output = "pi exited while this tool was running";
+        if (!(it as ToolItem).output)
+          (it as ToolItem).output = "pi exited while this tool was running";
         touched = true;
       }
     }
@@ -1638,7 +1964,9 @@ export function handlePiExit(project: string, pid: number, expected: boolean, er
 }
 
 /** Restart the active project's pi process, resuming the active session. */
-export function restartPi() { return navigate(() => restartPiImpl()); }
+export function restartPi() {
+  return navigate(() => restartPiImpl());
+}
 
 async function restartPiImpl() {
   const dir = get(projectDir);
@@ -1686,7 +2014,9 @@ async function restartPiImpl() {
 /** The session a project should resume: the remembered one when it still
  * exists, otherwise the project's most recent session. Undefined = fresh. */
 export function lastSessionFor(dir: string): string | undefined {
-  const remembered = (guiStateCache?.lastSessionByProject as Record<string, string> | undefined)?.[dir];
+  const remembered = (guiStateCache?.lastSessionByProject as Record<string, string> | undefined)?.[
+    dir
+  ];
   const inProject = get(sessions).filter((s) => s.cwd === dir);
   if (remembered && inProject.some((s) => s.path === remembered)) return remembered;
   return [...inProject].sort((a, b) => b.fileModified - a.fileModified)[0]?.path;
@@ -1701,10 +2031,12 @@ export async function chooseProject() {
   if (typeof picked !== "string") return null;
   // A successful switch persists the project through persistLastSession.
   // Do not replace the last working project when Pi cannot start in this one.
-  return await switchToProject(picked) ? picked : null;
+  return (await switchToProject(picked)) ? picked : null;
 }
 
-export function boot() { return navigate(() => bootImpl()); }
+export function boot() {
+  return navigate(() => bootImpl());
+}
 
 async function bootImpl() {
   backgroundSurfaces.clear();
@@ -1715,7 +2047,11 @@ async function bootImpl() {
   primeAgentDir();
   // 1. Load GUI state
   let gui: Record<string, unknown> = {};
-  try { gui = await api.readGuiState(); } catch { /* first run */ }
+  try {
+    gui = await api.readGuiState();
+  } catch {
+    /* first run */
+  }
   guiStateCache = gui;
   const t = (gui.theme as "light" | "dark" | "system") ?? "system";
   applyTheme(t);
@@ -1763,23 +2099,69 @@ async function bootImpl() {
   // anyway. The detached async wrapper keeps the original swallow semantics.
   const persistGui = (): void => {
     void (async () => {
-      try { await api.writeGuiState(gui); } catch { /* ignore */ }
+      try {
+        await api.writeGuiState(gui);
+      } catch {
+        /* ignore */
+      }
     })();
   };
-  theme.subscribe((v) => { gui.theme = v; persistGui(); });
-  sidebarOpen.subscribe((v) => { gui.sidebarOpen = v; persistGui(); });
-  pins.subscribe((v) => { gui.pins = v; persistGui(); });
-  settled.subscribe((v) => { gui.settled = v; persistGui(); });
-  projectMeta.subscribe((v) => { gui.projectMeta = v; persistGui(); });
-  visitedAt.subscribe((v) => { gui.visitedAt = v; persistGui(); });
-  sidebarWidth.subscribe((v) => { gui.sidebarWidth = v; persistGui(); });
-  settledView.subscribe((v) => { gui.settledView = v; persistGui(); });
-  pinnedModels.subscribe((v) => { gui.pinnedModels = v; persistGui(); });
-  rightPanelOpen.subscribe((v) => { gui.rightPanelOpen = v; persistGui(); });
-  rightPanelTab.subscribe((v) => { gui.rightPanelTab = v; persistGui(); });
-  rightPanelWidth.subscribe((v) => { gui.rightPanelWidth = v; persistGui(); });
-  fileCardRect.subscribe((v) => { gui.fileCardRect = v; persistGui(); });
-  keybindings.subscribe((v) => { gui.keybindings = v; persistGui(); });
+  theme.subscribe((v) => {
+    gui.theme = v;
+    persistGui();
+  });
+  sidebarOpen.subscribe((v) => {
+    gui.sidebarOpen = v;
+    persistGui();
+  });
+  pins.subscribe((v) => {
+    gui.pins = v;
+    persistGui();
+  });
+  settled.subscribe((v) => {
+    gui.settled = v;
+    persistGui();
+  });
+  projectMeta.subscribe((v) => {
+    gui.projectMeta = v;
+    persistGui();
+  });
+  visitedAt.subscribe((v) => {
+    gui.visitedAt = v;
+    persistGui();
+  });
+  sidebarWidth.subscribe((v) => {
+    gui.sidebarWidth = v;
+    persistGui();
+  });
+  settledView.subscribe((v) => {
+    gui.settledView = v;
+    persistGui();
+  });
+  pinnedModels.subscribe((v) => {
+    gui.pinnedModels = v;
+    persistGui();
+  });
+  rightPanelOpen.subscribe((v) => {
+    gui.rightPanelOpen = v;
+    persistGui();
+  });
+  rightPanelTab.subscribe((v) => {
+    gui.rightPanelTab = v;
+    persistGui();
+  });
+  rightPanelWidth.subscribe((v) => {
+    gui.rightPanelWidth = v;
+    persistGui();
+  });
+  fileCardRect.subscribe((v) => {
+    gui.fileCardRect = v;
+    persistGui();
+  });
+  keybindings.subscribe((v) => {
+    gui.keybindings = v;
+    persistGui();
+  });
   delete gui.autoRetry; // agent settings are persisted only by Pi
 
   // React to OS theme changes when in system mode

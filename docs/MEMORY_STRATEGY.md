@@ -12,13 +12,13 @@ Pi remains authoritative for agent context and persisted session data. Leftleg w
 
 Proposed locations, not created yet:
 
-| Store | Scope and purpose | Update policy |
-| --- | --- | --- |
-| `~/.pi/agent/user.md` | Explicit working preferences and durable user context | Explicit user statements and corrections; never inferred personality traits |
-| `~/.pi/agent/memory/index.md` | Short index of reusable lessons, with links to detailed records | Add or revise only when supported by session evidence |
-| `<project>/.pi/memory/state.md` | Current objective, progress, blockers, next actions, and source revision | Refresh as work changes; clearly mark stale or uncertain state |
-| `<project>/.pi/memory/lessons.md` | Project decisions, constraints, and repeatable fixes with their rationale | Keep applicability and evidence; supersede obsolete lessons explicitly |
-| Pi-owned session summary records | What happened in one session and where to find original evidence | Retain source entry references; do not automatically inject all summaries |
+| Store                             | Scope and purpose                                                         | Update policy                                                               |
+| --------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `~/.pi/agent/user.md`             | Explicit working preferences and durable user context                     | Explicit user statements and corrections; never inferred personality traits |
+| `~/.pi/agent/memory/index.md`     | Short index of reusable lessons, with links to detailed records           | Add or revise only when supported by session evidence                       |
+| `<project>/.pi/memory/state.md`   | Current objective, progress, blockers, next actions, and source revision  | Refresh as work changes; clearly mark stale or uncertain state              |
+| `<project>/.pi/memory/lessons.md` | Project decisions, constraints, and repeatable fixes with their rationale | Keep applicability and evidence; supersede obsolete lessons explicitly      |
+| Pi-owned session summary records  | What happened in one session and where to find original evidence          | Retain source entry references; do not automatically inject all summaries   |
 
 The exact summary persistence mechanism should be chosen during implementation; avoid a second transcript database in Leftleg. Pi custom entries can hold extension-owned session metadata, while injection remains an explicit separate action.
 

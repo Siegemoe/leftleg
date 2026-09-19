@@ -24,7 +24,15 @@ vi.mock("../lib/api", async (importOriginal) => {
 });
 
 import StartScreen from "./StartScreen.svelte";
-import { activeSessionPath, collectUpdateInstallBlockers, projectDir, projectMeta, sessions, statusNote, updateInstallLock } from "../lib/stores";
+import {
+  activeSessionPath,
+  collectUpdateInstallBlockers,
+  projectDir,
+  projectMeta,
+  sessions,
+  statusNote,
+  updateInstallLock,
+} from "../lib/stores";
 import { composerDraftFor } from "../lib/composer-drafts";
 
 let instance: ReturnType<typeof mount> | null = null;
@@ -48,14 +56,30 @@ beforeEach(() => {
   activeSessionPath.set("/session-a");
   statusNote.set("");
   updateInstallLock.set(false);
-  composerDraftFor("/proj:/session-a").set({ text: "", sending: false, lastExtensionNonce: 0, attachments: [] });
-  composerDraftFor("startup project").set({ text: "", sending: false, lastExtensionNonce: 0, attachments: [] });
-  mocks.switchToProject.mockReset().mockImplementation(async (dir: string) => { projectDir.set(dir); return true; });
+  composerDraftFor("/proj:/session-a").set({
+    text: "",
+    sending: false,
+    lastExtensionNonce: 0,
+    attachments: [],
+  });
+  composerDraftFor("startup project").set({
+    text: "",
+    sending: false,
+    lastExtensionNonce: 0,
+    attachments: [],
+  });
+  mocks.switchToProject.mockReset().mockImplementation(async (dir: string) => {
+    projectDir.set(dir);
+    return true;
+  });
   mocks.sendPrompt.mockReset().mockResolvedValue({ ok: true });
   mocks.lastSessionFor.mockReset().mockReturnValue(undefined);
   mocks.requestComposerText.mockReset();
   mocks.pickAttachments.mockReset();
-  mocks.chooseProject.mockReset().mockImplementation(async () => { projectDir.set("/new-project"); return "/new-project"; });
+  mocks.chooseProject.mockReset().mockImplementation(async () => {
+    projectDir.set("/new-project");
+    return "/new-project";
+  });
 });
 
 afterEach(async () => {
@@ -70,7 +94,9 @@ describe("startup project prompt", () => {
     let finishOpen!: (value: boolean) => void;
     mocks.switchToProject.mockImplementation(() => {
       projectDir.set("/proj");
-      return new Promise((resolve) => { finishOpen = resolve; });
+      return new Promise((resolve) => {
+        finishOpen = resolve;
+      });
     });
     mocks.sendPrompt.mockResolvedValue({ ok: false });
     instance = mount(StartScreen, { target: document.body });
@@ -87,7 +113,10 @@ describe("startup project prompt", () => {
   });
 
   it("shows the reason a project could not open on the startup screen", async () => {
-    mocks.switchToProject.mockImplementation(async () => { statusNote.set("Couldn't open project: permission denied"); return false; });
+    mocks.switchToProject.mockImplementation(async () => {
+      statusNote.set("Couldn't open project: permission denied");
+      return false;
+    });
     instance = mount(StartScreen, { target: document.body });
     flushSync();
     document.body.querySelector<HTMLButtonElement>(".card:not(.ghostcard)")!.click();
@@ -97,7 +126,12 @@ describe("startup project prompt", () => {
 
   it("keeps edits made while the initial prompt is pending", async () => {
     let finish!: (value: { ok: boolean }) => void;
-    mocks.sendPrompt.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    mocks.sendPrompt.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     instance = mount(StartScreen, { target: document.body });
     flushSync();
     typeDraft("first");
@@ -111,7 +145,12 @@ describe("startup project prompt", () => {
 
   it("restores a rejected prompt to its original project after navigation", async () => {
     let finish!: (value: { ok: boolean }) => void;
-    mocks.sendPrompt.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    mocks.sendPrompt.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     instance = mount(StartScreen, { target: document.body });
     flushSync();
     typeDraft("for project A");
@@ -180,7 +219,9 @@ describe("startup project prompt", () => {
   });
 
   it("sends text and attachments through the folder-picker flow via the send button", async () => {
-    mocks.pickAttachments.mockResolvedValue([{ name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" }]);
+    mocks.pickAttachments.mockResolvedValue([
+      { name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" },
+    ]);
     instance = mount(StartScreen, { target: document.body });
     flushSync();
     typeDraft("look at this");
@@ -211,7 +252,9 @@ describe("startup project prompt", () => {
 
     expect(document.body.querySelectorAll(".chip").length).toBe(2);
     expect(document.body.querySelector(".chip img")).not.toBeNull();
-    expect(document.body.querySelector(".chip img")?.getAttribute("src")).toBe("data:image/png;base64,aGVsbG8=");
+    expect(document.body.querySelector(".chip img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,aGVsbG8=",
+    );
 
     document.body.querySelector<HTMLButtonElement>(".chip .rm")!.click();
     flushSync();
@@ -239,7 +282,9 @@ describe("startup project prompt", () => {
   });
 
   it("moves attachments of a rejected first prompt into the project composer", async () => {
-    mocks.pickAttachments.mockResolvedValue([{ name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" }]);
+    mocks.pickAttachments.mockResolvedValue([
+      { name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" },
+    ]);
     mocks.sendPrompt.mockResolvedValue({ ok: false, error: "rejected" });
     instance = mount(StartScreen, { target: document.body });
     flushSync();
@@ -263,7 +308,9 @@ describe("startup project prompt", () => {
   });
 
   it("keeps staged attachments across remount and counts them as update blockers", async () => {
-    mocks.pickAttachments.mockResolvedValue([{ name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" }]);
+    mocks.pickAttachments.mockResolvedValue([
+      { name: "shot.png", path: "C:/t/shot.png", data: "aGVsbG8=" },
+    ]);
     instance = mount(StartScreen, { target: document.body });
     flushSync();
 
@@ -280,15 +327,21 @@ describe("startup project prompt", () => {
     instance = mount(StartScreen, { target: document.body });
     flushSync();
     expect(document.body.querySelectorAll(".chip").length).toBe(1);
-    expect(document.body.querySelector(".chip img")?.getAttribute("src")).toBe("data:image/png;base64,aGVsbG8=");
+    expect(document.body.querySelector(".chip img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,aGVsbG8=",
+    );
   });
 
   it("ignores paste and chip removal while a project is opening", async () => {
-    mocks.pickAttachments.mockResolvedValue([{ name: "kept.png", path: "C:/t/kept.png", data: "a2VwdA==" }]);
+    mocks.pickAttachments.mockResolvedValue([
+      { name: "kept.png", path: "C:/t/kept.png", data: "a2VwdA==" },
+    ]);
     let releaseOpen!: (value: boolean) => void;
     mocks.switchToProject.mockImplementation(() => {
       projectDir.set("/proj");
-      return new Promise((resolve) => { releaseOpen = resolve; });
+      return new Promise((resolve) => {
+        releaseOpen = resolve;
+      });
     });
     instance = mount(StartScreen, { target: document.body });
     flushSync();
@@ -306,7 +359,15 @@ describe("startup project prompt", () => {
     // `sent` and silently drop on unmount.
     const paste = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
     Object.defineProperty(paste, "clipboardData", {
-      value: { items: [{ kind: "file", type: "image/png", getAsFile: () => new File(["late"], "late.png", { type: "image/png" }) }] },
+      value: {
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => new File(["late"], "late.png", { type: "image/png" }),
+          },
+        ],
+      },
     });
     textarea.dispatchEvent(paste);
     await settle();
@@ -342,7 +403,9 @@ describe("startup project prompt", () => {
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       onabort: (() => void) | null = null;
-      readAsDataURL() { readers.push(this); }
+      readAsDataURL() {
+        readers.push(this);
+      }
       finish(dataUrl: string) {
         this.result = dataUrl;
         this.onload?.();
@@ -389,7 +452,12 @@ describe("startup project prompt", () => {
     // Held promise over pickAttachments: the dialog stays "open" until the
     // test resolves it, pinning the pick-resolves-mid-open window.
     let releasePick!: (files: { name: string; path: string; data: string }[]) => void;
-    mocks.pickAttachments.mockImplementation(() => new Promise((resolve) => { releasePick = resolve; }));
+    mocks.pickAttachments.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePick = resolve;
+        }),
+    );
 
     instance = mount(StartScreen, { target: document.body });
     flushSync();
@@ -424,7 +492,12 @@ describe("startup project prompt", () => {
     // A rejected pick must remove itself from the drain, not leave open()
     // suspended forever behind a dialog that is never coming back.
     let rejectPick!: (reason?: unknown) => void;
-    mocks.pickAttachments.mockImplementation(() => new Promise((_, reject) => { rejectPick = reject; }));
+    mocks.pickAttachments.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectPick = reject;
+        }),
+    );
 
     instance = mount(StartScreen, { target: document.body });
     flushSync();
@@ -448,7 +521,9 @@ describe("startup project prompt", () => {
 
   it("stands down the paperclip during the update install lock", async () => {
     updateInstallLock.set(true);
-    mocks.pickAttachments.mockResolvedValue([{ name: "late.png", path: "C:/t/late.png", data: "bGF0ZQ==" }]);
+    mocks.pickAttachments.mockResolvedValue([
+      { name: "late.png", path: "C:/t/late.png", data: "bGF0ZQ==" },
+    ]);
     instance = mount(StartScreen, { target: document.body });
     flushSync();
 
