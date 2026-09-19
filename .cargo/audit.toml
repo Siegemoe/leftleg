@@ -5,7 +5,9 @@
 [advisories]
 ignore = [
     # glib 0.18.5: unsound VariantStrIter iterators (RUSTSEC-2024-0429).
-    # Version-locked from our side: tauri 2.11.5 → muda 0.19/tao → gtk 0.18 →
+    # GitHub mirrors this advisory as GHSA-wrw7-89jp-8q8g — Dependabot's
+    # alert for it is expected to stay open; cargo-audit keys on the RustSec
+    # ID below. Version-locked from our side: tauri 2.11.5 → muda 0.19/tao → gtk 0.18 →
     # glib 0.18; gtk-rs minors are version-locked and muda 0.20 still needs
     # gtk ^0.18. The affected type is not on tauri/muda menu paths, and the
     # crate only compiles into Linux builds (Windows target doesn't pull
