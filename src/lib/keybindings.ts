@@ -96,24 +96,33 @@ export function effectiveBindings(
 }
 
 /** Event shape needed for matching — a real KeyboardEvent satisfies it, and
- * tests can pass plain objects. */
-export type KeyEventLike = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">;
+ * tests can pass plain objects. `code` is optional: when present, Latin-letter
+ * bindings also match the physical key so shortcuts survive non-Latin
+ * keyboard layouts (where e.key is the local glyph, but e.code stays "KeyN"). */
+export type KeyEventLike = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"> & { code?: string };
 
 /** Match a keydown against the effective bindings. Requires Ctrl or Cmd
  * (treated as equivalent — the app is Windows-first but webview Cmd users
  * keep working), excludes Alt, distinguishes Shift, and compares e.key
- * case-insensitively. Entries that are absent/null/unknown are ignored.
- * Returns the first match in registry order, or null. */
+ * case-insensitively. Latin-letter bindings additionally match the physical
+ * key (e.code "KeyN") so Ctrl+N keeps firing under a non-Latin layout, where
+ * the OS reports e.key as the local glyph; punctuation has no reliable code
+ * mapping and keeps matching on e.key alone. Entries that are absent/null/
+ * unknown are ignored. Returns the first match in registry order, or null. */
 export function matchKeybinding(e: KeyEventLike, bindings: Partial<Record<ActionId, string | null>>): ActionId | null {
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
   if (!e.key) return null;
   const key = keyToken(e.key).toLowerCase();
+  const codeLetter = e.code ? /^Key([A-Z])$/.exec(e.code)?.[1] ?? null : null;
   for (const a of ACTIONS) {
     const binding = bindings[a.id];
     if (!binding) continue;
     const parsed = parseBinding(binding);
-    if (!parsed || parsed.key.toLowerCase() !== key || parsed.shift !== e.shiftKey) continue;
-    return a.id;
+    if (!parsed || parsed.shift !== e.shiftKey) continue;
+    if (parsed.key.toLowerCase() === key) return a.id;
+    // Physical-key fallback: the binding's key is a single Latin letter and
+    // the event's code names that same physical key.
+    if (codeLetter !== null && /^[A-Z]$/.test(parsed.key) && parsed.key === codeLetter) return a.id;
   }
   return null;
 }

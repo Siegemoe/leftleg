@@ -62,6 +62,12 @@
       transientNote(`Couldn't open the attach dialog: ${e}`);
       return;
     }
+    // The lock can engage while the picker was open: staging after it would
+    // put chips into a dead-end draft (same reason as the guard above).
+    if ($updateInstallLock) {
+      transientNote("Update is installing — attachments can't be staged right now");
+      return;
+    }
     for (const f of picked) {
       // Rust reports per-file failures via `error`; a present-but-empty data
       // string is a legitimate (empty) file and attaches as one. Guard the
@@ -111,6 +117,9 @@
   // Paste images directly from the clipboard (screenshots, copied files).
   async function onPaste(e: ClipboardEvent) {
     if (busy) return; // a paste during the open window would miss `sent` entirely
+    // Same stand-down as addFiles: under the update install lock a staged
+    // chip belongs to a dead-end interaction.
+    if ($updateInstallLock) return;
     const items = e.clipboardData?.items;
     if (!items) return;
     const files: File[] = [];
@@ -136,7 +145,19 @@
         () => pendingStaging.delete(read),
         () => pendingStaging.delete(read),
       );
-      const dataUrl = await read;
+      let dataUrl: string;
+      try {
+        dataUrl = await read;
+      } catch (err) {
+        // A failed read must not kill the paste: name the file, keep going.
+        transientNote(`Couldn't read pasted image ${f.name || "(unnamed)"}: ${err}`);
+        continue;
+      }
+      // The lock can engage while the read is in flight — same dead-end rule.
+      if ($updateInstallLock) {
+        transientNote("Update is installing — pasted image skipped");
+        continue;
+      }
       const b64 = dataUrl.split(",")[1] ?? "";
       startupDraft.update((draft) => ({ ...draft, attachments: [...draft.attachments, {
         name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
@@ -278,7 +299,7 @@
         bind:value={$startupDraft.text}
         rows={3}
         spellcheck="false"
-        disabled={busy}
+        disabled={busy || $updateInstallLock}
         onkeydown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();

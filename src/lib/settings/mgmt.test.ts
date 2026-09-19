@@ -40,13 +40,48 @@ function reply(ok = true, project = "/a", proc = 1) {
   return handleEvent({ type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: payload.id, ok, data: { answer: 42 }, error: "nope" }) }, { project, proc });
 }
 it("routes replies after the requesting project goes into the background", async () => {
+  // The switch lands during the agent-dir await, so the captured project /a
+  // is no longer foreground at gate time: its own surface is probed directly
+  // (call 0) before the prompt send (call 1). An earlier version validated
+  // against the NEW foreground's tracked list, which this mock happened to
+  // keep identical — masking the cross-surface validation bug.
+  vi.mocked(api.piRequest)
+    .mockResolvedValueOnce({ success: true, data: { commands: [{ ...COMPANION_CMD }] } })
+    .mockResolvedValueOnce({ success: true });
   const pending = mgmtRequest("ping");
   projectDir.set("/b");
-  await untilSent();
-  await reply();
+  await untilCalls(2);
+  handleEvent(
+    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 42 }, error: "nope" }) },
+    { project: "/a", proc: 1 },
+  );
   await expect(pending).resolves.toEqual({ answer: 42 });
   expect(get(notifications)).toEqual([]);
-  expect(vi.mocked(api.piRequest).mock.calls[0][2]).toBe("/a");
+  expect(vi.mocked(api.piRequest).mock.calls[1][2]).toBe("/a");
+});
+it("a project that went to the background mid-gate is validated against its own command surface", async () => {
+  // `foreground` is captured before the agent-dir await; a project switch in
+  // that window used to leave the request validating against the NEW
+  // foreground's tracked command list. The captured project must be probed
+  // directly once it is no longer foreground.
+  vi.mocked(api.piRequest)
+    .mockResolvedValueOnce({ success: true, data: { commands: [{ ...COMPANION_CMD }] } })
+    .mockResolvedValueOnce({ success: true });
+  const pending = mgmtRequest("ping");
+  projectDir.set("/b"); // the switch lands while the agent-dir lookup is in flight
+  commands.set([]); // the NEW foreground's surface: must not vouch for /a
+  await untilCalls(2);
+  const [probe, send] = vi.mocked(api.piRequest).mock.calls;
+  expect(probe[0]).toEqual({ type: "get_commands" });
+  expect(probe[2]).toBe("/a");
+  expect(probe[3]).toBe(1);
+  expect((send[0] as { type: string }).type).toBe("prompt");
+  expect(send[2]).toBe("/a");
+  handleEvent(
+    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 11 } }) },
+    { project: "/a", proc: 1 },
+  );
+  await expect(pending).resolves.toEqual({ answer: 11 });
 });
 it("does not abort one project's request when another process exits", async () => {
   const pending = mgmtRequest("ping");
@@ -214,10 +249,15 @@ it("clearing with the set handle restores the foreground bind", async () => {
 
 it("a stale destroy cannot drop a remounted workspace's fresh scope", async () => {
   // The old workspace's onDestroy may fire after the fresh workspace's set;
-  // the clear only drops the exact object it was handed (identity, not fields).
-  setManagementScope({ project: "/b", proc: 2 });
-  setManagementScope({ project: "/c", proc: 3 });
-  clearManagementScope({ project: "/b", proc: 2 }); // same fields, different object
+  // the clear only drops the exact object it was handed (identity, not
+  // fields). stale and fresh are DISTINCT objects with IDENTICAL fields —
+  // clearing the stale identity must not clear the live scope, so a
+  // structurally-comparing implementation would fail this test.
+  const stale = { project: "/c", proc: 3 };
+  const fresh = { project: "/c", proc: 3 };
+  setManagementScope(stale);
+  setManagementScope(fresh);
+  clearManagementScope(stale); // stale identity, same fields as the live scope
   lastProcByProject.set({ "/a": 1, "/c": 3, "/d": 9 });
   const request = bindManagement();
   projectDir.set("/d");
