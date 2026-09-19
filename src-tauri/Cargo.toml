@@ -3,7 +3,9 @@ name = "leftleg"
 version = "0.6.2"
 description = "Leftleg — a native control surface for the Pi coding agent"
 edition = "2021"
-rust-version = "1.77.2"
+# Oldest compiler that builds the locked graph: quick-xml 0.42 (transitive of
+# tauri) requires the edition2024 cargo feature. Verified by the msrv CI job.
+rust-version = "1.98.1"
 
 [lib]
 name = "leftleg_lib"
