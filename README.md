@@ -61,6 +61,8 @@ npm run tauri dev
 | --- | --- |
 | `npm run build` | quality gate: svelte-check (0 errors / 0 warnings) + vitest + vite build |
 | `npm run test` | frontend unit tests (vitest) |
+| `npm run verify:functional` | complete frontend + Rust behavioral gate |
+| `npm run verify` | formatting, lint, and all behavioral gates |
 | `npm run check:rust` / `npm run test:rust` | cargo check / cargo test |
 | `npm run tauri build` | signed release build + NSIS installer — see `docs/RELEASE.md` |
 
@@ -69,6 +71,7 @@ The build gate is deliberate: template type errors and logic regressions fail at
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — deep dive: RPC bridge, event routing, state ownership
+- [`docs/CI.md`](docs/CI.md) — local gates, GitHub checks, and advisory-baseline promotion
 - [`docs/RELEASE.md`](docs/RELEASE.md) — signing keys, updater feed, per-release checklist
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's next
 - [`CHANGELOG.md`](CHANGELOG.md) — release history

@@ -27,6 +27,8 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: "1.98.1"
 
       - name: Install locked frontend dependencies
         run: npm ci

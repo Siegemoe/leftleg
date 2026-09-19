@@ -4,21 +4,26 @@ on:
   push:
     branches: [master]
   pull_request:
+    branches: [master]
   schedule:
-    # Weekly security re-check: new advisories surface even with no pushes.
+    # Weekly security, coverage, and compatibility re-check.
     - cron: "41 5 * * 1"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: "22"
+  RUST_VERSION: "1.98.1"
+  PI_VERSION: "0.85.1"
+
 jobs:
-  quality-gate:
-    # The project's stated gate (svelte-check + vitest + vite build) and the
-    # Rust test suite, enforced on every PR and push to master.
+  frontend:
+    name: Frontend
     if: github.event_name != 'schedule'
     runs-on: windows-latest
     steps:
@@ -28,34 +33,196 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Install locked frontend dependencies
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check templates and types, run unit tests, and build
+        run: npm run build:web
+
+  pi-contract:
+    name: Pi contract
+    if: github.event_name != 'schedule'
+    runs-on: windows-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install locked dependencies
         run: npm ci
 
       - name: Install pinned Pi integration runtime
         shell: pwsh
         run: |
-          npm install --global @earendil-works/pi-coding-agent@0.85.1
+          npm install --global @earendil-works/pi-coding-agent@${{ env.PI_VERSION }}
           $piVersion = pi --version
-          if ($LASTEXITCODE -ne 0 -or $piVersion.Trim() -ne "0.85.1") {
-            throw "Expected Pi 0.85.1 for integration tests; got '$piVersion'"
+          if ($LASTEXITCODE -ne 0 -or $piVersion.Trim() -ne "${{ env.PI_VERSION }}") {
+            throw "Expected Pi ${{ env.PI_VERSION }} for integration tests; got '$piVersion'"
           }
 
+      - name: Verify the real Pi RPC companion contract
+        run: npm run test:integration
+
+  rust-tests:
+    name: Rust tests
+    if: github.event_name != 'schedule'
+    runs-on: windows-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
-      - name: Verify frontend (svelte-check + vitest + vite build)
-        run: npm run build
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: src-tauri -> target
 
-      - name: Verify Rust
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Verify Rust behavior
+        run: npm run test:rust
+
+  # Keep this single stable check name in the master branch ruleset. The jobs
+  # above may be reorganized without requiring a repository-settings change.
+  quality-gate:
+    name: Required quality gate
+    if: always() && github.event_name != 'schedule'
+    needs: [frontend, pi-contract, rust-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every functional gate
+        shell: bash
+        run: |
+          failures=0
+          check_result() {
+            if [ "$2" != "success" ]; then
+              echo "::error title=$1 failed::Result was $2"
+              failures=1
+            fi
+          }
+          check_result "Frontend" "${{ needs.frontend.result }}"
+          check_result "Pi contract" "${{ needs['pi-contract'].result }}"
+          check_result "Rust tests" "${{ needs['rust-tests'].result }}"
+          exit "$failures"
+
+  # The current repository has known formatting and lint debt. These checks
+  # publish the exact remediation queue without blocking functional work.
+  # Remove continue-on-error after the baseline-cleanup commit lands.
+  frontend-hygiene:
+    name: Frontend hygiene (advisory)
+    if: github.event_name != 'schedule'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint TypeScript and Svelte
+        if: always()
+        run: npm run lint
+
+  rust-hygiene:
+    name: Rust hygiene (advisory)
+    if: github.event_name != 'schedule'
+    continue-on-error: true
+    runs-on: windows-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Check Rust formatting
+        run: npm run format:rust:check
+
+      - name: Lint Rust
+        if: always()
+        run: npm run lint:rust
+
+  msrv:
+    name: Declared Rust 1.77.2 compatibility (advisory)
+    if: github.event_name != 'schedule'
+    continue-on-error: true
+    runs-on: windows-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up declared minimum Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: "1.77.2"
+
+      - name: Verify the declared minimum compiler
+        run: cargo check --manifest-path src-tauri/Cargo.toml --locked
+
+  coverage:
+    name: Coverage report (advisory)
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/master'
+    continue-on-error: true
+    runs-on: windows-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install pinned Pi integration runtime
+        shell: pwsh
+        run: npm install --global @earendil-works/pi-coding-agent@${{ env.PI_VERSION }}
+
+      - name: Generate coverage without enforcing an arbitrary threshold
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-coverage
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 14
 
   security:
-    # Dependency advisories (npm + RustSec). Runs on master pushes and weekly;
-    # PRs are covered by the quality gate. cargo-audit is compiled here, so the
-    # cheaper ubuntu runner keeps this job's cost down.
+    name: Dependency audit
     if: github.event_name == 'schedule' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
@@ -65,19 +232,21 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install locked frontend dependencies
         run: npm ci
 
-      - name: npm audit (fails on high/critical)
+      - name: Audit npm dependencies
         run: npm audit --audit-level=high
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
-      - name: cargo audit (RustSec advisories)
+      - name: Audit Rust dependencies
         run: |
-          cargo install cargo-audit --locked
+          cargo install cargo-audit --version 0.22.2 --locked
           cargo audit --file src-tauri/Cargo.lock
