@@ -51,7 +51,7 @@
 - [x] Diff and Files docks (working-tree diff summary, repo file tree, branch-hover totals) + movable code-viewer card; Subagents/Browser/Terminal docks remain placeholders
 - [x] File/View menu refresh: New Project…, Diff…, Files…; scope picker left-anchored with viewport clamps and a New project… row
 
-## Unreleased — working batch (2026-09-18)
+## v0.7.2 — shipped (tagged and published 2026-09-19)
 
 - [x] Title-bar logo returns to the start view: the active project keeps running in the background (mid-stream turns continue); switching back restores the view
 - [x] Right panel collapses at the start view — a default, not a lock: dock buttons reopen it, entering a project restores it
