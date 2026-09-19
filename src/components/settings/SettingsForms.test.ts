@@ -63,27 +63,26 @@ beforeEach(() => {
     theme: "dark",
   };
   revision = 1;
+  mocks.request.mockReset();
   // Mixed-op request params; only a few keys matter per op, so keep `any`.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mocks.request
-    .mockReset()
-    .mockImplementation(async (op: string, params: Record<string, any> = {}) => {
-      params = JSON.parse(JSON.stringify(params)); // Match the real JSON RPC boundary, including Svelte proxies.
-      if (op === "read")
-        return { exists: true, data: JSON.parse(JSON.stringify(doc)), revision: String(revision) };
-      if (op === "write") {
-        if (params.revision !== String(revision)) throw new Error("conflict");
-        doc = (
-          params.mode === "namespace"
-            ? applyNamespaces(doc, params.patch)
-            : applyMerge(doc, params.patch)
-        ) as typeof doc;
-        for (const key of params.unsetKeys ?? []) delete doc[key];
-        revision++;
-        return { revision: String(revision) };
-      }
-      return {};
-    });
+  mocks.request.mockImplementation(async (op: string, params: Record<string, any> = {}) => {
+    params = JSON.parse(JSON.stringify(params)); // Match the real JSON RPC boundary, including Svelte proxies.
+    if (op === "read")
+      return { exists: true, data: JSON.parse(JSON.stringify(doc)), revision: String(revision) };
+    if (op === "write") {
+      if (params.revision !== String(revision)) throw new Error("conflict");
+      doc = (
+        params.mode === "namespace"
+          ? applyNamespaces(doc, params.patch)
+          : applyMerge(doc, params.patch)
+      ) as typeof doc;
+      for (const key of params.unsetKeys ?? []) delete doc[key];
+      revision++;
+      return { revision: String(revision) };
+    }
+    return {};
+  });
 });
 afterEach(async () => {
   if (instance) await unmount(instance);
