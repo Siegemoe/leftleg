@@ -10,6 +10,10 @@ pub use sessions::open_path_allowed;
 pub use sessions::read_text_file_checked;
 /// Containment check shared by renderer-supplied repository commands.
 pub use sessions::project_dir_allowed;
+/// The gated project_dir command bodies (git_repo_info, list_artifacts,
+/// delete_artifact), re-exported for the integration test that drives the
+/// boundary the three commands now share.
+pub use sessions::{delete_artifact_allowed, git_repo_info_checked, list_artifacts_checked};
 
 use pi::PiProcess;
 use serde_json::Value;
