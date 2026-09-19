@@ -159,6 +159,12 @@ impl PiState {
     }
 }
 
+impl Default for PiState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Start (or refocus) the pi process for a project. A live process for the
 /// project is reused — it keeps its session and any in-flight work; callers
 /// refocus it and may issue `switch_session` themselves. Pass
@@ -219,10 +225,12 @@ async fn pi_start(
     match state.insert(&project, proc.clone()) {
         Ok(displaced) => {
             // Defensive: a live process should have been removed before spawn,
-            // but if one raced in, tree-kill it so it can't leak. Detached —
-            // taskkill is independent of this request's outcome.
+            // but if one raced in, tree-kill it so it can't leak. Detached on
+            // purpose — dropping the handle (rather than awaiting) only
+            // detaches the task, and taskkill is independent of this
+            // request's outcome.
             for old in displaced {
-                let _ = tauri::async_runtime::spawn_blocking(move || old.kill());
+                drop(tauri::async_runtime::spawn_blocking(move || old.kill()));
             }
         }
         Err(error) => {

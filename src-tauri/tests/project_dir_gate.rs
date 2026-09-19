@@ -63,18 +63,15 @@ fn project_dir_commands_reject_roots_outside_the_allowed_set() {
     // scope is granted, and no delete is authorized.
     for err in [
         leftleg_lib::git_repo_info_checked(&app, outside.to_str().unwrap())
-            .err()
-            .expect("git_repo_info must reject an unregistered root"),
+            .expect_err("git_repo_info must reject an unregistered root"),
         leftleg_lib::list_artifacts_checked(&app, outside.to_str().unwrap())
-            .err()
-            .expect("list_artifacts must reject an unregistered root"),
+            .expect_err("list_artifacts must reject an unregistered root"),
         leftleg_lib::delete_artifact_allowed(
             &app,
             outside.to_str().unwrap(),
             &outside.join("x.png").to_string_lossy(),
         )
-        .err()
-        .expect("delete_artifact must reject an unregistered root"),
+        .expect_err("delete_artifact must reject an unregistered root"),
     ] {
         assert!(err.contains("outside"), "{err}");
     }
