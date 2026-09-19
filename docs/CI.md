@@ -134,11 +134,11 @@ or constrained.
 
 Triage completed 2026-09-19: full record in
 `docs/CODEQL-TRIAGE-2026-09-19.md` (classes, per-alert dispositions, and the
-three commands now gated). 99 alerts were dismissed with class justifications
-and exactly 6 remain open as documented accepted risks — the neutralized
-`leftleg-media` file-system race, the dialog-picked attachment read, and four
-`create_project_dir` parent-directory alerts. The 6 open alerts are decisions,
-not an outstanding queue.
+three commands now gated). 99 alerts were dismissed with class justifications,
+and the 6 accepted risks that stayed open were remediated in code the same
+day — the `leftleg-media` fd race fixed, project-folder creation moved behind
+a Rust-owned dialog, and the attachment read hardened (details in the triage
+doc's evening-remediation section).
 
 ## Later layers
 

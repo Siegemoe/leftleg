@@ -142,3 +142,31 @@ The plan above was carried out as written:
 API-verified final state: 99 dismissed, 24 fixed, 6 open. The original
 105-alert inventory accounts as 24 fixed + 75 dismissed + 6 open; the extra
 24 dismissed came from the post-merge analysis of the new code.
+
+## Evening remediation (2026-09-19) — the 6 keep-opens
+
+All six accepted risks were closed in code the same day ("fix: remove the
+webview-supplied project path and pin the media reads to their fd"):
+
+- **#21 (`js/file-system-race`)** — `readReference` in
+  `companion/leftleg-media/index.ts` now opens the file once and stats/reads
+  through the same fd (`node:fs/promises` open → `fh.stat` → capped
+  `fh.read`), so a swap-in between the size gate and the read can no longer
+  slip an oversized file past the limit; the capped read bounds the buffer
+  regardless.
+- **#69/#95/#101/#102 (`rust/path-injection`, class R6)** — the
+  webview-supplied-parent primitive is gone: `create_project_dir(parent,
+name)` was replaced by `pick_and_create_project_dir(app, name)`, which
+  opens the OS folder dialog in Rust (the `pick_and_read_files` pattern) and
+  feeds the picked parent to the unchanged `create_project_dir_checked`
+  validator. The webview sends only the folder name; no webview-supplied
+  path reaches the create path anymore.
+- **#53 (`rust/path-injection`, class R3)** — `read_attachment` canonicalizes
+  the path and requires a regular file before opening. The remaining taint
+  source is structural: the path genuinely comes from the user's own native
+  dialog pick, not the webview. If the alert survives the master re-analysis
+  on this code, it is dismissed with this remediation as the justification —
+  accurate accounting, not silencing.
+
+The next master analysis should mark #21 and the four R6 alerts fixed. The
+open-alert target state is 0, or 1 (#53) pending the dismissal above.
