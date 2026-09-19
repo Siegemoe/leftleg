@@ -262,7 +262,13 @@ export async function mgmtRequest<T = Record<string, unknown>>(
   // background target the command list comes from that exact process (the
   // tracked store is the foreground's — see targetCommands).
   const agentDir = await ensureAgentDir();
-  const cmds = foreground ? get(commands) : await targetCommands(project, gen);
+  // `foreground` was captured before the await: a project switch in that
+  // window would leave the tracked `commands` store describing the NEW
+  // foreground process while `project` still names the old one. Validate the
+  // captured project against its own surface — probe it directly once it has
+  // gone to the background. Same-project requests behave exactly as before.
+  const stillForeground = project === get(projectDir);
+  const cmds = stillForeground ? get(commands) : await targetCommands(project, gen);
   if (!cmds.some((c) => isCompanionCommand(c, agentDir))) {
     throw new Error(MGMT_UNAVAILABLE);
   }
@@ -289,7 +295,7 @@ export async function mgmtRequest<T = Record<string, unknown>>(
   // background target's own probe is current by construction — no await has
   // run since it resolved — so only the generation can have moved.
   const requestProc = get(lastProcByProject)[project];
-  if (requestProc !== gen || (foreground && !companionAvailable())) {
+  if (requestProc !== gen || (stillForeground && !companionAvailable())) {
     const p = pending.get(id);
     if (p) {
       clearTimeout(p.timer);
