@@ -5,11 +5,11 @@ mod sessions;
 /// Containment boundary for local opens, re-exported for the integration
 /// test that exercises it without opening anything.
 pub use sessions::open_path_allowed;
+/// Containment check shared by renderer-supplied repository commands.
+pub use sessions::project_dir_allowed;
 /// read_text_file's command pipeline, re-exported alongside the open boundary
 /// so its integration test drives the same containment path.
 pub use sessions::read_text_file_checked;
-/// Containment check shared by renderer-supplied repository commands.
-pub use sessions::project_dir_allowed;
 /// The gated project_dir command bodies (git_repo_info, list_artifacts,
 /// delete_artifact), re-exported for the integration test that drives the
 /// boundary the three commands now share.
@@ -251,7 +251,10 @@ async fn pi_stop(state: State<'_, PiState>, project: Option<String>) -> Result<(
 /// Is the pi process alive (active project, or the named one)?
 #[tauri::command]
 fn pi_status(state: State<PiState>, project: Option<String>) -> bool {
-    state.resolve(project.as_deref()).map(|p| p.is_alive()).unwrap_or(false)
+    state
+        .resolve(project.as_deref())
+        .map(|p| p.is_alive())
+        .unwrap_or(false)
 }
 
 /// Final native update boundary. Once this returns, every owned Pi process tree
@@ -290,10 +293,13 @@ async fn pi_request(
     expected_proc: Option<u64>,
 ) -> Result<Value, String> {
     let proc = state.resolve(project.as_deref())?;
-    if expected_proc.is_some_and(|id| id != proc.id) { return Err("pi process replaced before request dispatch".into()); }
+    if expected_proc.is_some_and(|id| id != proc.id) {
+        return Err("pi process replaced before request dispatch".into());
+    }
     let timeout = Duration::from_secs(timeout_secs.unwrap_or(120));
     tauri::async_runtime::spawn_blocking(move || pi::request(&proc, command, timeout))
-        .await.map_err(|e| format!("RPC worker failed: {e}"))?
+        .await
+        .map_err(|e| format!("RPC worker failed: {e}"))?
 }
 
 /// Fire-and-forget line (used for extension_ui_response and notifications).
@@ -367,7 +373,10 @@ fn write_log_line(dir: &std::path::Path, line: &str) -> Result<(), String> {
     if file.metadata().map(|m| m.len()).unwrap_or(0) > LOG_MAX_BYTES {
         let _ = fs::rename(&file, dir.join("leftleg.log.1"));
     }
-    let mut f = fs::OpenOptions::new().create(true).append(true).open(&file)
+    let mut f = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file)
         .map_err(|e| e.to_string())?;
     use std::io::Write;
     writeln!(f, "{line}").map_err(|e| e.to_string())
@@ -398,11 +407,16 @@ async fn write_agent_extension(
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let canon_parent = fs::canonicalize(target.parent().ok_or("no parent")?).map_err(|e| e.to_string())?;
+        let canon_parent =
+            fs::canonicalize(target.parent().ok_or("no parent")?).map_err(|e| e.to_string())?;
         if !canon_parent.starts_with(&canon_base) {
             return Err("path traversal rejected".into());
         }
-        if target.exists() && !fs::canonicalize(&target).map_err(|e| e.to_string())?.starts_with(&canon_base) {
+        if target.exists()
+            && !fs::canonicalize(&target)
+                .map_err(|e| e.to_string())?
+                .starts_with(&canon_base)
+        {
             return Err("path traversal rejected".into());
         }
         fs::write(&target, content).map_err(|e| e.to_string())?;
@@ -414,7 +428,10 @@ async fn write_agent_extension(
 
 fn companion_relative_path(rel: &str) -> Result<std::path::PathBuf, String> {
     let path = std::path::Path::new(rel);
-    if path.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+    if path
+        .components()
+        .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
         return Err("path traversal rejected".into());
     }
     match rel.replace('\\', "/").as_str() {
@@ -429,7 +446,12 @@ mod companion_install_tests {
 
     #[test]
     fn write_agent_extension_rejects_traversal() {
-        for invalid in ["..\\..\\evil.ts", "C:\\outside\\index.ts", "/outside/index.ts", "other-extension/index.ts"] {
+        for invalid in [
+            "..\\..\\evil.ts",
+            "C:\\outside\\index.ts",
+            "/outside/index.ts",
+            "other-extension/index.ts",
+        ] {
             assert!(companion_relative_path(invalid).is_err());
         }
         assert!(companion_relative_path("leftleg-settings/index.ts").is_ok());
@@ -462,10 +484,18 @@ mod tests {
         let state = PiState::new();
         state.set_active("/a");
         state.remove("/a");
-        assert_eq!(state.active.lock().unwrap().as_deref(), None, "removing the active project clears the pointer");
+        assert_eq!(
+            state.active.lock().unwrap().as_deref(),
+            None,
+            "removing the active project clears the pointer"
+        );
         state.set_active("/b");
         state.remove("/other");
-        assert_eq!(state.active.lock().unwrap().as_deref(), Some("/b"), "removing another project leaves active alone");
+        assert_eq!(
+            state.active.lock().unwrap().as_deref(),
+            Some("/b"),
+            "removing another project leaves active alone"
+        );
     }
 
     #[test]
@@ -567,13 +597,29 @@ fn quit_app(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Native crash forensics: panics must leave a trace on disk.
-    let log_dir = std::env::var("APPDATA").ok().map(|d| std::path::PathBuf::from(d).join("dev.leftleg.app").join("logs"));
+    let log_dir = std::env::var("APPDATA").ok().map(|d| {
+        std::path::PathBuf::from(d)
+            .join("dev.leftleg.app")
+            .join("logs")
+    });
     std::panic::set_hook(Box::new(move |info| {
         if let Some(dir) = &log_dir {
             let _ = fs::create_dir_all(dir);
-            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-            let line = format!("[panic@{}] {}\nbacktrace: {:?}\n", stamp, info, std::backtrace::Backtrace::force_capture());
-            let _ = fs::OpenOptions::new().create(true).append(true).open(dir.join("rust-panic.log")).and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let line = format!(
+                "[panic@{}] {}\nbacktrace: {:?}\n",
+                stamp,
+                info,
+                std::backtrace::Backtrace::force_capture()
+            );
+            let _ = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(dir.join("rust-panic.log"))
+                .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
         }
     }));
     tauri::Builder::default()
