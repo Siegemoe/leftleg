@@ -97,7 +97,9 @@
   // wedge the drain. Paste reads join sequentially, so later files join as
   // earlier ones settle and "wait until empty" covers multi-file pastes; the
   // drain's allSettled always resumes after the work's own continuation, so
-  // everything settled has already landed in the draft.
+  // everything settled has already landed in the draft. Deliberately
+  // non-reactive: nothing renders from it.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const pendingStaging = new Set<Promise<unknown>>();
 
   async function drainStaging() {
@@ -176,6 +178,9 @@
   // saved project metadata, newest activity first (same shape as the sidebar
   // scope picker).
   const projects = $derived.by(() => {
+    // Local scratch map rebuilt on each derivation — intentionally not state
+    // (a SvelteMap here would be a state write inside $derived, which throws).
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const map = new Map<string, { latest: number }>();
     for (const s of $sessions) {
       if ($projectMeta[s.cwd]?.forgotten) continue;
@@ -255,7 +260,7 @@
     <div class="composerbox">
       {#if $startupDraft.attachments.length > 0}
         <div class="attachments">
-          {#each $startupDraft.attachments as a, i}
+          {#each $startupDraft.attachments as a, i (a)}
             <div class="chip">
               {#if a.isImage}
                 <img src={dataUrlOf(a)} alt={a.name} />

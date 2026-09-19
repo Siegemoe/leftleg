@@ -19,8 +19,10 @@ beforeEach(() => {
   } as never);
 });
 afterEach(() => { vi.unstubAllEnvs(); rmSync(dir, { recursive: true, force: true }); });
+// Structured mgmt replies as read by these tests (subset of the real shape).
+type MgmtReply = { ok?: boolean; data?: { activeTools?: string[] } };
 async function request(op: string, params: Record<string, unknown> = {}) {
-  let reply: any;
+  let reply: MgmtReply = {};
   await handler(JSON.stringify({ v: 1, id: "test", op, ...params }), {
     cwd: dir, ui: { notify: (message: string) => { reply = JSON.parse(message.slice("LeftlegMgmt:".length)); } },
   } as never);
@@ -53,12 +55,12 @@ describe("companion boundary regressions", () => {
     expect(computeRevision(file)).not.toBe(rev);
   });
   it("gets and sets tools through ExtensionAPI, not ExtensionContext", async () => {
-    expect((await request("get-runtime")).data.activeTools).toEqual(["read", "bash"]);
+    expect((await request("get-runtime")).data?.activeTools).toEqual(["read", "bash"]);
     expect((await request("set-active-tools", { tools: ["read"] })).ok).toBe(true);
     expect(activeTools).toEqual(["read"]);
   });
   it("rejects null requests with a structured reply", async () => {
-    let reply: any;
+    let reply: MgmtReply = {};
     await expect(handler("null", { ui: { notify: (m: string) => { reply = JSON.parse(m.slice("LeftlegMgmt:".length)); } } } as never)).resolves.toBeUndefined();
     expect(reply.ok).toBe(false);
   });

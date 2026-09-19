@@ -45,7 +45,7 @@
     <div class="bubble user-bubble" class:failed={item.status === "failed"}>
       {#if item.images.length > 0}
         <div class="thumbs">
-          {#each item.images as img}
+          {#each item.images as img (img)}
             {#if img.dataUrl}
               <img src={img.dataUrl} alt={img.name} title={img.name} />
             {:else}
@@ -72,7 +72,7 @@
       {#if item.timestamp}
         <div class="msg-time">{dayHeaderLabel(item.timestamp)}</div>
       {/if}
-      {#each item.blocks as block}
+      {#each item.blocks as block (block)}
         {#if block.type === "thinking"}
           <details class="thinking" open={!block.done}>
             <summary>

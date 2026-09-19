@@ -450,7 +450,7 @@ function removeDialog(owner: { project?: string; proc?: number }, id: string) {
 
 function toolResultText(result: { content?: Array<{ type: string; text?: string }> } | undefined): { text: string; truncated: boolean; diff?: string } {
   if (!result?.content) return { text: "", truncated: false };
-  let full = result.content
+  const full = result.content
     .filter((c) => c.type === "text")
     .map((c) => c.text ?? "")
     .join("\n");
@@ -1757,63 +1757,29 @@ async function bootImpl() {
   });
   autoRetry.set(true);
 
-  // Persist theme + sidebar changes
-  theme.subscribe(async (v) => {
-    gui.theme = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  sidebarOpen.subscribe(async (v) => {
-    gui.sidebarOpen = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  pins.subscribe(async (v) => {
-    gui.pins = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  settled.subscribe(async (v) => {
-    gui.settled = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  projectMeta.subscribe(async (v) => {
-    gui.projectMeta = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  visitedAt.subscribe(async (v) => {
-    gui.visitedAt = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  sidebarWidth.subscribe(async (v) => {
-    gui.sidebarWidth = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  settledView.subscribe(async (v) => {
-    gui.settledView = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  pinnedModels.subscribe(async (v) => {
-    gui.pinnedModels = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  rightPanelOpen.subscribe(async (v) => {
-    gui.rightPanelOpen = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  rightPanelTab.subscribe(async (v) => {
-    gui.rightPanelTab = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  rightPanelWidth.subscribe(async (v) => {
-    gui.rightPanelWidth = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  fileCardRect.subscribe(async (v) => {
-    gui.fileCardRect = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
-  keybindings.subscribe(async (v) => {
-    gui.keybindings = v;
-    try { await api.writeGuiState(gui); } catch { /* ignore */ }
-  });
+  // Persist GUI-state stores. Persistence is fire-and-forget: subscribe
+  // callbacks stay synchronous, and a failed write (sync or async) must never
+  // wedge the GUI loop — the next state change rewrites the whole gui object
+  // anyway. The detached async wrapper keeps the original swallow semantics.
+  const persistGui = (): void => {
+    void (async () => {
+      try { await api.writeGuiState(gui); } catch { /* ignore */ }
+    })();
+  };
+  theme.subscribe((v) => { gui.theme = v; persistGui(); });
+  sidebarOpen.subscribe((v) => { gui.sidebarOpen = v; persistGui(); });
+  pins.subscribe((v) => { gui.pins = v; persistGui(); });
+  settled.subscribe((v) => { gui.settled = v; persistGui(); });
+  projectMeta.subscribe((v) => { gui.projectMeta = v; persistGui(); });
+  visitedAt.subscribe((v) => { gui.visitedAt = v; persistGui(); });
+  sidebarWidth.subscribe((v) => { gui.sidebarWidth = v; persistGui(); });
+  settledView.subscribe((v) => { gui.settledView = v; persistGui(); });
+  pinnedModels.subscribe((v) => { gui.pinnedModels = v; persistGui(); });
+  rightPanelOpen.subscribe((v) => { gui.rightPanelOpen = v; persistGui(); });
+  rightPanelTab.subscribe((v) => { gui.rightPanelTab = v; persistGui(); });
+  rightPanelWidth.subscribe((v) => { gui.rightPanelWidth = v; persistGui(); });
+  fileCardRect.subscribe((v) => { gui.fileCardRect = v; persistGui(); });
+  keybindings.subscribe((v) => { gui.keybindings = v; persistGui(); });
   delete gui.autoRetry; // agent settings are persisted only by Pi
 
   // React to OS theme changes when in system mode

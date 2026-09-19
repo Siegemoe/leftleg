@@ -20,6 +20,9 @@ import { settingsOpen, settingsProject, projectDir, activeSessionPath, rpcState 
 import * as api from "../../lib/api";
 let host: HTMLDivElement;
 let instance: ReturnType<typeof mount>;
+// The mock settings doc is deliberately schema-less JSON (Pi's settings.json
+// shape); assertions read it deeply, so a typed shape would be noise.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let doc: Record<string, any>;
 let revision: number;
 const settle = async () => { await new Promise((r) => setTimeout(r, 0)); flushSync(); };
@@ -30,6 +33,8 @@ beforeEach(() => {
   settingsOpen.set(true); settingsProject.set(null);
   doc = { defaultProvider: "old", subagent: { roles: { coder: { models: ["p/m:free"] }, reviewer: { models: ["p/r"] } }, agentModels: { scout: "p/s" } }, permission: { bash: { "old*": "deny", "keep*": "allow" } }, theme: "dark" };
   revision = 1;
+  // Mixed-op request params; only a few keys matter per op, so keep `any`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mocks.request.mockReset().mockImplementation(async (op: string, params: Record<string, any> = {}) => {
     params = JSON.parse(JSON.stringify(params)); // Match the real JSON RPC boundary, including Svelte proxies.
     if (op === "read") return { exists: true, data: JSON.parse(JSON.stringify(doc)), revision: String(revision) };

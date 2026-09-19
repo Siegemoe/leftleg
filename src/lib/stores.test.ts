@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
-import type { AgentMessage, AssistantItem, PiEvent, ToolItem } from "./types";
+import type { AgentMessage, AssistantItem, ToolItem } from "./types";
 
 vi.mock("./api", () => ({
   piRequest: vi.fn().mockResolvedValue({ success: true, data: {} }),

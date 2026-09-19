@@ -156,7 +156,7 @@ export default function (pi: ExtensionAPI): void {
       ui: { notify(message: string, level?: string): void };
       [k: string]: unknown;
     }) => {
-      let req: Request | null = null;
+      let req: Request;
       try {
         req = JSON.parse((args ?? "").trim()) as Request;
       } catch {

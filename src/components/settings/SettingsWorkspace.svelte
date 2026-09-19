@@ -4,7 +4,7 @@
   // settings-mgmt companion (allowlisted targets, revision-checked, atomic).
   // Current-runtime controls use native RPC setters only.
   import {
-    settingsOpen, settingsProject, connected, rpcState, models, commands, projectDir,
+    settingsOpen, settingsProject, rpcState, models, commands, projectDir,
     theme, applyTheme, compact, renameSession, setModel, setThinkingLevel,
     setSteeringMode, setFollowUpMode, setAutoCompaction, setAutoRetry, abortRetry,
     exportSessionHtml, cloneSession, projectMeta, sessions, updateProjectMeta,
@@ -14,7 +14,7 @@
   } from "../../lib/stores";
   import { ACTIONS, conflictingAction, effectiveBindings, parseCapture, type ActionId } from "../../lib/keybindings";
   import { companionAvailable, bindManagement, agentDirStore, isCompanionCommand, setManagementScope, clearManagementScope } from "../../lib/settings/mgmt";
-  import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconStyle, projectIconLabel } from "../../lib/project-icons";
+  import { PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconLabel } from "../../lib/project-icons";
   import ProjectIcon from "../ProjectIcon.svelte";
   import { checkForUpdates, applyUpdate, updateAvailable, updateCheck, updateStatus } from "../../lib/updater";
   import { onDestroy, untrack } from "svelte";
@@ -46,12 +46,12 @@
     !$navigating && !$updateInstallLock && $commands.some((c) => isCompanionCommand(c, $agentDirStore ?? undefined)),
   );
   import {
-    getPath, setPath, cloneJson, sourceOf, effectiveValue, defaultValue,
+    getPath, setPath, cloneJson, sourceOf, defaultValue,
     isUnsafeConfigKey, preparePatch,
     BUILTIN_TOOLS, THINKING_LEVELS, type Scope,
   } from "../../lib/settings/state";
   import { writeAgentExtension, getAgentDir } from "../../lib/api";
-  import { Search, X, RotateCcw, FolderOpen, RefreshCw, Plus } from "@lucide/svelte";
+  import { Search, RotateCcw, FolderOpen, Plus } from "@lucide/svelte";
   import PackageForms from "./PackageForms.svelte";
   import companionSource from "../../../companion/leftleg-settings/index.ts?raw";
   import mediaSource from "../../../companion/leftleg-media/index.ts?raw";
@@ -267,9 +267,6 @@
     inheritKeys = inheritKeys.filter((k) => k !== path);
     setPath(draft, path, v);
     draft = { ...draft };
-  }
-  function fieldInherited(path: string): boolean {
-    return inheritKeys.includes(path) || getPath(draft, path) === undefined;
   }
   function matchesSearch(...texts: (string | undefined)[]): boolean {
     const q = search.trim().toLowerCase();
@@ -627,7 +624,7 @@
         <div class="row">
           <label for="rt-think">Thinking level</label>
           <select id="rt-think" disabled={runtimeDisabled} title={runtimeDisabled ? RUNTIME_CLOSED_TITLE : undefined} value={$rpcState?.thinkingLevel ?? "medium"} onchange={(e) => void setThinkingLevel(e.currentTarget.value as never)}>
-            {#each THINKING_LEVELS as l}<option value={l}>{l}</option>{/each}
+            {#each THINKING_LEVELS as l (l)}<option value={l}>{l}</option>{/each}
           </select>
         </div>
         <div class="row">
@@ -697,7 +694,7 @@
           <div class="inline">
             <select id="ab-think" value={fieldStr("defaultThinkingLevel")} onchange={(e) => setFieldStr("defaultThinkingLevel", e.currentTarget.value)}>
               <option value="">(inherited)</option>
-              {#each THINKING_LEVELS as l}<option value={l}>{l}</option>{/each}
+              {#each THINKING_LEVELS as l (l)}<option value={l}>{l}</option>{/each}
             </select>
             <button class="ghost" title="Reset to inherited" onclick={() => markInherit("defaultThinkingLevel")}><RotateCcw size={12} strokeWidth={2} /></button>
           </div>
@@ -989,7 +986,7 @@
         <div class="row">
           <span class="row-label">Leftleg theme</span>
           <div class="seg">
-            {#each [["light", "Light"], ["dark", "Dark"], ["system", "System"]] as [v, l]}
+            {#each [["light", "Light"], ["dark", "Dark"], ["system", "System"]] as [v, l] (v)}
               <button class:active={$theme === v} onclick={() => applyTheme(v as never)}>{l}</button>
             {/each}
           </div>

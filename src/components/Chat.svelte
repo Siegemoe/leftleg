@@ -44,7 +44,7 @@
 
   $effect(() => {
     // scroll on new items or streaming growth
-    $items; $streaming;
+    void $items; void $streaming;
     if (stick && scroller) {
       const frame = requestAnimationFrame(() => {
         // stick may have flipped between scheduling and firing (a rail-tick

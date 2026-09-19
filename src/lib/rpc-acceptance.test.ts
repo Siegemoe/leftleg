@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 import type { SessionInfo } from "./types";
-import type { AssistantItem, PiEvent, ToolItem, UserItem } from "./types";
+import type { AssistantItem, ToolItem, UserItem } from "./types";
 
 vi.mock("./api", () => {
   const t = () => {
@@ -47,7 +47,7 @@ import type { FakePi } from "./test/fake-pi";
 import { FakePiHub, OTHER_PROJECT, type FakePiHubOptions } from "./test/fake-pi-hub";
 import {
   FIXTURE_COMMANDS, FIXTURE_SESSIONS, PROJECT_DIR, RECORDED_ERROR_RUN, RECORDED_EXTENSION_EVENTS,
-  RECORDED_RUN, SESSION_A, SESSION_A_MESSAGES, SESSION_B, SESSION_B_MESSAGES, SESSION_OTHER,
+  RECORDED_RUN, SESSION_A, SESSION_B, SESSION_OTHER,
 } from "./test/fixtures";
 
 // exportSessionHtml opens a save dialog; pin it for deterministic journeys.

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { sendPrompt, abort, streaming, statusNote, transientNote, queue, extWidgets, composerDraft, commands, clearQueue, navigating, updateInstallLock } from "../lib/stores";
-  import { buildPromptMessage, type ComposerAttachment } from "../lib/prompt-message";
+  import { buildPromptMessage } from "../lib/prompt-message";
   import { FileText, Paperclip, Send, Square } from "@lucide/svelte";
   import { pickAttachments, type PickedAttachment } from "../lib/api";
 
@@ -218,10 +218,10 @@
 
 {#if $queue.steering.length + $queue.followUp.length > 0}
   <div class="pending">
-    {#each $queue.steering as s}
+    {#each $queue.steering as s, i (s + ":" + i)}
       <div class="pending-chip"><span class="tag">steer</span><span class="ptext">{s}</span></div>
     {/each}
-    {#each $queue.followUp as s}
+    {#each $queue.followUp as s, i (s + ":" + i)}
       <div class="pending-chip"><span class="tag">follow-up</span><span class="ptext">{s}</span></div>
     {/each}
     <button class="ghost clear-btn" onclick={clearQueue} title="Remove queued messages (they are not sent)">Clear queue</button>
@@ -258,7 +258,7 @@
 
   {#if $draftState.attachments.length > 0}
     <div class="attachments">
-      {#each $draftState.attachments as a, i}
+      {#each $draftState.attachments as a, i (a)}
         <div class="chip">
           {#if a.isImage}
             <img src={dataUrlOf(a)} alt={a.name} />

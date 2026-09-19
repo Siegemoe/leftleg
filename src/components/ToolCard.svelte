@@ -2,7 +2,7 @@
   import type { ToolItem } from "../lib/types";
   import { resolve as resolvePath } from "@tauri-apps/api/path";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { projectDir, statusNote, transientNote } from "../lib/stores";
+  import { projectDir, transientNote } from "../lib/stores";
   import { openPathLocal } from "../lib/api";
   import { formatDuration } from "../lib/time-format";
 
