@@ -596,7 +596,7 @@ pub fn delete_artifact_checked(project_dir: &str, path: &str) -> Result<(), Stri
 /// can stream generated images into <img> tags without base64 inflation.
 /// Called on project activation (pi_start) and on artifacts listing so first-
 /// generation previews work without opening the browser first. Idempotent.
-pub fn allow_project_images_scope(app: &tauri::AppHandle, project: &str) {
+pub fn allow_project_images_scope<R: tauri::Runtime>(app: &tauri::AppHandle<R>, project: &str) {
     use tauri::Manager;
     let images_dir = std::path::Path::new(project).join(".pi").join("images");
     // The first generated image arrives after project activation. Ensure the
@@ -669,30 +669,81 @@ pub fn git_repo_info_impl(project_dir: &str) -> GitRepoInfo {
 
 /// Git checkout info for a project directory.
 #[tauri::command]
-pub async fn git_repo_info(project_dir: String) -> Result<GitRepoInfo, String> {
-    tauri::async_runtime::spawn_blocking(move || Ok(git_repo_info_impl(&project_dir)))
+pub async fn git_repo_info(
+    app: tauri::AppHandle,
+    project_dir: String,
+) -> Result<GitRepoInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || git_repo_info_checked(&app, &project_dir))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// The git_repo_info command body, generic over the runtime so the
+/// integration test can drive the gated path with the mock runtime.
+pub fn git_repo_info_checked<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    project_dir: &str,
+) -> Result<GitRepoInfo, String> {
+    // The -C directory is a webview-supplied string: without the boundary
+    // below a compromised renderer picks which directory git runs in, where
+    // config-driven execution (core.fsmonitor on status, textconv drivers on
+    // diff) is arbitrary command execution. Same containment boundary as the
+    // diff/ls/stat commands.
+    project_dir_allowed(app, project_dir)?;
+    Ok(git_repo_info_impl(project_dir))
 }
 
 /// List a project's artifacts (generated images + known docs). Also extends
 /// the asset-protocol scope with the project's images dir (covers the case
 /// where images appeared without a fresh pi_start).
 #[tauri::command]
-pub async fn list_artifacts(app: tauri::AppHandle, project_dir: String) -> Result<ArtifactsReport, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let report = scan_artifacts(&project_dir)?;
-        allow_project_images_scope(&app, &project_dir);
-        Ok(report)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+pub async fn list_artifacts(
+    app: tauri::AppHandle,
+    project_dir: String,
+) -> Result<ArtifactsReport, String> {
+    tauri::async_runtime::spawn_blocking(move || list_artifacts_checked(&app, &project_dir))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The list_artifacts command body. The gate sits before the scan and before
+/// the scope grant: allow_directory on an unvalidated root would hand the
+/// webview read access to a renderer-chosen directory tree, so an ungated
+/// listing is not just a filesystem probe but a scope-widening primitive.
+pub fn list_artifacts_checked<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    project_dir: &str,
+) -> Result<ArtifactsReport, String> {
+    project_dir_allowed(app, project_dir)?;
+    let report = scan_artifacts(project_dir)?;
+    allow_project_images_scope(app, project_dir);
+    Ok(report)
 }
 
 /// Delete one image artifact (guarded to <project>/.pi/images).
 #[tauri::command]
-pub async fn delete_artifact(project_dir: String, path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || delete_artifact_checked(&project_dir, &path)).await.map_err(|e| e.to_string())?
+pub async fn delete_artifact(
+    app: tauri::AppHandle,
+    project_dir: String,
+    path: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || delete_artifact_allowed(&app, &project_dir, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The delete_artifact command body. The per-file containment below already
+/// proves the target resolves inside <project>/.pi/images, but the project
+/// root itself is webview-supplied — without the gate the delete would be
+/// authorized by an attacker-chosen root, and delete is strictly more
+/// dangerous than the read commands that already gate it.
+pub fn delete_artifact_allowed<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    project_dir: &str,
+    path: &str,
+) -> Result<(), String> {
+    project_dir_allowed(app, project_dir)?;
+    delete_artifact_checked(project_dir, path)
 }
 
 // ---------- repo tree, diff summary, and guarded text reads ----------
