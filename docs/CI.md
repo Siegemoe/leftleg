@@ -104,6 +104,26 @@ The weekly dependency audit continues to run `npm audit` and pinned
 `cargo-audit`. GitHub CodeQL default setup is managed in repository settings so
 GitHub can maintain the language/build configuration.
 
+The initial CodeQL scan on 2026-09-19 completed successfully and opened 105
+findings for the existing default branch. This is a triage queue, not 105
+confirmed vulnerabilities:
+
+| Rule | Severity | Findings |
+| --- | --- | ---: |
+| Rust command-line injection | Critical | 3 |
+| Rust path injection | High | 80 |
+| JavaScript path injection | High | 19 |
+| JavaScript file-system race | High | 1 |
+| JavaScript file access to HTTP | Medium | 1 |
+| JavaScript prototype-pollution utility | Medium | 1 |
+
+Most findings cluster in `src-tauri/src/sessions.rs` (69),
+`companion/leftleg-settings/index.ts` (18), and `src-tauri/src/pi.rs` (9).
+Review the three command-line findings first, then group path findings by
+shared trust boundary so one validated helper can address a class of reports.
+Mark a finding false positive only after documenting why its input is trusted
+or constrained.
+
 ## Later layers
 
 The next pipeline layer should add a small Windows Tauri WebDriver suite for
