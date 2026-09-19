@@ -121,20 +121,27 @@ Frontend (`src/`):
 | Command | Runs | Catches | When required |
 | --- | --- | --- | --- |
 | `npm run build` | `svelte-check` + `vitest run` + `vite build` | template/type errors, broken tests, prod-build breakage | after **any** frontend change (AGENTS.md rule 1). Must be **0 errors AND 0 warnings**, tests green, clean vite build — treat a warning as a failure even if the tool would let it pass |
+| `npm run verify:functional` | full frontend gate + locked Rust tests | cross-stack behavioral regressions | before handing off a mixed frontend/Rust change |
+| `npm run verify` | Prettier + ESLint + frontend gate + rustfmt + Clippy + Rust tests | hygiene, unsafe promise use, and behavioral regressions | target whole-repository gate; hygiene remains advisory until the baseline described in `docs/CI.md` is cleared |
 | `npm run check` | `svelte-check` only | types/templates, fast | between edits while iterating |
 | `npm test` | `vitest run` | logic regressions | same, test-only |
 | `npm run check:rust` | `cargo check` | Rust compile errors | after **any** Rust change |
 | `npm run test:rust` | `cargo test` | framing/parsing/containment regressions | when framing/parsing/file-safety logic moved |
 | `npm run tauri build` | full signed release bundle | — | release only (§9) |
 
-CI (`.github/workflows/ci.yml`) runs the same gate on every PR/push to master:
+CI (`.github/workflows/ci.yml`) splits the gate into named jobs on every PR/push to master:
 
 - **Windows runner + Node 22.**
-- **pi 0.85.1 installed globally** — `companion.integration.test.ts` spawns a
+- **Frontend** runs Svelte checks, 308 non-Pi tests, and the production build.
+- **Pi contract** installs pi 0.85.1 globally — `companion.integration.test.ts` spawns a
   real `pi --mode rpc` from PATH (`cmd /C pi --mode rpc`, PI_OFFLINE=1), so
-  the suite (and therefore `npm run build`) needs a real pi binary locally
-  too, not just mocks.
-- CI's Rust step is `cargo test --locked`.
+  the complete local suite (and therefore `npm run build`) needs a real pi
+  binary locally too, not just mocks.
+- **Rust tests** uses the pinned compiler and `cargo test --locked`.
+- **Required quality gate** aggregates the three functional results and is the
+  stable branch-protection check.
+- Frontend/Rust hygiene, declared-minimum-Rust compatibility, and coverage are
+  advisory during the documented baseline cleanup; see `docs/CI.md`.
 - A weekly security job runs `npm audit` (fails on high/critical) and
   `cargo audit`; accepted risks are recorded in `.cargo/audit.toml` /
   `docs/AUDIT-2026-09-17.md`.
