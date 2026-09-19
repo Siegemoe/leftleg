@@ -29,10 +29,10 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
-  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -180,7 +180,7 @@ async function readCappedBody(res: Response): Promise<string> {
   return body.charCodeAt(0) === 0xfeff ? body.slice(1) : body;
 }
 
-function readReference(path: string, cwd: string): string {
+async function readReference(path: string, cwd: string): Promise<string> {
   // Canonical containment, same shape as delete_artifact_checked: resolve
   // symlinks on both sides, then require the target to stay inside the
   // project. Reference bytes are base64-embedded into the request, so an
@@ -191,18 +191,28 @@ function readReference(path: string, cwd: string): string {
   if (rel === "" || isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) {
     throw new Error(`${path}: reference image must stay inside the project directory`);
   }
-  if (statSync(target).size > MAX_REFERENCE_BYTES) {
-    throw new Error(`${path}: reference image exceeds 10 MiB limit`);
+  // Open once, then stat and read through the same fd: a swap-in between a
+  // path stat and a path read can no longer slip an oversized file past the
+  // size gate, and the capped read bounds the buffer regardless.
+  const fh = await open(target, "r");
+  try {
+    if ((await fh.stat()).size > MAX_REFERENCE_BYTES) {
+      throw new Error(`${path}: reference image exceeds 10 MiB limit`);
+    }
+    const capped = Buffer.alloc(MAX_REFERENCE_BYTES + 1);
+    const { bytesRead } = await fh.read(capped, 0, MAX_REFERENCE_BYTES + 1, 0);
+    if (bytesRead > MAX_REFERENCE_BYTES) {
+      throw new Error(`${path}: reference image exceeds 10 MiB limit`);
+    }
+    const buf = capped.subarray(0, bytesRead);
+    const mime = sniffMime(buf);
+    if (!mime) {
+      throw new Error(`${path}: not a readable png/jpeg/gif/webp image`);
+    }
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } finally {
+    await fh.close();
   }
-  const buf = readFileSync(target);
-  if (buf.length > MAX_REFERENCE_BYTES) {
-    throw new Error(`${path}: reference image exceeds 10 MiB limit`);
-  }
-  const mime = sniffMime(buf);
-  if (!mime) {
-    throw new Error(`${path}: not a readable png/jpeg/gif/webp image`);
-  }
-  return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
 function decodeImage(item: { b64_json?: string; media_type?: string }) {
@@ -335,7 +345,9 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
-      const references = (params.reference_images ?? []).map((path) => readReference(path, cwd));
+      const references = await Promise.all(
+        (params.reference_images ?? []).map((path) => readReference(path, cwd)),
+      );
       signal?.throwIfAborted();
 
       const body: Record<string, unknown> = { model, prompt: params.prompt };
