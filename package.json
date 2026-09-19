@@ -45,7 +45,7 @@
     "@eslint/js": "^10.0.1",
     "@sveltejs/vite-plugin-svelte": "^5.1.0",
     "@tauri-apps/cli": "^2.9.0",
-    "@types/node": "^22.20.3",
+    "@types/node": "^26.6.1",
     "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.11.0",
     "eslint-plugin-svelte": "^3.23.0",
