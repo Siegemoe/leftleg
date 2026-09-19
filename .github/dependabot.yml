@@ -19,10 +19,11 @@ updates:
         update-types: ["version-update:semver-major"]
       # TypeScript 7 is gated, not ready: svelte-check 4.7.6 hard-rejects TS 7
       # as the sole compiler (its supported path is a dual tsgo-preview
-      # install with --tsgo). Bump majors deliberately once svelte-check
-      # ships drop-in TS 7 support.
+      # install with --tsgo). Scoped to >= 7 so the compatible 6.x bump
+      # (accepted by svelte-check's ^5 || ^6 peer range) still lands; lift
+      # this deliberately once svelte-check ships drop-in TS 7 support.
       - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
+        versions: [">= 7.0.0"]
     commit-message:
       prefix: deps(npm)
 
