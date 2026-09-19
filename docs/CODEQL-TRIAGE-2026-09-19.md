@@ -118,3 +118,19 @@ Everything else in the Rust production set already passes through
 
 Future sweeps: don't re-derive any of this. New alerts not matching a class
 here deserve fresh eyes.
+
+## Executed (2026-09-19)
+
+The plan above was carried out as written:
+
+1. **Fix in code** — "fix: gate the remaining webview-supplied project_dir
+   commands" added `git_repo_info_checked`, `list_artifacts_checked`, and
+   `delete_artifact_allowed` gates with an integration test
+   (`src-tauri/tests/project_dir_gate.rs`); the 3 command-line-injection
+   alerts and the corresponding path-injection alerts resolved as fixed.
+2. **Dismiss with justification** — 99 alerts dismissed in one sweep, each
+   with a comment citing its class above and referencing this doc.
+3. **Keep open** — 6 alerts remain open, exactly the accepted set: #21 (the
+   neutralized `leftleg-media` race), #53 (R3 dialog-picked attachment), and
+   #69/#95/#101/#102 (R6 `create_project_dir` parent directories). These are
+   decisions, not an outstanding queue.

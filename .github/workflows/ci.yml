@@ -110,7 +110,7 @@ jobs:
   quality-gate:
     name: Required quality gate
     if: always() && github.event_name != 'schedule'
-    needs: [frontend, pi-contract, rust-tests]
+    needs: [frontend, pi-contract, rust-tests, frontend-hygiene, rust-hygiene, msrv]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every functional gate
@@ -126,14 +126,15 @@ jobs:
           check_result "Frontend" "${{ needs.frontend.result }}"
           check_result "Pi contract" "${{ needs['pi-contract'].result }}"
           check_result "Rust tests" "${{ needs['rust-tests'].result }}"
+          check_result "Frontend hygiene" "${{ needs['frontend-hygiene'].result }}"
+          check_result "Rust hygiene" "${{ needs['rust-hygiene'].result }}"
+          check_result "Declared Rust compatibility" "${{ needs.msrv.result }}"
           exit "$failures"
 
-  # The current repository has known formatting and lint debt. These checks
-  # publish the exact remediation queue without blocking functional work.
-  # Remove the step-level continue-on-error settings after the baseline cleanup
-  # lands, then promote these jobs into the required quality gate.
+  # Formatting and lint hygiene is part of the required quality gate; the
+  # baselines were cleared and must not drift again.
   frontend-hygiene:
-    name: Frontend hygiene (advisory)
+    name: Frontend hygiene
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     steps:
@@ -152,28 +153,13 @@ jobs:
         run: npm ci
 
       - name: Check formatting
-        id: formatting
-        continue-on-error: true
         run: npm run format:check
 
       - name: Lint TypeScript and Svelte
-        id: lint
-        if: always()
-        continue-on-error: true
         run: npm run lint
 
-      - name: Summarize advisory findings
-        if: always()
-        shell: bash
-        run: |
-          if [ "${{ steps.formatting.outcome }}" != "success" ] || [ "${{ steps.lint.outcome }}" != "success" ]; then
-            echo "::warning title=Frontend hygiene debt::Prettier or ESLint found baseline issues. See the failed advisory steps for the remediation queue."
-            echo "### Frontend hygiene needs cleanup" >> "$GITHUB_STEP_SUMMARY"
-            echo "Prettier or ESLint found baseline issues. These findings are visible but do not block functional changes yet." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
   rust-hygiene:
-    name: Rust hygiene (advisory)
+    name: Rust hygiene
     if: github.event_name != 'schedule'
     runs-on: windows-latest
     steps:
@@ -194,28 +180,13 @@ jobs:
           workspaces: src-tauri -> target
 
       - name: Check Rust formatting
-        id: formatting
-        continue-on-error: true
         run: npm run format:rust:check
 
       - name: Lint Rust
-        id: lint
-        if: always()
-        continue-on-error: true
         run: npm run lint:rust
 
-      - name: Summarize advisory findings
-        if: always()
-        shell: pwsh
-        run: |
-          if ('${{ steps.formatting.outcome }}' -ne 'success' -or '${{ steps.lint.outcome }}' -ne 'success') {
-            Write-Output '::warning title=Rust hygiene debt::rustfmt or Clippy found baseline issues. See the failed advisory steps for the remediation queue.'
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '### Rust hygiene needs cleanup'
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value 'rustfmt or Clippy found baseline issues. These findings are visible but do not block functional changes yet.'
-          }
-
   msrv:
-    name: Declared Rust compatibility (advisory)
+    name: Declared Rust compatibility
     if: github.event_name != 'schedule'
     runs-on: windows-latest
     steps:
@@ -233,8 +204,6 @@ jobs:
           toolchain: "1.98.1"
 
       - name: Verify the declared minimum compiler
-        id: compatibility
-        continue-on-error: true
         shell: pwsh
         run: |
           $version = rustc +1.98.1 --version
@@ -242,14 +211,6 @@ jobs:
             throw "Expected Rust 1.98.1; got '$version'"
           }
           cargo +1.98.1 check --manifest-path src-tauri/Cargo.toml --locked
-
-      - name: Summarize advisory finding
-        if: always() && steps.compatibility.outcome != 'success'
-        shell: pwsh
-        run: |
-          Write-Output '::warning title=Declared Rust minimum does not compile::The locked dependency graph does not build with the declared minimum.'
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '### Declared Rust minimum needs attention'
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value 'The rust-version declared in src-tauri/Cargo.toml does not compile the locked dependency graph. If the graph genuinely requires newer Rust, raise the declaration to the oldest compiler the project tests; otherwise restore compatibility with the declared minimum.'
 
   coverage:
     name: Coverage report (advisory)
