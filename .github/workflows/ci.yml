@@ -85,6 +85,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # The Rust tests spawn node (pimgr deadline test); set it up explicitly
+      # instead of relying on the runner image's cold preinstalled copy.
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
