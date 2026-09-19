@@ -47,8 +47,8 @@ jobs can then be reorganized without changing repository settings.
 
 - `Frontend hygiene (advisory)`: Prettier and ESLint.
 - `Rust hygiene (advisory)`: rustfmt and Clippy.
-- `Declared Rust 1.77.2 compatibility (advisory)`: exposes the current mismatch
-  between `Cargo.toml` and the source.
+- `Declared Rust compatibility (advisory)`: builds the locked graph with the
+  `rust-version` declared in `src-tauri/Cargo.toml` (1.98.1).
 - `Coverage report (advisory)`: uploads a 14-day HTML and JSON report on master
   pushes and the weekly schedule.
 
@@ -70,8 +70,8 @@ pipeline was introduced:
 - ESLint reported 50 errors and 16 advisory Svelte structural warnings. The
   errors are primarily unused values, explicit `any`, and promise handling.
 - Rustfmt reported existing formatting drift.
-- Clippy reported ten diagnostics, including use of Rust 1.80 APIs despite the
-  declared Rust 1.77.2 minimum.
+- Clippy reported ten diagnostics, including use of Rust 1.80 APIs against the
+  then-declared Rust 1.77.2 minimum.
 - The first GitHub-hosted Windows run failed
   `pimgr::tests::update_deadline_includes_inherited_pipes_after_parent_exit`
   with `pipe drain outlived update deadline`; the same test passes locally.
@@ -97,8 +97,10 @@ CodeRabbit reviewed the PR that introduced this pipeline; findings triaged on
   `persist-credentials: false` (no step performs authenticated git
   operations, and PR-triggered jobs must not get a persisted token).
 - `pimgr::tests::update_deadline_includes_inherited_pipes_after_parent_exit`
-  flake — same item as the timing-sensitive test above; stabilize the
-  pipe-drain deadline behavior or the test's timing robustness.
+  flake — resolved 2026-09-19: the production 300 ms deadline was firing
+  correctly; the failure was the test's own 1 s outer assertion bound, which
+  left too little headroom for hosted-runner spawn/teardown noise. The test
+  now uses a 30 s grandchild drain and a 10 s outer bound (81db88e).
 - `src/components/StartScreen.svelte`: recheck `$updateInstallLock` after
   async work and before each startup-draft mutation, and disable the
   textarea while locked — in-flight picker/`FileReader` work can otherwise
@@ -118,9 +120,12 @@ CodeRabbit reviewed the PR that introduced this pipeline; findings triaged on
 
 Clean each category in a separate commit. For promise findings, confirm whether
 the intended behavior is to await, return, or explicitly detach with `void`;
-do not mechanically silence the rule. For the minimum Rust version, either
-restore genuine 1.77.2 compatibility or update the declaration to the oldest
-compiler actually tested and supported.
+do not mechanically silence the rule. For the minimum Rust version — decided
+2026-09-19: the declared 1.77.2 was unreachable because the locked graph pulls
+quick-xml 0.42 (transitive of tauri), whose manifest requires the `edition2024`
+cargo feature that 1.77.2 cannot parse. The declaration now follows the tested
+compiler (1.98.1); restoring 1.77.2 would mean downgrading tauri's transitive
+tree.
 
 After every advisory command is green:
 
