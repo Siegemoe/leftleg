@@ -126,11 +126,19 @@ The plan above was carried out as written:
 1. **Fix in code** — "fix: gate the remaining webview-supplied project_dir
    commands" added `git_repo_info_checked`, `list_artifacts_checked`, and
    `delete_artifact_allowed` gates with an integration test
-   (`src-tauri/tests/project_dir_gate.rs`); the 3 command-line-injection
-   alerts and the corresponding path-injection alerts resolved as fixed.
-2. **Dismiss with justification** — 99 alerts dismissed in one sweep, each
-   with a comment citing its class above and referencing this doc.
+   (`src-tauri/tests/project_dir_gate.rs`); CodeQL's next master analysis
+   closed 24 of the original inventory as fixed, including all 3
+   command-line-injection alerts.
+2. **Dismiss with justification** — the sweep dismissed 99 alerts, each with
+   a comment citing its class above and referencing this doc: 75 from the
+   original inventory plus 24 new alerts (numbers 106–129) that the
+   post-merge analysis raised for the changed code, all of which fall under
+   the already-triaged classes.
 3. **Keep open** — 6 alerts remain open, exactly the accepted set: #21 (the
    neutralized `leftleg-media` race), #53 (R3 dialog-picked attachment), and
    #69/#95/#101/#102 (R6 `create_project_dir` parent directories). These are
    decisions, not an outstanding queue.
+
+API-verified final state: 99 dismissed, 24 fixed, 6 open. The original
+105-alert inventory accounts as 24 fixed + 75 dismissed + 6 open; the extra
+24 dismissed came from the post-merge analysis of the new code.
