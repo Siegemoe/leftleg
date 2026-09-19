@@ -24,7 +24,9 @@ pub struct PendingMap {
 impl PendingMap {
     pub fn insert(&self, id: String, tx: std::sync::mpsc::Sender<Value>) -> bool {
         let mut map = self.inner.lock().unwrap();
-        if map.contains_key(&id) { return false; }
+        if map.contains_key(&id) {
+            return false;
+        }
         map.insert(id, RequestEntry { tx });
         true
     }
@@ -73,10 +75,7 @@ pub fn classify_line(bytes: &[u8]) -> LineAction {
 
 /// Pass session paths directly to Node, never through cmd.exe expansion.
 pub fn build_pi_args(session_path: Option<&str>) -> Vec<String> {
-    let mut args = vec![
-        "--mode".to_string(),
-        "rpc".to_string(),
-    ];
+    let mut args = vec!["--mode".to_string(), "rpc".to_string()];
     if let Some(path) = session_path {
         args.push("--session".to_string());
         args.push(path.to_string());
@@ -86,15 +85,29 @@ pub fn build_pi_args(session_path: Option<&str>) -> Vec<String> {
 
 pub(crate) fn pi_entry_from_shim(shim: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let root = shim.parent().ok_or("pi shim has no parent")?;
-    for package in ["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"] {
+    for package in [
+        "@earendil-works/pi-coding-agent",
+        "@mariozechner/pi-coding-agent",
+    ] {
         let dir = root.join("node_modules").join(package);
         // A missing OR corrupt/odd manifest must not abort the search: the
         // fallback package name may still be intact (e.g. mid-`pi update`).
-        let Ok(raw) = std::fs::read_to_string(dir.join("package.json")) else { continue };
-        let Ok(manifest) = serde_json::from_str::<Value>(&raw) else { continue };
-        let Some(bin) = manifest["bin"]["pi"].as_str().or_else(|| manifest["bin"].as_str()) else { continue };
+        let Ok(raw) = std::fs::read_to_string(dir.join("package.json")) else {
+            continue;
+        };
+        let Ok(manifest) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        let Some(bin) = manifest["bin"]["pi"]
+            .as_str()
+            .or_else(|| manifest["bin"].as_str())
+        else {
+            continue;
+        };
         let entry = std::fs::canonicalize(dir.join(bin)).map_err(|e| e.to_string())?;
-        if !entry.starts_with(std::fs::canonicalize(&dir).map_err(|e| e.to_string())?) { return Err("pi bin escapes package directory".into()); }
+        if !entry.starts_with(std::fs::canonicalize(&dir).map_err(|e| e.to_string())?) {
+            return Err("pi bin escapes package directory".into());
+        }
         // canonicalize is only for containment validation. On Windows it
         // returns a verbatim (\\?\) path that Node cannot use as its main script.
         return Ok(dir.join(bin));
@@ -115,17 +128,45 @@ pub fn pi_module_info_impl() -> Result<PiModuleInfo, String> {
     let mut where_cmd = Command::new("where.exe");
     #[cfg(windows)]
     where_cmd.creation_flags(CREATE_NO_WINDOW);
-    let found = where_cmd.arg("pi.cmd").output().map_err(|e| format!("locating pi: {e}"))?;
+    let found = where_cmd
+        .arg("pi.cmd")
+        .output()
+        .map_err(|e| format!("locating pi: {e}"))?;
     let paths = String::from_utf8_lossy(&found.stdout);
-    let shim = std::path::Path::new(paths.lines().next().ok_or("pi.cmd not found on PATH")?.trim());
+    let shim = std::path::Path::new(
+        paths
+            .lines()
+            .next()
+            .ok_or("pi.cmd not found on PATH")?
+            .trim(),
+    );
     let root = shim.parent().ok_or("pi shim has no parent")?;
-    for package in ["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"] {
+    for package in [
+        "@earendil-works/pi-coding-agent",
+        "@mariozechner/pi-coding-agent",
+    ] {
         let dir = root.join("node_modules").join(package);
-        let Ok(raw) = std::fs::read_to_string(dir.join("package.json")) else { continue };
-        let Ok(manifest) = serde_json::from_str::<Value>(&raw) else { continue };
-        let name = manifest.get("name").and_then(|v| v.as_str()).unwrap_or(package).to_string();
-        let version = manifest.get("version").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-        return Ok(PiModuleInfo { name, version, path: dir.to_string_lossy().into_owned() });
+        let Ok(raw) = std::fs::read_to_string(dir.join("package.json")) else {
+            continue;
+        };
+        let Ok(manifest) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        let name = manifest
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(package)
+            .to_string();
+        let version = manifest
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?")
+            .to_string();
+        return Ok(PiModuleInfo {
+            name,
+            version,
+            path: dir.to_string_lossy().into_owned(),
+        });
     }
     Err("Could not resolve the npm pi package".into())
 }
@@ -133,7 +174,9 @@ pub fn pi_module_info_impl() -> Result<PiModuleInfo, String> {
 /// Identity of the installed pi module (npm package name + version).
 #[tauri::command]
 pub async fn pi_module_info() -> Result<PiModuleInfo, String> {
-    tauri::async_runtime::spawn_blocking(pi_module_info_impl).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(pi_module_info_impl)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Handle to a running `pi --mode rpc` subprocess.
@@ -159,7 +202,9 @@ const STDERR_LIMIT: usize = 8192;
 
 fn retain_stderr(tail: &mut Vec<u8>, bytes: &[u8]) {
     tail.extend_from_slice(bytes);
-    if tail.len() > STDERR_LIMIT { tail.drain(..tail.len() - STDERR_LIMIT); }
+    if tail.len() > STDERR_LIMIT {
+        tail.drain(..tail.len() - STDERR_LIMIT);
+    }
 }
 
 static NEXT_PROCESS_ID: AtomicU64 = AtomicU64::new(1);
@@ -168,17 +213,38 @@ impl PiProcess {
     /// Spawn `pi --mode rpc` in the given working directory and start the
     /// stdout reader thread that forwards events to the webview.
     /// `session_path` resumes that session file via `--session` at startup.
-    pub fn spawn(app: AppHandle, cwd: &str, session_path: Option<&str>) -> Result<Arc<PiProcess>, String> {
+    pub fn spawn(
+        app: AppHandle,
+        cwd: &str,
+        session_path: Option<&str>,
+    ) -> Result<Arc<PiProcess>, String> {
         let mut where_cmd = Command::new("where.exe");
         #[cfg(windows)]
         where_cmd.creation_flags(CREATE_NO_WINDOW);
-        let found = where_cmd.arg("pi.cmd").output().map_err(|e| format!("locating pi: {e}"))?;
+        let found = where_cmd
+            .arg("pi.cmd")
+            .output()
+            .map_err(|e| format!("locating pi: {e}"))?;
         let paths = String::from_utf8_lossy(&found.stdout);
-        let shim = std::path::Path::new(paths.lines().next().ok_or("pi.cmd not found on PATH")?.trim());
+        let shim = std::path::Path::new(
+            paths
+                .lines()
+                .next()
+                .ok_or("pi.cmd not found on PATH")?
+                .trim(),
+        );
         let entry = pi_entry_from_shim(shim)?;
-        let sibling_node = shim.parent().ok_or("pi shim has no parent")?.join("node.exe");
-        let mut cmd = Command::new(if sibling_node.is_file() { sibling_node } else { "node".into() });
-        cmd.arg(entry).args(build_pi_args(session_path))
+        let sibling_node = shim
+            .parent()
+            .ok_or("pi shim has no parent")?
+            .join("node.exe");
+        let mut cmd = Command::new(if sibling_node.is_file() {
+            sibling_node
+        } else {
+            "node".into()
+        });
+        cmd.arg(entry)
+            .args(build_pi_args(session_path))
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -191,22 +257,25 @@ impl PiProcess {
             .spawn()
             .map_err(|e| format!("failed to spawn pi: {e}"))?;
 
-        let (stdin, stdout, mut stderr) = match (child.stdin.take(), child.stdout.take(), child.stderr.take()) {
-            (Some(i), Some(o), Some(e)) => (i, o, e),
-            _ => {
-                // Never leave a spawned child orphaned on a partial stdio setup.
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err("failed to capture pi stdio pipes".into());
-            }
-        };
+        let (stdin, stdout, mut stderr) =
+            match (child.stdin.take(), child.stdout.take(), child.stderr.take()) {
+                (Some(i), Some(o), Some(e)) => (i, o, e),
+                _ => {
+                    // Never leave a spawned child orphaned on a partial stdio setup.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("failed to capture pi stdio pipes".into());
+                }
+            };
         let stderr_tail = Arc::new(Mutex::new(Vec::new()));
         let tail = stderr_tail.clone();
         let (stderr_done, stderr_finished) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let mut buf = [0; 1024];
             while let Ok(n) = stderr.read(&mut buf) {
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 retain_stderr(&mut tail.lock().unwrap(), &buf[..n]);
             }
             let _ = stderr_done.send(());
@@ -270,7 +339,9 @@ impl PiProcess {
                 };
                 let mut start = 0usize;
                 for i in 0..n {
-                    if chunk[i] != b'\n' { continue; }
+                    if chunk[i] != b'\n' {
+                        continue;
+                    }
                     if skipping_oversized {
                         skipping_oversized = false;
                     } else {
@@ -285,10 +356,14 @@ impl PiProcess {
                     if line.len() > MAX_LINE_BYTES {
                         // A drop must at least be diagnosable — the webview
                         // never sees this line and can't explain the gap.
-                        crate::log_native(&app_handle, &format!(
-                            "dropped oversized pi line ({}, {} bytes)",
-                            proc_ref.id, line.len()
-                        ));
+                        crate::log_native(
+                            &app_handle,
+                            &format!(
+                                "dropped oversized pi line ({}, {} bytes)",
+                                proc_ref.id,
+                                line.len()
+                            ),
+                        );
                         line.clear();
                         skipping_oversized = true; // discard the rest of this line
                     }
@@ -301,9 +376,14 @@ impl PiProcess {
             // on purpose (stop/restart) or it died on its own (crash).
             // Drain the final diagnostic without hanging on inherited pipes.
             let _ = stderr_finished.recv_timeout(Duration::from_millis(200));
-            let detail = String::from_utf8_lossy(&stderr_tail.lock().unwrap()).trim().to_string();
-            let error = if detail.is_empty() { "pi exited before responding".to_string() }
-                else { format!("pi exited before responding: {detail}") };
+            let detail = String::from_utf8_lossy(&stderr_tail.lock().unwrap())
+                .trim()
+                .to_string();
+            let error = if detail.is_empty() {
+                "pi exited before responding".to_string()
+            } else {
+                format!("pi exited before responding: {detail}")
+            };
             *proc_ref.exit_error.lock().unwrap() = Some(error.clone());
             proc_ref.exited.store(true, Ordering::SeqCst);
             pending.clear();
@@ -333,12 +413,26 @@ impl PiProcess {
 
     /// Write a raw JSON line to pi's stdin.
     pub fn send_line(&self, line: &str) -> Result<(), String> {
-        if self.exited.load(Ordering::SeqCst) { return Err(self.exit_error.lock().unwrap().clone().unwrap_or("pi process exited".into())); }
+        if self.exited.load(Ordering::SeqCst) {
+            return Err(self
+                .exit_error
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or("pi process exited".into()));
+        }
         let mut guard = self.stdin.lock().unwrap();
         // A writer can wait behind another blocked write. Recheck after taking
         // the lock so a request whose deadline poisoned the transport cannot
         // dispatch later when that older writer finally releases it.
-        if self.exited.load(Ordering::SeqCst) { return Err(self.exit_error.lock().unwrap().clone().unwrap_or("pi process exited".into())); }
+        if self.exited.load(Ordering::SeqCst) {
+            return Err(self
+                .exit_error
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or("pi process exited".into()));
+        }
         if let Some(stdin) = guard.as_mut() {
             stdin
                 .write_all(line.as_bytes())
@@ -351,7 +445,8 @@ impl PiProcess {
     }
 
     pub fn is_alive(&self) -> bool {
-        !self.exited.load(Ordering::SeqCst) && matches!(self.child.lock().unwrap().try_wait(), Ok(None))
+        !self.exited.load(Ordering::SeqCst)
+            && matches!(self.child.lock().unwrap().try_wait(), Ok(None))
     }
 
     /// Make a stalled stdin transport unavailable and stop its process tree
@@ -365,8 +460,12 @@ impl PiProcess {
         if let Ok(mut child) = self.child.lock() {
             #[cfg(windows)]
             {
-                let _ = Command::new("taskkill.exe").args(["/PID", &child.id().to_string(), "/T", "/F"])
-                    .creation_flags(CREATE_NO_WINDOW).stdout(Stdio::null()).stderr(Stdio::null()).status();
+                let _ = Command::new("taskkill.exe")
+                    .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
             }
             let _ = child.kill();
             let _ = child.wait();
@@ -387,8 +486,12 @@ impl PiProcess {
             // reaped PID fails harmlessly (output is swallowed).
             #[cfg(windows)]
             {
-                let _ = Command::new("taskkill.exe").args(["/PID", &child.id().to_string(), "/T", "/F"])
-                    .creation_flags(CREATE_NO_WINDOW).stdout(Stdio::null()).stderr(Stdio::null()).status();
+                let _ = Command::new("taskkill.exe")
+                    .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
             }
             let _ = child.kill();
             let _ = child.wait();
@@ -421,12 +524,10 @@ pub fn wait_response(
 /// the transport is poisoned and its process tree is stopped. This is stricter
 /// than a response timeout: once write delivery is ambiguous, keeping the
 /// process alive could execute the command after the UI reports failure.
-pub fn request(
-    proc: &Arc<PiProcess>,
-    mut cmd: Value,
-    timeout: Duration,
-) -> Result<Value, String> {
-    if !cmd.is_object() { return Err("RPC command must be an object".into()); }
+pub fn request(proc: &Arc<PiProcess>, mut cmd: Value, timeout: Duration) -> Result<Value, String> {
+    if !cmd.is_object() {
+        return Err("RPC command must be an object".into());
+    }
     let id = cmd
         .get("id")
         .and_then(|v| v.as_str())
@@ -436,7 +537,9 @@ pub fn request(
         obj.insert("id".into(), Value::String(id.clone()));
     }
     let (tx, rx) = std::sync::mpsc::channel();
-    if !proc.pending.insert(id.clone(), tx) { return Err(format!("RPC id already pending: {id}")); }
+    if !proc.pending.insert(id.clone(), tx) {
+        return Err(format!("RPC id already pending: {id}"));
+    }
     let line = match serde_json::to_string(&cmd) {
         Ok(line) => line,
         Err(e) => {
@@ -463,7 +566,10 @@ pub fn request(
             return Err(error.into());
         }
     }
-    match wait_response(rx, deadline.saturating_duration_since(std::time::Instant::now())) {
+    match wait_response(
+        rx,
+        deadline.saturating_duration_since(std::time::Instant::now()),
+    ) {
         Ok(value) => Ok(value),
         Err(e) => {
             proc.pending.remove(&id);
@@ -471,7 +577,6 @@ pub fn request(
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -484,43 +589,68 @@ mod tests {
         let mut child = command.args(["/C", "exit", "0"]).spawn().unwrap();
         child.wait().unwrap();
         PiProcess {
-            id: 1, cwd: String::new(), child: Arc::new(Mutex::new(child)),
-            stdin: Arc::new(Mutex::new(None)), pending: Arc::new(PendingMap::default()),
-            seq: AtomicU64::new(1), expecting_exit: AtomicBool::new(false), exited: AtomicBool::new(false), exit_error: Mutex::new(None),
+            id: 1,
+            cwd: String::new(),
+            child: Arc::new(Mutex::new(child)),
+            stdin: Arc::new(Mutex::new(None)),
+            pending: Arc::new(PendingMap::default()),
+            seq: AtomicU64::new(1),
+            expecting_exit: AtomicBool::new(false),
+            exited: AtomicBool::new(false),
+            exit_error: Mutex::new(None),
         }
     }
 
     #[test]
     fn failed_send_does_not_leak_pending_requests() {
         let proc = Arc::new(stopped_process());
-        let result = request(&proc, serde_json::json!({"id":"test", "type":"get_state"}), Duration::from_millis(10));
+        let result = request(
+            &proc,
+            serde_json::json!({"id":"test", "type":"get_state"}),
+            Duration::from_millis(10),
+        );
         assert!(result.unwrap_err().contains("stdin closed"));
         assert!(proc.pending.remove("test").is_none());
-        assert!(request(&proc, Value::Null, Duration::from_millis(10)).unwrap_err().contains("object"));
+        assert!(request(&proc, Value::Null, Duration::from_millis(10))
+            .unwrap_err()
+            .contains("object"));
     }
 
     #[test]
     fn write_timeout_never_dispatches_a_queued_prompt_later() {
         use std::io::BufRead;
-        let marker = std::env::temp_dir().join(format!("leftleg-late-rpc-{}", uuid::Uuid::new_v4()));
+        let marker =
+            std::env::temp_dir().join(format!("leftleg-late-rpc-{}", uuid::Uuid::new_v4()));
         let mut command = Command::new("node");
         #[cfg(windows)]
         command.creation_flags(CREATE_NO_WINDOW);
         let mut child = command.args(["-e", "process.stdout.write('ready\\n'); require('readline').createInterface({input:process.stdin}).on('line',line=>require('fs').writeFileSync(process.argv[1],line));"])
             .arg(&marker).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
         let mut ready = String::new();
-        std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready).unwrap();
+        std::io::BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
         assert_eq!(ready, "ready\n");
         let stdin = child.stdin.take();
         let proc = Arc::new(PiProcess {
-            id: 1, cwd: String::new(), child: Arc::new(Mutex::new(child)),
-            stdin: Arc::new(Mutex::new(stdin)), pending: Arc::new(PendingMap::default()),
-            seq: AtomicU64::new(1), expecting_exit: AtomicBool::new(false), exited: AtomicBool::new(false), exit_error: Mutex::new(None),
+            id: 1,
+            cwd: String::new(),
+            child: Arc::new(Mutex::new(child)),
+            stdin: Arc::new(Mutex::new(stdin)),
+            pending: Arc::new(PendingMap::default()),
+            seq: AtomicU64::new(1),
+            expecting_exit: AtomicBool::new(false),
+            exited: AtomicBool::new(false),
+            exit_error: Mutex::new(None),
         });
         // Simulate another writer holding the pipe until after this request's
         // deadline. A timed-out queued prompt must never reach the child.
         let held_stdin = proc.stdin.lock().unwrap();
-        let result = request(&proc, serde_json::json!({"type":"prompt","message":"side effect"}), Duration::from_millis(50));
+        let result = request(
+            &proc,
+            serde_json::json!({"type":"prompt","message":"side effect"}),
+            Duration::from_millis(50),
+        );
         let rejected_further_work = proc.exited.load(Ordering::SeqCst);
         drop(held_stdin);
         std::thread::sleep(Duration::from_millis(200));
@@ -528,8 +658,14 @@ mod tests {
         let dispatched = marker.exists();
         let _ = std::fs::remove_file(&marker);
         assert!(result.unwrap_err().contains("timed out writing"));
-        assert!(!dispatched, "timed-out prompt was dispatched after its caller received failure");
-        assert!(rejected_further_work, "stalled transport must reject later work");
+        assert!(
+            !dispatched,
+            "timed-out prompt was dispatched after its caller received failure"
+        );
+        assert!(
+            rejected_further_work,
+            "stalled transport must reject later work"
+        );
     }
 
     #[test]
@@ -537,26 +673,42 @@ mod tests {
         let mut command = Command::new("node");
         #[cfg(windows)]
         command.creation_flags(CREATE_NO_WINDOW);
-        let mut child = command.args(["-e", "setInterval(() => {}, 1000)"])
-            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        let mut child = command
+            .args(["-e", "setInterval(() => {}, 1000)"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
         let pid = child.id();
         let stdin = child.stdin.take();
         let proc = Arc::new(PiProcess {
-            id: 1, cwd: String::new(), child: Arc::new(Mutex::new(child)),
-            stdin: Arc::new(Mutex::new(stdin)), pending: Arc::new(PendingMap::default()),
-            seq: AtomicU64::new(1), expecting_exit: AtomicBool::new(false), exited: AtomicBool::new(false), exit_error: Mutex::new(None),
+            id: 1,
+            cwd: String::new(),
+            child: Arc::new(Mutex::new(child)),
+            stdin: Arc::new(Mutex::new(stdin)),
+            pending: Arc::new(PendingMap::default()),
+            seq: AtomicU64::new(1),
+            expecting_exit: AtomicBool::new(false),
+            exited: AtomicBool::new(false),
+            exit_error: Mutex::new(None),
         });
         let writer = proc.clone();
         let send = std::thread::spawn(move || writer.send_line(&"x".repeat(4 * 1024 * 1024)));
         std::thread::sleep(Duration::from_millis(50));
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || { proc.kill(); let _ = tx.send(()); });
+        std::thread::spawn(move || {
+            proc.kill();
+            let _ = tx.send(());
+        });
         let result = rx.recv_timeout(Duration::from_secs(5));
         if result.is_err() {
             let mut cleanup = Command::new("taskkill.exe");
             #[cfg(windows)]
             cleanup.creation_flags(CREATE_NO_WINDOW);
-            let _ = cleanup.args(["/PID", &pid.to_string(), "/T", "/F"]).output();
+            let _ = cleanup
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .output();
         }
         assert!(result.is_ok(), "kill blocked behind a pipe writer");
         assert!(send.join().unwrap().is_err());
@@ -568,7 +720,10 @@ mod tests {
         let (first, rx) = std::sync::mpsc::channel();
         assert!(map.insert("same".into(), first));
         assert!(!map.insert("same".into(), std::sync::mpsc::channel().0));
-        map.remove("same").unwrap().send(serde_json::json!("first")).unwrap();
+        map.remove("same")
+            .unwrap()
+            .send(serde_json::json!("first"))
+            .unwrap();
         assert_eq!(rx.recv().unwrap(), "first");
     }
 
@@ -578,8 +733,15 @@ mod tests {
         let mut cmd = Command::new("node");
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
-        let out = cmd.args(["-e", "process.stdout.write(JSON.stringify(process.argv.slice(1)))", "--"])
-            .args(build_pi_args(Some(path))).output().unwrap();
+        let out = cmd
+            .args([
+                "-e",
+                "process.stdout.write(JSON.stringify(process.argv.slice(1)))",
+                "--",
+            ])
+            .args(build_pi_args(Some(path)))
+            .output()
+            .unwrap();
         assert!(out.status.success());
         let args: Vec<String> = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(args, vec!["--mode", "rpc", "--session", path]);
@@ -597,7 +759,11 @@ mod tests {
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         let out = cmd.arg(entry).args(build_pi_args(None)).output().unwrap();
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let response: Value = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(response["success"], true);
         assert_eq!(response["args"], serde_json::json!(["--mode", "rpc"]));
@@ -672,7 +838,10 @@ mod tests {
         let tx = map.remove("a").expect("entry present after insert");
         tx.send(serde_json::json!({"ok": true})).unwrap();
         assert_eq!(rx.recv().unwrap()["ok"], true);
-        assert!(map.remove("a").is_none(), "entry must be removed on first take");
+        assert!(
+            map.remove("a").is_none(),
+            "entry must be removed on first take"
+        );
 
         map.insert("b".to_string(), std::sync::mpsc::channel().0);
         map.clear();
@@ -685,7 +854,10 @@ mod tests {
         assert_eq!(base, vec!["--mode", "rpc"]);
 
         let resumed = build_pi_args(Some("C:\\proj\\session.jsonl"));
-        assert_eq!(resumed, vec!["--mode", "rpc", "--session", "C:\\proj\\session.jsonl"]);
+        assert_eq!(
+            resumed,
+            vec!["--mode", "rpc", "--session", "C:\\proj\\session.jsonl"]
+        );
     }
 
     #[test]
@@ -706,7 +878,8 @@ mod tests {
     #[test]
     fn wait_response_returns_the_correlated_value() {
         let (tx, rx) = std::sync::mpsc::channel::<Value>();
-        tx.send(serde_json::json!({"type":"response","id":"ll-1","success":true})).unwrap();
+        tx.send(serde_json::json!({"type":"response","id":"ll-1","success":true}))
+            .unwrap();
         let v = wait_response(rx, Duration::from_millis(50)).unwrap();
         assert_eq!(v["success"], true);
     }

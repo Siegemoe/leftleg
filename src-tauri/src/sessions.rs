@@ -75,8 +75,12 @@ fn first_user_text(path: &std::path::Path) -> Option<String> {
         if msg_type != "message" {
             continue;
         }
-        let Some(msg) = v.get("message") else { continue };
-        let Some(role) = msg.get("role").and_then(|r| r.as_str()) else { continue };
+        let Some(msg) = v.get("message") else {
+            continue;
+        };
+        let Some(role) = msg.get("role").and_then(|r| r.as_str()) else {
+            continue;
+        };
         if role != "user" {
             continue;
         }
@@ -109,14 +113,21 @@ fn parse_session_header(first_line: &str) -> Option<(String, String, String)> {
     if v.get("type").and_then(|t| t.as_str()) != Some("session") {
         return None;
     }
-    let field = |k: &str| v.get(k).and_then(|c| c.as_str()).unwrap_or_default().to_string();
+    let field = |k: &str| {
+        v.get(k)
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     Some((field("cwd"), field("timestamp"), field("id")))
 }
 
 /// List all persisted sessions (all projects), newest-modified first.
 #[tauri::command]
 pub async fn list_sessions() -> Result<Vec<SessionInfo>, String> {
-    tauri::async_runtime::spawn_blocking(scan_sessions).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(scan_sessions)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Cache of fully-parsed session files keyed by path, validated against
@@ -171,7 +182,9 @@ fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
                 }
             }
             // Parse the header line: {"type":"session","version":..,"id":..,"timestamp":..,"cwd":..}
-            let Ok(content) = fs::File::open(&path) else { continue };
+            let Ok(content) = fs::File::open(&path) else {
+                continue;
+            };
             let mut reader = std::io::BufReader::new(content);
             let mut header = String::new();
             if reader.read_line(&mut header).is_err() {
@@ -241,7 +254,9 @@ pub async fn write_gui_state(
 fn atomic_write(file: &std::path::Path, text: &str) -> Result<(), String> {
     let tmp = file.with_file_name(format!(".leftleg-{}.tmp", uuid::Uuid::new_v4()));
     let result = fs::write(&tmp, text).and_then(|_| fs::rename(&tmp, file));
-    if result.is_err() { let _ = fs::remove_file(&tmp); }
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
     result.map_err(|e| e.to_string())
 }
 
@@ -276,7 +291,10 @@ fn pick_and_read_files_impl(app: &tauri::AppHandle) -> Result<Vec<PickedFile>, S
         .set_title("Attach files")
         .add_filter(
             "Images & text",
-            &["png", "jpg", "jpeg", "gif", "webp", "bmp", "txt", "md", "json", "ts", "js", "py", "rs", "toml", "yaml", "yml", "csv", "log"],
+            &[
+                "png", "jpg", "jpeg", "gif", "webp", "bmp", "txt", "md", "json", "ts", "js", "py",
+                "rs", "toml", "yaml", "yml", "csv", "log",
+            ],
         )
         .add_filter("All files", &["*"])
         .blocking_pick_files();
@@ -293,23 +311,49 @@ fn pick_and_read_files_impl(app: &tauri::AppHandle) -> Result<Vec<PickedFile>, S
         let path = match picked.into_path() {
             Ok(p) => p,
             Err(e) => {
-                out.push(PickedFile { name: String::new(), path: String::new(), data: None, error: Some(e.to_string()) });
+                out.push(PickedFile {
+                    name: String::new(),
+                    path: String::new(),
+                    data: None,
+                    error: Some(e.to_string()),
+                });
                 continue;
             }
         };
         let shown = path.to_string_lossy().into_owned();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
         let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         if size > budget {
-            out.push(PickedFile { name, path: shown, data: None, error: Some(format!("Attachment batch exceeds the 50 MiB total limit (file is {size} bytes)")) });
+            out.push(PickedFile {
+                name,
+                path: shown,
+                data: None,
+                error: Some(format!(
+                    "Attachment batch exceeds the 50 MiB total limit (file is {size} bytes)"
+                )),
+            });
             continue;
         }
         match read_attachment(&shown) {
             Ok(data) => {
                 budget = budget.saturating_sub(size);
-                out.push(PickedFile { name, path: shown, data: Some(data), error: None })
+                out.push(PickedFile {
+                    name,
+                    path: shown,
+                    data: Some(data),
+                    error: None,
+                })
             }
-            Err(e) => out.push(PickedFile { name, path: shown, data: None, error: Some(e) }),
+            Err(e) => out.push(PickedFile {
+                name,
+                path: shown,
+                data: None,
+                error: Some(e),
+            }),
         }
     }
     Ok(out)
@@ -319,10 +363,16 @@ fn read_attachment(path: &str) -> Result<String, String> {
     use std::io::Read;
     const LIMIT: u64 = 20 * 1024 * 1024;
     let f = fs::File::open(path).map_err(|e| e.to_string())?;
-    if f.metadata().map_err(|e| e.to_string())?.len() > LIMIT { return Err("Attachment exceeds 20 MiB limit".into()); }
+    if f.metadata().map_err(|e| e.to_string())?.len() > LIMIT {
+        return Err("Attachment exceeds 20 MiB limit".into());
+    }
     let mut buf = Vec::new();
-    f.take(LIMIT + 1).read_to_end(&mut buf).map_err(|e| e.to_string())?;
-    if buf.len() as u64 > LIMIT { return Err("Attachment exceeds 20 MiB limit".into()); }
+    f.take(LIMIT + 1)
+        .read_to_end(&mut buf)
+        .map_err(|e| e.to_string())?;
+    if buf.len() as u64 > LIMIT {
+        return Err("Attachment exceeds 20 MiB limit".into());
+    }
     Ok(base64_encode(&buf))
 }
 
@@ -336,18 +386,56 @@ fn read_attachment(path: &str) -> Result<String, String> {
 /// prompt, .url launches its target (defeating containment), .chm/.msc/
 /// ClickOnce/macro Office formats all execute.
 const OPEN_DENY_EXTENSIONS: &[&str] = &[
-    "exe", "bat", "cmd", "com", "scr", "pif", "msi", "msp", "mst", "cpl",
-    "ps1", "psm1", "vbs", "vbe", "js", "jse", "ws", "wsf", "wsc", "hta",
-    "jar", "lnk", "url", "chm", "msc", "application", "settingcontent-ms",
-    "diagcab", "docm", "xlsm", "dll", "reg", "sh", "bash", "applescript",
+    "exe",
+    "bat",
+    "cmd",
+    "com",
+    "scr",
+    "pif",
+    "msi",
+    "msp",
+    "mst",
+    "cpl",
+    "ps1",
+    "psm1",
+    "vbs",
+    "vbe",
+    "js",
+    "jse",
+    "ws",
+    "wsf",
+    "wsc",
+    "hta",
+    "jar",
+    "lnk",
+    "url",
+    "chm",
+    "msc",
+    "application",
+    "settingcontent-ms",
+    "diagcab",
+    "docm",
+    "xlsm",
+    "dll",
+    "reg",
+    "sh",
+    "bash",
+    "applescript",
 ];
 
 fn is_denied_executable(path: &std::path::Path) -> bool {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return false };
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
     // Trailing dots/spaces are creatable via verbatim APIs and would make an
     // extension like "bat " miss the list; trim them before matching.
-    let lower = name.to_ascii_lowercase().trim_end_matches(['.', ' ']).to_string();
-    let Some(dot) = lower.rfind('.') else { return false };
+    let lower = name
+        .to_ascii_lowercase()
+        .trim_end_matches(['.', ' '])
+        .to_string();
+    let Some(dot) = lower.rfind('.') else {
+        return false;
+    };
     OPEN_DENY_EXTENSIONS.contains(&&lower[dot + 1..])
 }
 
@@ -400,7 +488,10 @@ fn path_containment_allowed<R: tauri::Runtime>(
     let probe = if resolved.exists() {
         fs::canonicalize(&resolved).unwrap_or_else(|_| resolved.clone())
     } else {
-        resolved.parent().map(PathBuf::from).unwrap_or_else(|| resolved.clone())
+        resolved
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| resolved.clone())
     };
     let mut roots: Vec<PathBuf> = Vec::new();
     if let Ok(c) = fs::canonicalize(agent_dir()) {
@@ -442,7 +533,10 @@ pub fn open_path_allowed<R: tauri::Runtime>(
     // The requested name may lie (a symlink named "helper" can resolve to
     // evil.exe), so the denylist also runs on the canonical name.
     if is_denied_executable(&resolved) {
-        let name = resolved.file_name().and_then(|n| n.to_str()).unwrap_or(path);
+        let name = resolved
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path);
         return Err(format!("refusing to open executable file: {name}"));
     }
     Ok(resolved)
@@ -461,12 +555,24 @@ pub fn base64_encode(data: &[u8]) -> String {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
     for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         out.push(TABLE[(n >> 18 & 63) as usize] as char);
         out.push(TABLE[(n >> 12 & 63) as usize] as char);
-        out.push(if chunk.len() > 1 { TABLE[(n >> 6 & 63) as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[(n & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[(n >> 6 & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -497,7 +603,11 @@ pub struct ArtifactsReport {
 }
 
 fn artifact_from_path(path: &std::path::Path, exists: bool) -> ArtifactFile {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string();
     let (size, modified_ms) = if exists {
         match fs::metadata(path) {
             Ok(m) => (
@@ -513,7 +623,13 @@ fn artifact_from_path(path: &std::path::Path, exists: bool) -> ArtifactFile {
     } else {
         (0, 0)
     };
-    ArtifactFile { name, path: path.to_string_lossy().into_owned(), size, modified_ms, exists }
+    ArtifactFile {
+        name,
+        path: path.to_string_lossy().into_owned(),
+        size,
+        modified_ms,
+        exists,
+    }
 }
 
 /// Scan a project's artifacts: `.pi/images/` (image_generate outputs, newest
@@ -530,9 +646,14 @@ pub fn scan_artifacts(project_dir: &str) -> Result<ArtifactsReport, String> {
         // Same boundary as delete: resolve the real directory once, then keep
         // only entries that canonicalize inside it (symlink containment).
         let canon_dir = fs::canonicalize(&images_dir).map_err(|e| e.to_string())?;
-        for entry in fs::read_dir(&images_dir).map_err(|e| e.to_string())?.flatten() {
+        for entry in fs::read_dir(&images_dir)
+            .map_err(|e| e.to_string())?
+            .flatten()
+        {
             let path = entry.path();
-            let Ok(canon) = fs::canonicalize(&path) else { continue };
+            let Ok(canon) = fs::canonicalize(&path) else {
+                continue;
+            };
             if !canon.starts_with(&canon_dir) || !canon.is_file() {
                 continue;
             }
@@ -549,12 +670,19 @@ pub fn scan_artifacts(project_dir: &str) -> Result<ArtifactsReport, String> {
             }
         }
     }
-    images.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms).then_with(|| a.name.cmp(&b.name)));
+    images.sort_by(|a, b| {
+        b.modified_ms
+            .cmp(&a.modified_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
     images.truncate(MAX_ARTIFACT_FILES);
     let docs = [
         ("AGENTS.md", root.join("AGENTS.md")),
         ("SYSTEM.md", root.join(".pi").join("SYSTEM.md")),
-        ("APPEND_SYSTEM.md", root.join(".pi").join("APPEND_SYSTEM.md")),
+        (
+            "APPEND_SYSTEM.md",
+            root.join(".pi").join("APPEND_SYSTEM.md"),
+        ),
     ]
     .into_iter()
     .map(|(label, path)| {
@@ -643,15 +771,19 @@ fn run_git_bytes(dir: &str, args: &[&str]) -> Result<Vec<u8>, String> {
 }
 
 fn run_git(dir: &str, args: &[&str]) -> Result<String, String> {
-    run_git_bytes(dir, args)
-        .map(|out| String::from_utf8_lossy(&out).trim().to_string())
+    run_git_bytes(dir, args).map(|out| String::from_utf8_lossy(&out).trim().to_string())
 }
 
 /// Inspect the project's git checkout: current branch, uncommitted-entry
 /// count, and worktree root. `repo: false` when the directory isn't a
 /// worktree (or git is unavailable) — the UI treats that as "no git".
 pub fn git_repo_info_impl(project_dir: &str) -> GitRepoInfo {
-    let none = GitRepoInfo { repo: false, branch: String::new(), dirty: 0, toplevel: String::new() };
+    let none = GitRepoInfo {
+        repo: false,
+        branch: String::new(),
+        dirty: 0,
+        toplevel: String::new(),
+    };
     if run_git(project_dir, &["rev-parse", "--is-inside-work-tree"]).is_err() {
         return none;
     }
@@ -664,7 +796,12 @@ pub fn git_repo_info_impl(project_dir: &str) -> GitRepoInfo {
     let dirty = run_git(project_dir, &["status", "--porcelain"])
         .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count() as u32)
         .unwrap_or(0);
-    GitRepoInfo { repo: true, branch, dirty, toplevel }
+    GitRepoInfo {
+        repo: true,
+        branch,
+        dirty,
+        toplevel,
+    }
 }
 
 /// Git checkout info for a project directory.
@@ -770,25 +907,26 @@ const BINARY_EXTENSIONS: &[&str] = &[
     // images
     "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "avif", "tif", "tiff", "svg", "icns",
     // fonts
-    "woff", "woff2", "ttf", "otf", "eot",
-    // media
-    "mp3", "mp4", "wav", "ogg", "webm", "avi", "mov", "mkv",
-    // archives
-    "zip", "gz", "tar", "bz2", "xz", "7z", "rar",
-    // documents
-    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-    // executables and object code
+    "woff", "woff2", "ttf", "otf", "eot", // media
+    "mp3", "mp4", "wav", "ogg", "webm", "avi", "mov", "mkv", // archives
+    "zip", "gz", "tar", "bz2", "xz", "7z", "rar", // documents
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", // executables and object code
     "exe", "dll", "so", "dylib", "lib", "a", "obj", "bin", "dat", "wasm",
     // databases and build artifacts
     "db", "sqlite", "pdb", "msi", "aps", "rsp", "suo", "class", "jar",
 ];
 
 fn is_binary_extension(path: &str) -> bool {
-    let Some(name) = std::path::Path::new(path).file_name().and_then(|n| n.to_str()) else {
+    let Some(name) = std::path::Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+    else {
         return false;
     };
     let lower = name.to_ascii_lowercase();
-    let Some(dot) = lower.rfind('.') else { return false };
+    let Some(dot) = lower.rfind('.') else {
+        return false;
+    };
     BINARY_EXTENSIONS.contains(&&lower[dot + 1..])
 }
 
@@ -839,16 +977,31 @@ fn nul_records(output: &str) -> impl Iterator<Item = &str> {
 /// diff, not "no git".
 pub fn git_diff_summary_impl(project_dir: &str) -> GitDiffSummary {
     if run_git(project_dir, &["rev-parse", "--is-inside-work-tree"]).is_err() {
-        return GitDiffSummary { repo: false, files: Vec::new(), truncated: false };
+        return GitDiffSummary {
+            repo: false,
+            files: Vec::new(),
+            truncated: false,
+        };
     }
-    let Ok(out) = run_git_bytes(project_dir, &["diff", "HEAD", "--numstat", "--no-renames", "-z"]) else {
-        return GitDiffSummary { repo: true, files: Vec::new(), truncated: false };
+    let Ok(out) = run_git_bytes(
+        project_dir,
+        &["diff", "HEAD", "--numstat", "--no-renames", "-z"],
+    ) else {
+        return GitDiffSummary {
+            repo: true,
+            files: Vec::new(),
+            truncated: false,
+        };
     };
     let out = String::from_utf8_lossy(&out);
     let mut files: Vec<GitDiffFile> = nul_records(&out).filter_map(parse_numstat_row).collect();
     let truncated = files.len() > MAX_DIFF_FILES;
     files.truncate(MAX_DIFF_FILES);
-    GitDiffSummary { repo: true, files, truncated }
+    GitDiffSummary {
+        repo: true,
+        files,
+        truncated,
+    }
 }
 
 /// Per-file working-tree diff summary for a project directory.
@@ -861,8 +1014,8 @@ pub async fn git_diff_summary(
         project_dir_allowed(&app, &project_dir)?;
         Ok(git_diff_summary_impl(&project_dir))
     })
-        .await
-        .map_err(|e| e.to_string())?
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize, Clone)]
@@ -885,7 +1038,11 @@ pub struct RepoFileList {
 /// (including not-a-repo) reads as repo: false, same as git_repo_info.
 pub fn repo_files_impl(project_dir: &str) -> RepoFileList {
     let Ok(out) = run_git_bytes(project_dir, &["ls-files", "-z"]) else {
-        return RepoFileList { repo: false, files: Vec::new(), truncated: false };
+        return RepoFileList {
+            repo: false,
+            files: Vec::new(),
+            truncated: false,
+        };
     };
     let out = String::from_utf8_lossy(&out);
     // With -z, NUL is the only separator. A newline can legally be part of a
@@ -904,7 +1061,11 @@ pub fn repo_files_impl(project_dir: &str) -> RepoFileList {
                 .unwrap_or(0),
         })
         .collect();
-    RepoFileList { repo: true, files, truncated }
+    RepoFileList {
+        repo: true,
+        files,
+        truncated,
+    }
 }
 
 /// Tracked-file listing with sizes for a project directory.
@@ -917,8 +1078,8 @@ pub async fn repo_files(
         project_dir_allowed(&app, &project_dir)?;
         Ok(repo_files_impl(&project_dir))
     })
-        .await
-        .map_err(|e| e.to_string())?
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize, Clone)]
@@ -973,7 +1134,9 @@ fn repo_relative_path(path: &str) -> Result<PathBuf, String> {
         || p.components().any(|c| {
             matches!(
                 c,
-                std::path::Component::ParentDir | std::path::Component::RootDir | std::path::Component::Prefix(_)
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
             )
         });
     if bad {
@@ -999,14 +1162,24 @@ fn resolve_in_project(project_dir: &str, rel_path: &str) -> Result<PathBuf, Stri
 }
 
 fn file_stat_one(project_dir: &str, rel: &str) -> FileStat {
-    let degraded = FileStat { path: rel.to_string(), loc: None, size: 0, is_text: false };
+    let degraded = FileStat {
+        path: rel.to_string(),
+        loc: None,
+        size: 0,
+        is_text: false,
+    };
     let joined = match resolve_in_project(project_dir, rel) {
         Ok(p) => p,
         Err(_) => return degraded,
     };
     let size = fs::metadata(&joined).map(|m| m.len()).unwrap_or(0);
     let Ok((buf, original_len)) = read_capped(&joined, LOC_READ_CAP) else {
-        return FileStat { path: rel.to_string(), loc: None, size, is_text: false };
+        return FileStat {
+            path: rel.to_string(),
+            loc: None,
+            size,
+            is_text: false,
+        };
     };
     // The extension check keeps is_text honest for NUL-free binary formats
     // (svg, woff) that the sniff window alone would pass.
@@ -1016,14 +1189,23 @@ fn file_stat_one(project_dir: &str, rel: &str) -> FileStat {
     } else {
         None
     };
-    FileStat { path: rel.to_string(), loc, size, is_text }
+    FileStat {
+        path: rel.to_string(),
+        loc,
+        size,
+        is_text,
+    }
 }
 
 /// Stats for a batch of repo-relative paths, one entry per request in request
 /// order. Individual failures (traversal, missing, unreadable) degrade that
 /// entry to loc: None / is_text: false / size 0 instead of failing the batch.
 pub fn file_stats_batch_impl(project_dir: &str, paths: &[String]) -> Vec<FileStat> {
-    paths.iter().take(MAX_STATS_BATCH).map(|rel| file_stat_one(project_dir, rel)).collect()
+    paths
+        .iter()
+        .take(MAX_STATS_BATCH)
+        .map(|rel| file_stat_one(project_dir, rel))
+        .collect()
 }
 
 /// Size/line-count/textness for a batch of repo-relative paths.
@@ -1037,8 +1219,8 @@ pub async fn file_stats_batch(
         project_dir_allowed(&app, &project_dir)?;
         Ok(file_stats_batch_impl(&project_dir, &paths))
     })
-        .await
-        .map_err(|e| e.to_string())?
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -1074,7 +1256,8 @@ fn read_tracked_text(project_dir: &str, path: &str) -> Result<TextFileContent, S
         return Err("binary file type".into());
     }
     let joined = std::path::Path::new(project_dir).join(repo_relative_path(path)?);
-    let (buf, original_len) = read_capped(&joined, TEXT_READ_CAP).map_err(|e| format!("{path}: {e}"))?;
+    let (buf, original_len) =
+        read_capped(&joined, TEXT_READ_CAP).map_err(|e| format!("{path}: {e}"))?;
     if has_nul_prefix(&buf) {
         return Err("binary file".into());
     }
@@ -1149,7 +1332,10 @@ pub async fn create_project_dir(parent: String, name: String) -> Result<String, 
 /// mirroring how Windows resolves them regardless of extension.
 fn is_reserved_windows_name(trimmed: &str) -> bool {
     let stem = trimmed.split('.').next().unwrap_or("").to_ascii_uppercase();
-    stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL"
+    stem == "CON"
+        || stem == "PRN"
+        || stem == "AUX"
+        || stem == "NUL"
         || (stem.len() == 4
             && (stem.starts_with("COM") || stem.starts_with("LPT"))
             && matches!(stem.as_bytes()[3], b'1'..=b'9'))
@@ -1168,9 +1354,9 @@ fn create_project_dir_checked(parent: &str, name: &str) -> Result<String, String
         || trimmed == "."
         || trimmed == ".."
         || trimmed.contains(['/', '\\'])
-        || trimmed.chars().any(|c| {
-            matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') || (c as u32) < 0x20
-        })
+        || trimmed
+            .chars()
+            .any(|c| matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') || (c as u32) < 0x20)
         || trimmed.ends_with(['.', ' '])
         || is_reserved_windows_name(trimmed);
     if bad {
@@ -1186,7 +1372,6 @@ fn create_project_dir_checked(parent: &str, name: &str) -> Result<String, String
     fs::create_dir_all(&target).map_err(|e| format!("couldn't create folder: {e}"))?;
     Ok(target.to_string_lossy().into_owned())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1207,12 +1392,16 @@ mod tests {
     #[test]
     fn git_repo_info_reads_checkout() {
         // The build directory lives inside this repo, so the checkout is real.
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let info = git_repo_info_impl(repo_root.to_str().unwrap());
         assert!(info.repo);
         assert!(!info.branch.is_empty());
 
-        let nonrepo = std::env::temp_dir().join(format!("leftleg-nonrepo-{}", uuid::Uuid::new_v4()));
+        let nonrepo =
+            std::env::temp_dir().join(format!("leftleg-nonrepo-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&nonrepo).unwrap();
         let info2 = git_repo_info_impl(nonrepo.to_str().unwrap());
         assert!(!info2.repo);
@@ -1222,7 +1411,11 @@ mod tests {
 
     #[test]
     fn artifacts_list_and_delete_are_guarded() {
-        let dir = std::env::temp_dir().join(format!("leftleg-artifacts-{}-{}", std::process::id(), uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!(
+            "leftleg-artifacts-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
         let _ = fs::remove_dir_all(&dir);
         let images = dir.join(".pi").join("images");
         fs::create_dir_all(&images).unwrap();
@@ -1251,15 +1444,20 @@ mod tests {
     fn oversized_attachment_is_rejected_before_allocation() {
         let dir = temp_dir("attachment-limit");
         let file = dir.join("large.bin");
-        fs::File::create(&file).unwrap().set_len(20 * 1024 * 1024 + 1).unwrap();
-        assert!(read_attachment(file.to_str().unwrap()).unwrap_err().contains("20 MiB"));
+        fs::File::create(&file)
+            .unwrap()
+            .set_len(20 * 1024 * 1024 + 1)
+            .unwrap();
+        assert!(read_attachment(file.to_str().unwrap())
+            .unwrap_err()
+            .contains("20 MiB"));
         fs::remove_dir_all(dir).unwrap();
     }
 
     /// Unique temp dir per test; best-effort cleanup via leak-tolerance.
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("leftleg-test-{}-{}", tag, uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("leftleg-test-{}-{}", tag, uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -1314,13 +1512,16 @@ mod tests {
     fn latest_session_info_name_wins_and_is_trimmed() {
         let dir = temp_dir("name");
         let path = dir.join("s.jsonl");
-        write_lines(&path, &[
-            r#"{"type":"session","id":"1"}"#,
-            r#"{"type":"message","message":{"role":"user","content":"hi"}}"#,
-            r#"{"type":"session_info","name":"  first name  "}"#,
-            r#"{"type":"message","message":{"role":"assistant","content":"hey"}}"#,
-            r#"{"type":"session_info","name":"renamed"}"#,
-        ]);
+        write_lines(
+            &path,
+            &[
+                r#"{"type":"session","id":"1"}"#,
+                r#"{"type":"message","message":{"role":"user","content":"hi"}}"#,
+                r#"{"type":"session_info","name":"  first name  "}"#,
+                r#"{"type":"message","message":{"role":"assistant","content":"hey"}}"#,
+                r#"{"type":"session_info","name":"renamed"}"#,
+            ],
+        );
         assert_eq!(session_display_name(&path), Some("renamed".to_string()));
     }
 
@@ -1328,10 +1529,13 @@ mod tests {
     fn empty_names_are_ignored() {
         let dir = temp_dir("name-empty");
         let path = dir.join("s.jsonl");
-        write_lines(&path, &[
-            r#"{"type":"session_info","name":""}"#,
-            r#"{"type":"session_info","name":"   "}"#,
-        ]);
+        write_lines(
+            &path,
+            &[
+                r#"{"type":"session_info","name":""}"#,
+                r#"{"type":"session_info","name":"   "}"#,
+            ],
+        );
         assert_eq!(session_display_name(&path), None);
     }
 
@@ -1339,10 +1543,13 @@ mod tests {
     fn no_session_info_means_no_name() {
         let dir = temp_dir("name-none");
         let path = dir.join("s.jsonl");
-        write_lines(&path, &[
-            r#"{"type":"session","id":"1"}"#,
-            r#"{"type":"message","message":{"role":"user","content":"hi"}}"#,
-        ]);
+        write_lines(
+            &path,
+            &[
+                r#"{"type":"session","id":"1"}"#,
+                r#"{"type":"message","message":{"role":"user","content":"hi"}}"#,
+            ],
+        );
         assert_eq!(session_display_name(&path), None);
     }
 
@@ -1352,20 +1559,29 @@ mod tests {
     fn first_user_text_string_content() {
         let dir = temp_dir("fut-str");
         let path = dir.join("s.jsonl");
-        write_lines(&path, &[
-            r#"{"type":"session","id":"1"}"#,
-            r#"{"type":"message","message":{"role":"user","content":"fix the login bug"}}"#,
-        ]);
-        assert_eq!(first_user_text(&path), Some("fix the login bug".to_string()));
+        write_lines(
+            &path,
+            &[
+                r#"{"type":"session","id":"1"}"#,
+                r#"{"type":"message","message":{"role":"user","content":"fix the login bug"}}"#,
+            ],
+        );
+        assert_eq!(
+            first_user_text(&path),
+            Some("fix the login bug".to_string())
+        );
     }
 
     #[test]
     fn first_user_text_block_content() {
         let dir = temp_dir("fut-blocks");
         let path = dir.join("s.jsonl");
-        write_lines(&path, &[
-            r#"{"type":"message","message":{"role":"user","content":[{"type":"text","text":"from a block"}]}}"#,
-        ]);
+        write_lines(
+            &path,
+            &[
+                r#"{"type":"message","message":{"role":"user","content":[{"type":"text","text":"from a block"}]}}"#,
+            ],
+        );
         assert_eq!(first_user_text(&path), Some("from a block".to_string()));
     }
 
@@ -1373,12 +1589,15 @@ mod tests {
     fn first_user_text_skips_non_user_and_malformed_lines() {
         let dir = temp_dir("fut-skip");
         let path = dir.join("s.jsonl");
-        write_lines(&path, &[
-            r#"{"type":"message","message":{"role":"assistant","content":"assistant first"}}"#,
-            "this line is not json <<<",
-            r#"{"no_type_here":true}"#,
-            r#"{"type":"message","message":{"role":"user","content":"found it"}}"#,
-        ]);
+        write_lines(
+            &path,
+            &[
+                r#"{"type":"message","message":{"role":"assistant","content":"assistant first"}}"#,
+                "this line is not json <<<",
+                r#"{"no_type_here":true}"#,
+                r#"{"type":"message","message":{"role":"user","content":"found it"}}"#,
+            ],
+        );
         assert_eq!(first_user_text(&path), Some("found it".to_string()));
     }
 
@@ -1386,7 +1605,10 @@ mod tests {
     fn first_user_text_truncates_to_120_chars_and_flattens_newlines() {
         let dir = temp_dir("fut-trunc");
         let path = dir.join("s.jsonl");
-        let long = format!(r#"{{"type":"message","message":{{"role":"user","content":"a\nb {}"}}}}"#, "x".repeat(200));
+        let long = format!(
+            r#"{{"type":"message","message":{{"role":"user","content":"a\nb {}"}}}}"#,
+            "x".repeat(200)
+        );
         write_lines(&path, &[&long]);
         let got = first_user_text(&path).unwrap();
         assert!(got.starts_with("a b xxx"));
@@ -1397,10 +1619,13 @@ mod tests {
     fn first_user_text_empty_content_falls_through_to_next_user_message() {
         let dir = temp_dir("fut-empty");
         let path = dir.join("s.jsonl");
-        write_lines(&path, &[
-            r#"{"type":"message","message":{"role":"user","content":"   "}}"#,
-            r#"{"type":"message","message":{"role":"user","content":"the real one"}}"#,
-        ]);
+        write_lines(
+            &path,
+            &[
+                r#"{"type":"message","message":{"role":"user","content":"   "}}"#,
+                r#"{"type":"message","message":{"role":"user","content":"the real one"}}"#,
+            ],
+        );
         assert_eq!(first_user_text(&path), Some("the real one".to_string()));
     }
 
@@ -1409,12 +1634,27 @@ mod tests {
     #[test]
     fn numstat_parses_text_skips_binary_and_malformed() {
         let row = parse_numstat_row("12\t3\tsrc/main.rs").expect("text row");
-        assert_eq!((row.path.as_str(), row.added, row.deleted), ("src/main.rs", 12, 3));
-        assert!(parse_numstat_row("-\t-\tlogo.png").is_none(), "binary rows are skipped");
+        assert_eq!(
+            (row.path.as_str(), row.added, row.deleted),
+            ("src/main.rs", 12, 3)
+        );
+        assert!(
+            parse_numstat_row("-\t-\tlogo.png").is_none(),
+            "binary rows are skipped"
+        );
         assert!(parse_numstat_row("1\t2").is_none(), "missing path column");
         assert!(parse_numstat_row("").is_none(), "empty line");
-        assert_eq!(parse_numstat_row("0\t0\tname with spaces.txt").unwrap().path, "name with spaces.txt");
-        assert_eq!(parse_numstat_row("7\t\tpath").unwrap().deleted, 0, "empty count parses as 0");
+        assert_eq!(
+            parse_numstat_row("0\t0\tname with spaces.txt")
+                .unwrap()
+                .path,
+            "name with spaces.txt"
+        );
+        assert_eq!(
+            parse_numstat_row("7\t\tpath").unwrap().deleted,
+            0,
+            "empty count parses as 0"
+        );
     }
 
     #[test]
@@ -1426,7 +1666,10 @@ mod tests {
     #[test]
     fn diff_summary_real_repo_and_nonrepo() {
         // The build directory lives inside this repo, so the checkout is real.
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let summary = git_diff_summary_impl(repo_root.to_str().unwrap());
         assert!(summary.repo);
         assert!(summary.files.iter().all(|f| !f.path.is_empty()));
@@ -1447,7 +1690,19 @@ mod tests {
             fs::write(dir.join(format!("f{i:03}.txt")), format!("v1-{i}\n")).unwrap();
         }
         run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
-        run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
+        run_git(
+            dir.to_str().unwrap(),
+            &[
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@leftleg",
+                "commit",
+                "-m",
+                "init",
+            ],
+        )
+        .unwrap();
         for i in 0..210 {
             fs::write(dir.join(format!("f{i:03}.txt")), format!("v2-{i}\n")).unwrap();
         }
@@ -1461,13 +1716,23 @@ mod tests {
 
     #[test]
     fn repo_files_real_repo_lists_package_json() {
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let list = repo_files_impl(repo_root.to_str().unwrap());
         assert!(list.repo);
         assert!(!list.files.is_empty());
-        let pkg = list.files.iter().find(|f| f.path == "package.json").expect("package.json is tracked");
+        let pkg = list
+            .files
+            .iter()
+            .find(|f| f.path == "package.json")
+            .expect("package.json is tracked");
         assert!(pkg.size > 0, "size comes from the file's metadata");
-        assert!(list.files.iter().all(|f| !is_binary_extension(&f.path)), "denylisted extensions are omitted even when tracked");
+        assert!(
+            list.files.iter().all(|f| !is_binary_extension(&f.path)),
+            "denylisted extensions are omitted even when tracked"
+        );
 
         let nonrepo = temp_dir("files-nonrepo");
         let l2 = repo_files_impl(nonrepo.to_str().unwrap());
@@ -1483,7 +1748,19 @@ mod tests {
         run_git(dir.to_str().unwrap(), &["init"]).unwrap();
         fs::write(dir.join(" leading.txt"), "kept\n").unwrap();
         run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
-        run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
+        run_git(
+            dir.to_str().unwrap(),
+            &[
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@leftleg",
+                "commit",
+                "-m",
+                "init",
+            ],
+        )
+        .unwrap();
 
         let list = repo_files_impl(dir.to_str().unwrap());
         assert!(list.files.iter().any(|file| file.path == " leading.txt"));
@@ -1494,10 +1771,32 @@ mod tests {
 
     #[test]
     fn binary_extension_denylist_matches_final_extension_case_insensitively() {
-        for hit in ["a.png", "photo.BMP", "x/y/z.svg", "archive.tar.gz", "site.woff2", "app.class", "OLD.SUO", "core.dylib", "movie.mkv", "db.sqlite", "run.7z", "a.tar"] {
+        for hit in [
+            "a.png",
+            "photo.BMP",
+            "x/y/z.svg",
+            "archive.tar.gz",
+            "site.woff2",
+            "app.class",
+            "OLD.SUO",
+            "core.dylib",
+            "movie.mkv",
+            "db.sqlite",
+            "run.7z",
+            "a.tar",
+        ] {
             assert!(is_binary_extension(hit), "{hit} must be denied");
         }
-        for miss in ["main.rs", "notes.txt", "README", ".gitignore", "style.css", "pkg.json", "dir.d/file", "makefile"] {
+        for miss in [
+            "main.rs",
+            "notes.txt",
+            "README",
+            ".gitignore",
+            "style.css",
+            "pkg.json",
+            "dir.d/file",
+            "makefile",
+        ] {
             assert!(!is_binary_extension(miss), "{miss} must be allowed");
         }
     }
@@ -1505,8 +1804,16 @@ mod tests {
     #[test]
     fn count_loc_counts_trailing_unterminated_line_only_when_complete() {
         assert_eq!(count_loc(b"a\nb\n", true), 2);
-        assert_eq!(count_loc(b"a\nb", true), 2, "unterminated final line counts when complete");
-        assert_eq!(count_loc(b"a\nb", false), 1, "truncated tail line must not count");
+        assert_eq!(
+            count_loc(b"a\nb", true),
+            2,
+            "unterminated final line counts when complete"
+        );
+        assert_eq!(
+            count_loc(b"a\nb", false),
+            1,
+            "truncated tail line must not count"
+        );
         assert_eq!(count_loc(b"", true), 0);
         assert_eq!(count_loc(b"\n", true), 1);
         assert_eq!(count_loc(b"a", true), 1);
@@ -1521,28 +1828,65 @@ mod tests {
         fs::write(dir.join("empty.txt"), "").unwrap();
         fs::write(dir.join("nul.txt"), b"a\0b\n").unwrap();
         fs::write(dir.join("img.png"), b"\x89PNG\r\n\x1a\n").unwrap();
-        fs::File::create(dir.join("big.txt")).unwrap().set_len(LOC_READ_CAP + 1).unwrap();
+        fs::File::create(dir.join("big.txt"))
+            .unwrap()
+            .set_len(LOC_READ_CAP + 1)
+            .unwrap();
         fs::create_dir_all(dir.join("sub")).unwrap();
         fs::write(dir.join("sub").join("inner.txt"), "x\n").unwrap();
 
         let paths: Vec<String> = [
-            "trailing.txt", "notrail.txt", "empty.txt", "nul.txt", "img.png",
-            "big.txt", "sub/inner.txt", "missing.txt", "../outside.txt",
-        ].iter().map(|s| s.to_string()).collect();
+            "trailing.txt",
+            "notrail.txt",
+            "empty.txt",
+            "nul.txt",
+            "img.png",
+            "big.txt",
+            "sub/inner.txt",
+            "missing.txt",
+            "../outside.txt",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         // Results are one-per-request in request order.
         let stats = file_stats_batch_impl(dir.to_str().unwrap(), &paths);
         assert_eq!(stats.len(), paths.len());
         let s = |i: usize| &stats[i];
         assert_eq!((s(0).loc, s(0).is_text, s(0).size), (Some(2), true, 8));
-        assert_eq!((s(1).loc, s(1).is_text, s(1).size), (Some(2), true, 7), "no trailing newline adds the last line");
+        assert_eq!(
+            (s(1).loc, s(1).is_text, s(1).size),
+            (Some(2), true, 7),
+            "no trailing newline adds the last line"
+        );
         assert_eq!((s(2).loc, s(2).is_text, s(2).size), (Some(0), true, 0));
         assert_eq!(s(3).is_text, false, "NUL in the sniff window marks binary");
         assert_eq!(s(3).loc, Some(1));
-        assert_eq!(s(4).is_text, false, "denylisted extension is binary even without NULs");
-        assert_eq!((s(5).loc, s(5).size), (None, LOC_READ_CAP + 1), "oversized file gets no loc");
-        assert_eq!((s(6).loc, s(6).is_text, s(6).size), (Some(1), true, 2), "subdirectory paths resolve");
-        assert_eq!((s(7).loc, s(7).is_text, s(7).size), (None, false, 0), "missing file degrades");
-        assert_eq!((s(8).loc, s(8).is_text, s(8).size), (None, false, 0), "traversal degrades");
+        assert_eq!(
+            s(4).is_text,
+            false,
+            "denylisted extension is binary even without NULs"
+        );
+        assert_eq!(
+            (s(5).loc, s(5).size),
+            (None, LOC_READ_CAP + 1),
+            "oversized file gets no loc"
+        );
+        assert_eq!(
+            (s(6).loc, s(6).is_text, s(6).size),
+            (Some(1), true, 2),
+            "subdirectory paths resolve"
+        );
+        assert_eq!(
+            (s(7).loc, s(7).is_text, s(7).size),
+            (None, false, 0),
+            "missing file degrades"
+        );
+        assert_eq!(
+            (s(8).loc, s(8).is_text, s(8).size),
+            (None, false, 0),
+            "traversal degrades"
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1551,16 +1895,30 @@ mod tests {
         let paths: Vec<String> = (0..205).map(|i| format!("f{i}.txt")).collect();
         let stats = file_stats_batch_impl(".", &paths);
         assert_eq!(stats.len(), MAX_STATS_BATCH);
-        assert!(stats.iter().all(|s| s.loc.is_none()), "nonexistent entries degrade without failing");
+        assert!(
+            stats.iter().all(|s| s.loc.is_none()),
+            "nonexistent entries degrade without failing"
+        );
     }
 
     #[test]
     fn repo_relative_path_rejects_non_relative_shapes() {
         assert!(repo_relative_path("src/main.rs").is_ok());
         assert!(repo_relative_path("./src/main.rs").is_ok());
-        for bad in ["C:\\Windows\\evil.txt", "/etc/passwd", "..\\evil.txt", "src/../../../etc/passwd", "a/../b", "C:relative.txt",
+        for bad in [
+            "C:\\Windows\\evil.txt",
+            "/etc/passwd",
+            "..\\evil.txt",
+            "src/../../../etc/passwd",
+            "a/../b",
+            "C:relative.txt",
             // not files: empty, the repo itself, and trailing separators
-            "", ".", "src/", "src\\", "./"] {
+            "",
+            ".",
+            "src/",
+            "src\\",
+            "./",
+        ] {
             assert!(repo_relative_path(bad).is_err(), "{bad:?} must be rejected");
         }
     }
@@ -1576,7 +1934,19 @@ mod tests {
         fs::create_dir_all(dir.join("sub")).unwrap();
         fs::write(dir.join("sub").join("inner.txt"), "x\n").unwrap();
         run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
-        run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
+        run_git(
+            dir.to_str().unwrap(),
+            &[
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@leftleg",
+                "commit",
+                "-m",
+                "init",
+            ],
+        )
+        .unwrap();
 
         let small = read_tracked_text(dir.to_str().unwrap(), "small.txt").unwrap();
         assert_eq!(small.content, "hi");
@@ -1589,9 +1959,21 @@ mod tests {
 
         let big = read_tracked_text(dir.to_str().unwrap(), "big.txt").unwrap();
         assert!(big.truncated);
-        assert_eq!(big.content.len() as u64, TEXT_READ_CAP, "content is capped, not refused");
-        assert_eq!(big.loc, TEXT_READ_CAP / 2, "truncated tail line must not count");
-        assert_eq!(big.size, (300 * 1024 * 2) as u64, "size reports the original length");
+        assert_eq!(
+            big.content.len() as u64,
+            TEXT_READ_CAP,
+            "content is capped, not refused"
+        );
+        assert_eq!(
+            big.loc,
+            TEXT_READ_CAP / 2,
+            "truncated tail line must not count"
+        );
+        assert_eq!(
+            big.size,
+            (300 * 1024 * 2) as u64,
+            "size reports the original length"
+        );
 
         let err = read_tracked_text(dir.to_str().unwrap(), "fake.png").unwrap_err();
         assert!(err.contains("binary file type"), "{err}");
@@ -1613,7 +1995,19 @@ mod tests {
         run_git(dir.to_str().unwrap(), &["init"]).unwrap();
         fs::write(dir.join("café.txt"), "v1\n").unwrap();
         run_git(dir.to_str().unwrap(), &["add", "-A"]).unwrap();
-        run_git(dir.to_str().unwrap(), &["-c", "user.name=test", "-c", "user.email=test@leftleg", "commit", "-m", "init"]).unwrap();
+        run_git(
+            dir.to_str().unwrap(),
+            &[
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@leftleg",
+                "commit",
+                "-m",
+                "init",
+            ],
+        )
+        .unwrap();
         fs::write(dir.join("café.txt"), "v2\n").unwrap();
         let summary = git_diff_summary_impl(dir.to_str().unwrap());
         assert!(summary.repo);
@@ -1647,17 +2041,36 @@ mod tests {
 
         // Happy path: single safe component, created and returned absolute.
         let made = create_project_dir_checked(parent.to_str().unwrap(), " My Project ").unwrap();
-        assert_eq!(std::path::Path::new(&made).file_name().unwrap(), "My Project");
+        assert_eq!(
+            std::path::Path::new(&made).file_name().unwrap(),
+            "My Project"
+        );
         assert!(std::path::Path::new(&made).is_dir(), "{made} must exist");
 
         // Existing directory is idempotent; existing file is refused.
-        assert_eq!(create_project_dir_checked(parent.to_str().unwrap(), "My Project").unwrap(), made);
+        assert_eq!(
+            create_project_dir_checked(parent.to_str().unwrap(), "My Project").unwrap(),
+            made
+        );
         fs::write(parent.join("taken.txt"), "x").unwrap();
         assert!(create_project_dir_checked(parent.to_str().unwrap(), "taken.txt").is_err());
 
         // Name must be one plain component. (Surrounding whitespace is
         // trimmed by design — the happy path above accepts " My Project ".)
-        for bad in ["", "  ", ".", "..", "a/b", "a\\b", "evil:name", "wild*", "q?x", "trail.", "trail .", "a<b"] {
+        for bad in [
+            "",
+            "  ",
+            ".",
+            "..",
+            "a/b",
+            "a\\b",
+            "evil:name",
+            "wild*",
+            "q?x",
+            "trail.",
+            "trail .",
+            "a<b",
+        ] {
             assert!(
                 create_project_dir_checked(parent.to_str().unwrap(), bad).is_err(),
                 "{bad:?} must be rejected",
@@ -1678,14 +2091,17 @@ mod tests {
 
         // Windows reserved device names — bare or as a stem before any
         // extension, any case; COM0/LPT0 and similar-looking names are fine.
-        for bad in ["con", "CON", "Con.txt", "prn", "aux.zip", "nul", "com1", "COM9", "lpt4", "LPT1.txt"] {
+        for bad in [
+            "con", "CON", "Con.txt", "prn", "aux.zip", "nul", "com1", "COM9", "lpt4", "LPT1.txt",
+        ] {
             assert!(
                 create_project_dir_checked(parent.to_str().unwrap(), bad).is_err(),
                 "{bad:?} must be rejected",
             );
         }
         for ok in ["connect", "console", "com0", "lpt0", "com10", "nul-off"] {
-            create_project_dir_checked(parent.to_str().unwrap(), ok).unwrap_or_else(|e| panic!("{ok:?} must be accepted: {e}"));
+            create_project_dir_checked(parent.to_str().unwrap(), ok)
+                .unwrap_or_else(|e| panic!("{ok:?} must be accepted: {e}"));
         }
 
         // Parent must be absolute and existing.
@@ -1694,5 +2110,4 @@ mod tests {
 
         fs::remove_dir_all(parent).unwrap();
     }
-
 }

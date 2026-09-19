@@ -37,7 +37,10 @@ impl UpdateJob {
         unsafe {
             let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if handle.is_null() {
-                return Err(format!("creating pi update job: {}", std::io::Error::last_os_error()));
+                return Err(format!(
+                    "creating pi update job: {}",
+                    std::io::Error::last_os_error()
+                ));
             }
             let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
             info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
@@ -46,7 +49,8 @@ impl UpdateJob {
                 JobObjectExtendedLimitInformation,
                 (&info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
                 std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            ) == 0 {
+            ) == 0
+            {
                 let error = std::io::Error::last_os_error();
                 CloseHandle(handle);
                 return Err(format!("configuring pi update job: {error}"));
@@ -70,7 +74,9 @@ impl UpdateJob {
 #[cfg(windows)]
 impl Drop for UpdateJob {
     fn drop(&mut self) {
-        unsafe { let _ = windows_sys::Win32::Foundation::CloseHandle(self.0); }
+        unsafe {
+            let _ = windows_sys::Win32::Foundation::CloseHandle(self.0);
+        }
     }
 }
 
@@ -99,8 +105,16 @@ fn resolve_pi_shim() -> Result<std::path::PathBuf, String> {
     let mut where_cmd = Command::new("where.exe");
     #[cfg(windows)]
     where_cmd.creation_flags(CREATE_NO_WINDOW);
-    let found = where_cmd.arg("pi.cmd").output().map_err(|e| format!("locating pi: {e}"))?;
-    let line = String::from_utf8_lossy(&found.stdout).lines().next().unwrap_or("").trim().to_string();
+    let found = where_cmd
+        .arg("pi.cmd")
+        .output()
+        .map_err(|e| format!("locating pi: {e}"))?;
+    let line = String::from_utf8_lossy(&found.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
     if line.is_empty() {
         return Err("pi.cmd not found on PATH".into());
     }
@@ -155,8 +169,15 @@ fn run_pi_update(flags: Vec<String>) -> Result<PiManagerResult, String> {
     validate_update_flags(&flags)?;
     let shim = resolve_pi_shim()?;
     let entry = crate::pi::pi_entry_from_shim(&shim)?;
-    let sibling_node = shim.parent().ok_or("pi shim has no parent")?.join("node.exe");
-    let mut cmd = Command::new(if sibling_node.is_file() { sibling_node } else { std::path::PathBuf::from("node") });
+    let sibling_node = shim
+        .parent()
+        .ok_or("pi shim has no parent")?
+        .join("node.exe");
+    let mut cmd = Command::new(if sibling_node.is_file() {
+        sibling_node
+    } else {
+        std::path::PathBuf::from("node")
+    });
     cmd.arg(entry).arg("update").args(&flags);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -211,10 +232,16 @@ fn run_update_command(mut cmd: Command, timeout: Duration) -> Result<PiManagerRe
             }
         }
         if output.is_none() {
-            if let Ok(bytes) = out_rx.try_recv() { output = Some(bytes); }
+            if let Ok(bytes) = out_rx.try_recv() {
+                output = Some(bytes);
+            }
         }
-        if !stderr_closed && err_rx.try_recv().is_ok() { stderr_closed = true; }
-        if status.is_some() && output.is_some() && stderr_closed { break; }
+        if !stderr_closed && err_rx.try_recv().is_ok() {
+            stderr_closed = true;
+        }
+        if status.is_some() && output.is_some() && stderr_closed {
+            break;
+        }
         if std::time::Instant::now() >= deadline {
             // The direct process may already be reaped, so taskkill by its PID
             // cannot reliably find descendants. The job retains ownership of
@@ -223,7 +250,10 @@ fn run_update_command(mut cmd: Command, timeout: Duration) -> Result<PiManagerRe
             job.terminate();
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!("pi update timed out after {}s and was stopped", timeout.as_secs_f64()));
+            return Err(format!(
+                "pi update timed out after {}s and was stopped",
+                timeout.as_secs_f64()
+            ));
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -251,7 +281,10 @@ pub struct PiIntegrityReport {
 /// Classify one configured source string: `npm:`-registry specs are trusted;
 /// anything else (local files, git URLs, junk) is flagged for the startup gate.
 pub fn classify_source(source: &str) -> ExtensionIntegrity {
-    ExtensionIntegrity { source: source.to_string(), trusted: source.starts_with("npm:") }
+    ExtensionIntegrity {
+        source: source.to_string(),
+        trusted: source.starts_with("npm:"),
+    }
 }
 
 /// Read-only integrity report: classify every entry in the `packages` array of
@@ -261,7 +294,8 @@ pub fn pi_integrity_report_impl() -> Result<PiIntegrityReport, String> {
     let Ok(raw) = std::fs::read_to_string(&path) else {
         return Ok(PiIntegrityReport::default());
     };
-    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| format!("parsing pi settings: {e}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("parsing pi settings: {e}"))?;
     let mut extensions = Vec::new();
     if let Some(list) = value.get("packages").and_then(|v| v.as_array()) {
         for item in list {
