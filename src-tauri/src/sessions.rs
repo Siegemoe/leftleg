@@ -362,7 +362,16 @@ fn pick_and_read_files_impl(app: &tauri::AppHandle) -> Result<Vec<PickedFile>, S
 fn read_attachment(path: &str) -> Result<String, String> {
     use std::io::Read;
     const LIMIT: u64 = 20 * 1024 * 1024;
-    let f = fs::File::open(path).map_err(|e| e.to_string())?;
+    // The path arrives from the Rust-side dialog, never the webview — keep
+    // the read defensive anyway: canonicalize (pin symlinks) and require a
+    // regular file before opening, mirroring the guarded-open posture below.
+    let canonical = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !canonical.is_file() {
+        return Err("Attachment is not a regular file".into());
+    }
+    let f = fs::File::open(&canonical).map_err(|e| e.to_string())?;
     if f.metadata().map_err(|e| e.to_string())?.len() > LIMIT {
         return Err("Attachment exceeds 20 MiB limit".into());
     }
