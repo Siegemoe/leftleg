@@ -7,6 +7,10 @@ covers the architecture summary, repo layout, build gates (`npm run build`,
 
 Other docs to consult when relevant:
 
+- `docs/AGENT-PLAYBOOK.md` — step-by-step recipes for doing repo work as an
+  agent: gates, task recipes (feature / component / store action / Rust
+  command / keybinding / setting / bug fix), test scaffold catalog,
+  parallel-agent + hunt discipline, debug loop, environment gotchas
 - `docs/ARCHITECTURE.md` — deep dive beyond AGENTS.md's summary
 - `docs/RELEASE.md` — the per-release checklist (tag → draft → publish)
 - `docs/AUDIT-2026-09-17.md` — latest hardening audit, accepted risks,

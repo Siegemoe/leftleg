@@ -44,8 +44,10 @@ Windows-only toolchain: Node 22+ (see `.nvmrc`), Rust stable-msvc, MSVC Build To
   `chore:`, `ci:`); AI-assisted commits carry
   `Co-Authored-By: Claude Code <noreply@anthropic.com>` in the body.
 - Docs that must travel with code changes: `docs/ARCHITECTURE.md` (architecture),
-  `docs/RELEASE.md` (release/update flow), `docs/ROADMAP.md` (status), and
-  `CHANGELOG.md` with every version bump.
+  `docs/AGENT-PLAYBOOK.md` (agent recipes — update when a convention, gate,
+  scaffold, or file anchor it cites changes), `docs/RELEASE.md`
+  (release/update flow), `docs/ROADMAP.md` (status), and `CHANGELOG.md` with
+  every version bump.
 
 ## Releases
 
