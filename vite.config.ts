@@ -28,7 +28,8 @@ export default defineConfig({
   envPrefix: ["VITE_", "TAURI_"],
   build: {
     target: "chrome105",
-    minify: "esbuild",
+    // Vite 8 (rolldown) no longer bundles esbuild; the default oxc minifier
+    // replaces the old minify: "esbuild" setting.
     sourcemap: true,
   },
 });
