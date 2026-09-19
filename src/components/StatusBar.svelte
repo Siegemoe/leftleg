@@ -176,9 +176,8 @@
   $effect(() => {
     const idx = modelHl;
     if (!modelOpen || !modelMenuEl || flatModels.length === 0) return;
-    modelMenuEl
-      .querySelectorAll<HTMLElement>(".modelitem")
-      [Math.min(idx, flatModels.length - 1)]?.scrollIntoView({ block: "nearest" });
+    const rows = modelMenuEl.querySelectorAll<HTMLElement>(".modelitem");
+    rows[Math.min(idx, flatModels.length - 1)]?.scrollIntoView({ block: "nearest" });
   });
 
   function onStatusbarKeydown(e: KeyboardEvent) {
