@@ -1,6 +1,6 @@
 [package]
 name = "leftleg"
-version = "0.6.2"
+version = "0.7.2"
 description = "Leftleg — a native control surface for the Pi coding agent"
 edition = "2021"
 # Oldest compiler that builds the locked graph: quick-xml 0.42 (transitive of

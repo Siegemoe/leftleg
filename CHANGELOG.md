@@ -5,7 +5,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning
 follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 `src-tauri/tauri.conf.json`.
 
-## [Unreleased]
+## [0.7.2] — 2026-09-19
 
 ### Added
 
