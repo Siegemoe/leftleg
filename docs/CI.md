@@ -1,9 +1,8 @@
 # Continuous integration
 
 Leftleg uses one stable required check, `Required quality gate`, backed by
-independent frontend, real-Pi-contract, and Rust test jobs. Hygiene checks are
-temporarily advisory while the pre-existing formatting and lint baseline is
-cleaned up. This keeps known debt visible without making every commit red.
+independent frontend, real-Pi-contract, and Rust test jobs plus the formatting,
+lint, and declared-minimum hygiene jobs. Only coverage reporting is advisory.
 
 ## Local commands
 
@@ -11,31 +10,35 @@ Use Node 22 (`.nvmrc`) and the Rust toolchain pinned in
 `rust-toolchain.toml`. Install Pi 0.85.1 globally before running the real RPC
 integration test.
 
-| Command                     | Purpose                                                                                   | Current status                                                                    |
-| --------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `npm run build:web`         | Svelte checks, tests that do not spawn Pi, production web build                           | Required and green                                                                |
-| `npm run test:integration`  | Five tests against a real isolated `pi --mode rpc` process                                | Required and green                                                                |
-| `npm run test:rust`         | Native unit and integration tests with the lockfile enforced                              | Required; green locally, one timing-sensitive test failed on the first hosted run |
-| `npm run verify:functional` | Complete local functional gate                                                            | Required; green locally                                                           |
-| `npm run format:check`      | Prettier check for frontend, companion, config, and documentation files                   | Advisory until baseline cleanup                                                   |
-| `npm run lint`              | ESLint recommended rules plus typed promise checks at the application TypeScript boundary | Advisory until baseline cleanup                                                   |
-| `npm run format:rust:check` | Rustfmt check                                                                             | Advisory until baseline cleanup                                                   |
-| `npm run lint:rust`         | Clippy for all targets and features with warnings denied                                  | Advisory until baseline cleanup                                                   |
-| `npm run test:coverage`     | Vitest V8 coverage report; no arbitrary percentage threshold                              | Reporting only                                                                    |
-| `npm run verify`            | All frontend and Rust hygiene plus functional checks                                      | Target end state                                                                  |
+| Command                     | Purpose                                                                                   | Current status                    |
+| --------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------- |
+| `npm run build:web`         | Svelte checks, tests that do not spawn Pi, production web build                           | Required and green                |
+| `npm run test:integration`  | Five tests against a real isolated `pi --mode rpc` process                                | Required and green                |
+| `npm run test:rust`         | Native unit and integration tests with the lockfile enforced                              | Required and green                |
+| `npm run verify:functional` | Complete local functional gate                                                            | Required and green                |
+| `npm run format:check`      | Prettier check for frontend, companion, config, and documentation files                   | Required (`Frontend hygiene`)     |
+| `npm run lint`              | ESLint recommended rules plus typed promise checks at the application TypeScript boundary | Required (`Frontend hygiene`)     |
+| `npm run format:rust:check` | Rustfmt check                                                                             | Required (`Rust hygiene`)         |
+| `npm run lint:rust`         | Clippy for all targets and features with warnings denied                                  | Required (`Rust hygiene`)         |
+| `npm run test:coverage`     | Vitest V8 coverage report; no arbitrary percentage threshold                              | Reporting only                    |
+| `npm run verify`            | All frontend and Rust hygiene plus functional checks                                      | Full local battery; green locally |
 
 `npm run build` remains the frontend gate required by `AGENTS.md`; it includes
-all 313 tests and therefore needs Pi on `PATH`. The split commands exist so CI
+all 315 tests and therefore needs Pi on `PATH`. The split commands exist so CI
 can identify a frontend regression separately from a real Pi compatibility
 regression.
 
 ## GitHub checks
 
-### Required functional jobs
+### Required jobs
 
-- `Frontend`: Svelte checks, 308 isolated tests, and the Vite build.
+- `Frontend`: Svelte checks, 310 isolated tests, and the Vite build.
 - `Pi contract`: the five real-process companion tests against pinned Pi.
 - `Rust tests`: native behavior on the pinned Rust compiler.
+- `Frontend hygiene`: Prettier and ESLint.
+- `Rust hygiene`: rustfmt and Clippy (warnings denied).
+- `Declared Rust compatibility`: builds the locked graph with the `rust-version`
+  declared in `src-tauri/Cargo.toml` (1.98.1).
 - `Required quality gate`: stable aggregate result for the branch ruleset.
 - `Dependency review`: rejects high or critical vulnerabilities introduced by
   dependency changes in pull requests.
@@ -45,10 +48,6 @@ jobs can then be reorganized without changing repository settings.
 
 ### Advisory jobs
 
-- `Frontend hygiene (advisory)`: Prettier and ESLint.
-- `Rust hygiene (advisory)`: rustfmt and Clippy.
-- `Declared Rust compatibility (advisory)`: builds the locked graph with the
-  `rust-version` declared in `src-tauri/Cargo.toml` (1.98.1).
 - `Coverage report (advisory)`: uploads a 14-day HTML and JSON report on master
   pushes and the weekly schedule.
 
@@ -56,84 +55,54 @@ The initial report covers 59.5% of statements, 50.79% of branches, 48.46% of
 functions, and 65.99% of lines. Treat this as a map and a ratchet point, not as
 a claim that every covered line has a strong assertion.
 
-Advisory checks allow the individual baseline-check step to fail, then publish
-a warning and job summary while leaving the job green. This keeps the pull
-request signal readable without hiding the remediation output. Do not add an
-advisory job to the branch ruleset.
+Advisory checks allow the report-generation step to fail, then publish a
+warning and job summary while leaving the job green. This keeps the pull
+request signal readable without hiding the output. Do not add an advisory job
+to the branch ruleset.
 
-## Baseline cleanup handoff
+## Hygiene baseline (cleared 2026-09-19)
 
-The setup deliberately does not rewrite application code. At the time this
-pipeline was introduced:
+The pipeline was introduced with the hygiene and MSRV checks set to advisory
+because the pre-existing tree carried debt. The baseline has since been cleared
+and the three hygiene jobs promoted into `Required quality gate`. Each class
+was fixed in its own commit; subjects are cited rather than SHAs because
+rebase merges rewrite SHAs:
 
-- Prettier reported formatting drift across the existing frontend and docs.
-- ESLint reported 50 errors and 16 advisory Svelte structural warnings. The
-  errors are primarily unused values, explicit `any`, and promise handling.
-- Rustfmt reported existing formatting drift.
-- Clippy reported ten diagnostics, including use of Rust 1.80 APIs against the
-  then-declared Rust 1.77.2 minimum.
-- The first GitHub-hosted Windows run failed
+- Prettier and rustfmt baselines applied ("style: apply prettier baseline",
+  "style: apply rustfmt baseline").
+- Clippy diagnostics resolved with no `#[allow]` suppressions ("fix: clear
+  clippy advisory baseline"); a follow-up resolved the prettier×eslint
+  interactions the reflow created ("style: resolve prettier and eslint
+  interaction after baseline").
+- ESLint errors and Svelte structural warnings cleared ("fix: clear eslint
+  and svelte advisory baseline"), including the CodeRabbit findings on this
+  pipeline itself (start-screen update-lock rechecks, `FileReader` rejection
+  handling, `KeyboardEvent.code` bindings, and the management-scope
+  foreground recheck — "fix: CodeRabbit findings — update-lock guard, paste
+  errors, layout keys, mgmt scope").
+- The hosted-runner flake in
   `pimgr::tests::update_deadline_includes_inherited_pipes_after_parent_exit`
-  with `pipe drain outlived update deadline`; the same test passes locally.
-  Treat this as a timing-sensitive test to diagnose rather than retrying it
-  until it happens to pass.
+  was fixed ("fix: make inherited-pipe deadline test robust to hosted-runner
+  slowness"): the production 300 ms deadline was firing correctly; the test's
+  own 1 s outer bound left too little headroom, and it now uses a 30 s
+  grandchild drain with a 10 s outer bound.
+- The declared Rust minimum was raised to the tested compiler ("build: declare
+  Rust 1.98.1 as the supported minimum"): the previously declared 1.77.2 was
+  unreachable because the locked graph pulls quick-xml 0.42 (transitive of
+  tauri), whose manifest requires the `edition2024` cargo feature that 1.77.2
+  cannot parse.
 - GitHub Dependabot reports `GHSA-wrw7-89jp-8q8g` in the transitive Rust
-  `glib` dependency below 0.20.0. The first patched release is 0.20.0; update
-  the owning dependency deliberately and run the native suite rather than
-  editing `Cargo.lock` by hand. (Review note 2026-09-19: this GHSA is the
-  GitHub mirror of `RUSTSEC-2024-0429`, already accepted in
-  `.cargo/audit.toml` with the version-lock rationale — glib 0.18 is pinned
-  by tauri 2.11.5 → muda/tao → gtk 0.18 and 0.20 is unreachable until the
-  tauri/wry stack moves. Closure is the documentation cross-reference, not an
-  upgrade.)
+  `glib` dependency below 0.20.0. This GHSA is the GitHub mirror of
+  `RUSTSEC-2024-0429`, already accepted in `.cargo/audit.toml` with the
+  version-lock rationale — glib 0.18 is pinned by tauri 2.11.5 → muda/tao →
+  gtk 0.18, and 0.20 is unreachable until the tauri/wry stack moves. Closure
+  is the documentation cross-reference, not an upgrade. Dependabot update
+  attempts for it are expected to keep failing; dismiss them.
 
-### Triage from the CodeRabbit review of this pipeline PR
-
-CodeRabbit reviewed the PR that introduced this pipeline; findings triaged on
-2026-09-19:
-
-- Checkout credential persistence — resolved in this pipeline: every
-  checkout in `ci.yml`, `release.yml`, and `dependency-review.yml` sets
-  `persist-credentials: false` (no step performs authenticated git
-  operations, and PR-triggered jobs must not get a persisted token).
-- `pimgr::tests::update_deadline_includes_inherited_pipes_after_parent_exit`
-  flake — resolved 2026-09-19: the production 300 ms deadline was firing
-  correctly; the failure was the test's own 1 s outer assertion bound, which
-  left too little headroom for hosted-runner spawn/teardown noise. The test
-  now uses a 30 s grandchild drain and a 10 s outer bound (81db88e).
-- `src/components/StartScreen.svelte`: recheck `$updateInstallLock` after
-  async work and before each startup-draft mutation, and disable the
-  textarea while locked — in-flight picker/`FileReader` work can otherwise
-  mutate a draft after the update blocker scan passed.
-- `src/components/StartScreen.svelte`: handle `FileReader` rejection in
-  `onPaste` — catch, show a note, continue with the remaining files.
-- `src/lib/keybindings.ts`: match Latin-letter bindings by
-  `KeyboardEvent.code` (`KeyN`) in addition to `event.key`, so default
-  bindings survive non-Latin keyboard layouts.
-- `src/lib/settings/mgmt.test.ts`: the stale-handle test must clear the
-  original object identity (same fields, distinct objects) or it cannot fail
-  on a structurally-comparing implementation.
-- `src/lib/settings/mgmt.ts`: re-reading `commands`/`companionAvailable()`
-  after `await ensureAgentDir()` validates against whatever project is
-  foreground _then_ — validate against the captured project's state, or
-  bail out when the foreground changed.
-
-Clean each category in a separate commit. For promise findings, confirm whether
-the intended behavior is to await, return, or explicitly detach with `void`;
-do not mechanically silence the rule. For the minimum Rust version — decided
-2026-09-19: the declared 1.77.2 was unreachable because the locked graph pulls
-quick-xml 0.42 (transitive of tauri), whose manifest requires the `edition2024`
-cargo feature that 1.77.2 cannot parse. The declaration now follows the tested
-compiler (1.98.1); restoring 1.77.2 would mean downgrading tauri's transitive
-tree.
-
-After every advisory command is green:
-
-1. Remove `continue-on-error` from the advisory check steps in the three
-   hygiene/MSRV jobs.
-2. Add those jobs to the `quality-gate.needs` list and its result check.
-3. Keep `Required quality gate` as the stable branch-rule check.
-4. Run `npm run verify` locally and confirm the pull request checks.
+Promotion ("ci: promote the hygiene and MSRV jobs into the required gate"):
+removed `continue-on-error` from the hygiene/MSRV check steps, added the three
+jobs to `quality-gate.needs` and its result check, and kept
+`Required quality gate` as the stable branch-rule check.
 
 ## Dependency and security maintenance
 
@@ -162,6 +131,14 @@ Review the three command-line findings first, then group path findings by
 shared trust boundary so one validated helper can address a class of reports.
 Mark a finding false positive only after documenting why its input is trusted
 or constrained.
+
+Triage completed 2026-09-19: full record in
+`docs/CODEQL-TRIAGE-2026-09-19.md` (classes, per-alert dispositions, and the
+three commands now gated). 99 alerts were dismissed with class justifications
+and exactly 6 remain open as documented accepted risks — the neutralized
+`leftleg-media` file-system race, the dialog-picked attachment read, and four
+`create_project_dir` parent-directory alerts. The 6 open alerts are decisions,
+not an outstanding queue.
 
 ## Later layers
 
