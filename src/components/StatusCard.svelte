@@ -20,7 +20,9 @@
   // revision counter.
   $effect(() => {
     const ownerProject = $projectDir;
-    const ownerSession = $activeSessionPath;
+    // Session switches (same project) swap the transcript get_messages reads —
+    // stay a dependency even though the fetch is project/process-scoped.
+    void $activeSessionPath;
     const ownerProc = $lastProcByProject[ownerProject];
     const rev = ++revision;
     todos = null;

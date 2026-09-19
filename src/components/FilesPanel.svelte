@@ -7,6 +7,7 @@
   import { repoFiles, fileStats, type FileStat } from "../lib/api";
   import { buildFileTree, flattenTree, formatBytes, type FileTreeNode } from "../lib/files-model";
   import { ChevronDown, ChevronRight, RefreshCw } from "@lucide/svelte";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
 
   let loading = $state(false);
   let loadError = $state("");
@@ -17,10 +18,12 @@
   let lastSeenDir = "";
 
   // Expanded dirs + per-file stats cache (repo-relative path → stat).
-  let expanded = $state<Set<string>>(new Set());
-  let stats = $state<Map<string, FileStat>>(new Map());
+  const expanded = new SvelteSet<string>();
+  const stats = new SvelteMap<string, FileStat>();
   // Path -> tree revision. Keeping the revision prevents an older refresh's
   // finally block from clearing ownership of a newer request for the same path.
+  // Deliberately non-reactive bookkeeping: nothing renders from it.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   let statsInFlight = new Map<string, number>();
 
   async function refresh(dir: string = $projectDir) {
@@ -35,15 +38,15 @@
       isRepo = list.repo;
       truncated = list.truncated;
       // Fresh repo listing invalidates cached stats.
-      stats = new Map();
+      stats.clear();
       statsInFlight.clear();
       // Open the top directory (descending single-dir chains) so the panel
       // never greets with a lone folder row, and load its stats.
-      expanded = new Set<string>();
+      expanded.clear();
       const top = topLevelDirs(tree);
       const topNode = top ? findNode(tree, top) : null;
       if (topNode) {
-        expanded = new Set([top]);
+        expanded.add(top);
         void loadStatsFor(topNode.children);
       } else {
         void loadStatsFor(tree.children);
@@ -94,9 +97,8 @@
       for (let i = 0; i < wanted.length; i += 200) chunks.push(wanted.slice(i, i + 200).map((n) => n.path));
       const groups = await Promise.all(chunks.map((paths) => fileStats(dir, paths)));
       if (dir !== $projectDir || revision !== refreshRevision) return;
-      const next = new Map(stats);
-      for (const group of groups) for (const s of group) next.set(s.path, s);
-      stats = next;
+      // $state proxies Map — direct mutation is reactive; no copy needed.
+      for (const group of groups) for (const s of group) stats.set(s.path, s);
     } catch {
       // Stats are decorative; failures just leave rows without numbers.
     } finally {
@@ -107,13 +109,12 @@
   }
 
   function toggleDir(node: FileTreeNode) {
-    const next = new Set(expanded);
-    if (next.has(node.path)) next.delete(node.path);
+    // $state proxies Set — direct mutation is reactive; no copy needed.
+    if (expanded.has(node.path)) expanded.delete(node.path);
     else {
-      next.add(node.path);
+      expanded.add(node.path);
       void loadStatsFor(node.children);
     }
-    expanded = next;
   }
 
   const visible = $derived(flattenTree(tree, expanded));
@@ -126,8 +127,8 @@
       isRepo = false;
       loadError = "";
       truncated = false;
-      stats = new Map();
-      expanded = new Set();
+      stats.clear();
+      expanded.clear();
       lastSeenDir = dir;
       void refresh(dir);
     }

@@ -26,7 +26,6 @@
   );
 
   const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-  let levelIdx = $derived($rpcState ? levels.indexOf($rpcState.thinkingLevel) : 0);
 
   // Update-check visibility: version text tooltip always reports the last
   // check; a failed check or a ready update gets a clickable chip so the

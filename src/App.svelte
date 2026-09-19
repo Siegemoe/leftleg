@@ -16,7 +16,7 @@
   import NewProjectCard from "./components/NewProjectCard.svelte";
   import ProjectSettingsCard from "./components/ProjectSettingsCard.svelte";
   import PromptRail from "./components/PromptRail.svelte";
-  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, homePanelCollapsed, statusNote, extDialog, connected, disconnected } from "./lib/stores";
+  import { handleEvent, handlePiExit, restartPi, projectDir, sidebarOpen, settingsOpen, rightPanelOpen, homePanelCollapsed, extDialog, disconnected } from "./lib/stores";
   import type { PiEventEnvelope, PiExitEnvelope } from "./lib/types";
   import { boot } from "./lib/stores";
   import { reportError } from "./lib/errors";

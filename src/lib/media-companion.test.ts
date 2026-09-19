@@ -8,7 +8,8 @@ let root = "";
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=", "base64");
 
 function execute(params: Record<string, unknown>, signal = new AbortController().signal) {
-  let tool!: { execute: (...args: unknown[]) => Promise<any> };
+  // Only the shape these tests read back; the real tool returns more fields.
+  let tool!: { execute: (...args: unknown[]) => Promise<{ details: { paths: string[] } }> };
   registerMedia({ registerTool: (definition: unknown) => { tool = definition as typeof tool; } } as never);
   return tool.execute("test", params, signal, undefined, {
     cwd: root, modelRegistry: { getProviderAuth: async () => ({ auth: { apiKey: "test-key" } }) },

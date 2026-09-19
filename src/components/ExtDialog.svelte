@@ -61,7 +61,7 @@
 
     {#if d.method === "select"}
       <div class="options">
-        {#each d.options ?? [] as opt}
+        {#each d.options ?? [] as opt, i (opt + ":" + i)}
           <button onclick={() => respondToExtDialog({ value: opt })}>{opt}</button>
         {/each}
       </div>

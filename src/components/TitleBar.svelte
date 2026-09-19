@@ -186,7 +186,7 @@
       <button class="menu-label" class:open={openMenu === "view"} onclick={() => toggleMenu("view")}>View</button>
       {#if openMenu === "view"}
         <div class="dropdown">
-          <button onclick={() => run(() => sidebarOpen.update((v) => !v))}>{"Toggle Sidebar"}{#if bindings.toggleSidebar}<span class="hint-key">{bindings.toggleSidebar}</span>{/if}</button>
+          <button onclick={() => run(() => sidebarOpen.update((v) => !v))}>Toggle Sidebar{#if bindings.toggleSidebar}<span class="hint-key">{bindings.toggleSidebar}</span>{/if}</button>
           <button onclick={() => run(() => openPanelTab("artifacts"))}>Artifacts…{#if bindings.openArtifacts}<span class="hint-key">{bindings.openArtifacts}</span>{/if}</button>
           <button onclick={() => run(() => openPanelTab("status"))}>Status…{#if bindings.openStatus}<span class="hint-key">{bindings.openStatus}</span>{/if}</button>
           <button onclick={() => run(() => openPanelTab("diff"))}>Diff…{#if bindings.openDiff}<span class="hint-key">{bindings.openDiff}</span>{/if}</button>

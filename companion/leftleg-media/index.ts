@@ -294,7 +294,7 @@ export default function (pi: ExtensionAPI) {
         text = await readCappedBody(res);
       } catch (e) {
         if (timeout.aborted) {
-          throw new Error(`OpenRouter images request exceeded ${REQUEST_TIMEOUT_MS / 1000}s and was aborted.`);
+          throw new Error(`OpenRouter images request exceeded ${REQUEST_TIMEOUT_MS / 1000}s and was aborted.`, { cause: e });
         }
         throw e;
       }

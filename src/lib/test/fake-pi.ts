@@ -96,6 +96,9 @@ export class FakePi {
 
   // ---- Tauri-command transport (the `api` module surface) ----
 
+  // Timeout deliberately ignored — the fake runs deterministically without
+  // deadlines; the parameter exists to mirror api.piRequest's signature.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   piRequest = (command: Record<string, unknown>, _timeoutSecs?: number): Promise<unknown> =>
     this.request(command);
 

@@ -6,7 +6,7 @@
   import {
     activeSessionPath, applyTheme, connected, extDialog, newSession, newProjectOpen, nowTick, openSession, openNewProject,
     openProjectSettingsCard, pins, projectSettingsDir,
-    projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled, fileCardOpen,
+    projectDir, projectMeta, projectScope, renameSession, reorderPin, settled, fileCardOpen,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
     settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
   } from "../lib/stores";
@@ -61,6 +61,9 @@
   // The scope picker always lists every non-forgotten project, even when a
   // scope is active (otherwise you could never switch back without clearing).
   const scopeChoices = $derived.by(() => {
+    // Local scratch map rebuilt on each derivation — intentionally not state
+    // (a SvelteMap here would be a state write inside $derived, which throws).
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const map = new Map<string, { latest: number }>();
     for (const s of sidebarSessions) {
       if ($projectMeta[s.projectDir]?.forgotten && s.projectDir !== $projectDir) continue;

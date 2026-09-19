@@ -67,7 +67,7 @@
     .map((item) => item.kind === "tool" ? item.toolCallId : "").join("\0"));
   $effect(() => {
     const dir = $projectDir; // tracked: project switch while open refreshes the list
-    completedGenerations; // tracked: new outputs appear while the gallery stays open
+    void completedGenerations; // tracked: new outputs appear while the gallery stays open
     if (!$rightPanelOpen || $rightPanelTab !== "artifacts") return;
     // Owner-scoped reset (StatusCard pattern): when the owning project
     // changes, drop the previous project's artifacts BEFORE the new load —

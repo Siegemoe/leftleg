@@ -62,7 +62,7 @@
   type FieldType = "string" | "number" | "boolean" | "lines";
   interface FieldDef { path: string; label: string; type: FieldType; hint?: string }
 
-  function nsLoad(target: string, namespace: string): void {
+  function nsLoad(target: string): void {
     void load(target).catch(() => {}); // load() already surfaced the error
   }
   function nsValue(target: string, namespace: string, path: string): unknown {
@@ -194,7 +194,6 @@
   // ---- lens ----
   const lensBooleans = ["prettier", "lsp", "tsc", "bashDetection", "alwaysReport"] as const;
   const lensNumbers = ["lspDelayMs", "maxConcurrency", "prettierTimeoutMs", "linterTimeoutMs", "tscTimeoutMs"] as const;
-  const lensPatterns = ["includePatterns", "excludePatterns"] as const;
   async function saveLensField(path: string, value: unknown) {
     try {
       const rev = revisionFor("lens-project");
@@ -206,10 +205,6 @@
     } catch (e) {
       noteSaveError(e);
     }
-  }
-  function lensLines(name: string): string {
-    const v = files["lens-project"]?.data?.[name];
-    return Array.isArray(v) ? (v as string[]).join("\n") : "";
   }
 
   // ---- tool-display ----
@@ -285,7 +280,7 @@
 
 <div class="pkg-forms">
   <!-- Plan -->
-  <details class="pkg-block" ontoggle={() => nsLoad("settings-global", "pi-plan")}>
+  <details class="pkg-block" ontoggle={() => nsLoad("settings-global")}>
     <summary>Plan (pi-plan namespace) — namespace-merge saves</summary>
     <p class="hint">Saving here merges INSIDE the pi-plan namespace: editing planModel cannot erase btw/goal/plansDir (proven by unit test). Global scope.</p>
     {#each planFields as f (f.path)}
@@ -302,7 +297,7 @@
   </details>
 
   <!-- Subagent -->
-  <details class="pkg-block" ontoggle={() => nsLoad("settings-global", "subagent")}>
+  <details class="pkg-block" ontoggle={() => nsLoad("settings-global")}>
     <summary>Subagent roles (subagent namespace) — fallback chains, verbatim identifiers</summary>
     <p class="hint">Models are plain strings — OpenRouter identifiers with / and :free are preserved exactly as typed. Changes apply on the next subagent spawn; no agents are launched by editing.</p>
     {#each roleNames("settings-global") as role (role)}
@@ -328,7 +323,7 @@
   </details>
 
   <!-- Permissions -->
-  <details class="pkg-block" ontoggle={() => nsLoad("settings-global", "permission")}>
+  <details class="pkg-block" ontoggle={() => nsLoad("settings-global")}>
     <summary>Permissions (permission namespace) — last matching rule wins</summary>
     <p class="hint">Per-tool pattern → allow/ask/deny maps. Rule order = insertion order shown; later matching rules override earlier ones. yolo (a launch flag) bypasses ask but never deny.</p>
     {#each permToolKeys("settings-global") as tool (tool)}
@@ -457,7 +452,7 @@
   </details>
 
   <!-- ref-tools -->
-  <details class="pkg-block" ontoggle={() => nsLoad("settings-global", "pi-ref-tools")}>
+  <details class="pkg-block" ontoggle={() => nsLoad("settings-global")}>
     <summary>Ref tools (pi-ref-tools namespace)</summary>
     {#each refFields as f (f.path)}
       <div class="frow">
