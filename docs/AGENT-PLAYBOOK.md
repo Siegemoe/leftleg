@@ -64,9 +64,9 @@ Native (`src-tauri/src/`):
   single-flight via a native flag.
 - `sessions.rs` — session listing (JSONL header parse), GUI-state persistence,
   base64 attachment reads, artifacts/git/repo-file commands, `open_path`
-  containment, validated project-folder creation (`create_project_dir` at
-  `:1090`, validator `create_project_dir_checked` at `:1107`, `mod tests` at
-  `:1141`).
+  containment, native-dialog project-folder creation
+  (`pick_and_create_project_dir` at `:1322`, validator
+  `create_project_dir_checked` at `:1371`, `mod tests` at `:1403`).
 - `src-tauri/capabilities/default.json` — the explicit permission grants
   (currently `core:default`, `dialog:default`, `opener:allow-open-url`,
   `opener:allow-default-urls`, `updater:default`, `process:default`, plus
@@ -263,7 +263,7 @@ Same as §4.1, plus:
    and `pick_and_read_files` (dialog + read in one native op) are the
    templates. Never reintroduce a webview-supplied path→bytes command.
 6. Name/path validation: copy `create_project_dir_checked`
-   (`sessions.rs:1107`) — reserved Windows device names, length caps,
+   (`sessions.rs:1371`) — reserved Windows device names, length caps,
    separator/wildcard/control-char rejection, idempotent open of an
    existing dir.
 7. Framing-adjacent logic (JSONL classification, correlation, header

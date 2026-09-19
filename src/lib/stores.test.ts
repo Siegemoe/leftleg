@@ -12,6 +12,7 @@ vi.mock("./api", () => ({
   readGuiState: vi.fn().mockResolvedValue({}),
   writeGuiState: vi.fn().mockResolvedValue(undefined),
   pickAttachments: vi.fn().mockResolvedValue([]),
+  pickAndCreateProject: vi.fn().mockResolvedValue(null),
   openPathLocal: vi.fn().mockResolvedValue(undefined),
   getAgentDir: vi.fn().mockResolvedValue(""),
   pendingGuiWriteCount: vi.fn().mockReturnValue(0),
@@ -31,6 +32,7 @@ import {
   activeSessionPath,
   compact,
   connected,
+  createProject,
   exportSessionHtml,
   extDialog,
   forgetProject,
@@ -38,6 +40,7 @@ import {
   handleEvent,
   homePanelCollapsed,
   items,
+  newProjectOpen,
   newSession,
   openRightPanel,
   projectDir,
@@ -119,6 +122,30 @@ describe("update install safety", () => {
       error: "Update installation is preparing",
     });
     expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
+  });
+});
+
+describe("createProject", () => {
+  it("creates the folder, closes the card, and lands in the new project", async () => {
+    newProjectOpen.set(true);
+    vi.mocked(api.pickAndCreateProject).mockResolvedValue("/work/created");
+    vi.mocked(api.piStart).mockResolvedValueOnce(11);
+    vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: {} } as never);
+
+    const created = await createProject("created");
+
+    expect(created).toBe("/work/created");
+    expect(get(newProjectOpen)).toBe(false);
+    expect(get(projectDir)).toBe("/work/created");
+  });
+
+  it("resolves null on a cancelled folder dialog and leaves the card open", async () => {
+    newProjectOpen.set(true);
+    vi.mocked(api.pickAndCreateProject).mockResolvedValue(null);
+
+    expect(await createProject("created")).toBe(null);
+    expect(get(newProjectOpen)).toBe(true);
+    expect(get(projectDir)).toBe("");
   });
 });
 

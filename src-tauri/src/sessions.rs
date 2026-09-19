@@ -1312,19 +1312,37 @@ pub async fn read_text_file(
         .map_err(|e| e.to_string())?
 }
 
-/// Create a new project folder: one plain path component under an absolute
-/// parent the webview sends (normally the folder just picked in the native
-/// dialog). The name is validated to a safe Windows/POSIX folder name and
-/// only directories are ever created — but the parent is NOT containment-
-/// checked against the allowed roots, so this is an accepted-risk primitive:
-/// a compromised webview could create directories anywhere, one component at
-/// a time (and nest arbitrarily deep by reusing created dirs as parents). It
-/// cannot write files, run anything, or read.
+/// Create a new project folder in one native operation: the OS folder dialog
+/// runs in Rust, so the parent is only ever a directory the user just picked
+/// and the webview supplies nothing but the folder name. The name is
+/// validated to a safe Windows/POSIX folder name and only directories are
+/// ever created. Cancelling the dialog resolves to `None` — not an error, so
+/// the card can stay open.
 #[tauri::command]
-pub async fn create_project_dir(parent: String, name: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || create_project_dir_checked(&parent, &name))
+pub async fn pick_and_create_project_dir(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || pick_and_create_project_dir_impl(&app, &name))
         .await
         .map_err(|e| e.to_string())?
+}
+
+fn pick_and_create_project_dir_impl(
+    app: &tauri::AppHandle,
+    name: &str,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose where to create the project")
+        .blocking_pick_folder();
+    let Some(picked) = picked else {
+        return Ok(None); // cancelled — not an error
+    };
+    let parent = picked.into_path().map_err(|e| e.to_string())?;
+    create_project_dir_checked(&parent.to_string_lossy(), name).map(Some)
 }
 
 /// Windows reserved device names — CON, PRN, AUX, NUL, COM1-9, LPT1-9 — are
