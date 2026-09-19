@@ -604,12 +604,20 @@ mod tests {
     #[test]
     fn failed_send_does_not_leak_pending_requests() {
         let proc = Arc::new(stopped_process());
-        let result = request(
+        // Which failure wins is timing-dependent under load: the writer
+        // thread's spawn+channel round-trip can exceed the 10ms deadline, so
+        // the send legitimately lands either on the stdin-closed error or on
+        // the write-timeout poison — and both remove the pending entry.
+        let err = request(
             &proc,
             serde_json::json!({"id":"test", "type":"get_state"}),
             Duration::from_millis(10),
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("stdin closed") || err.contains("timed out writing"),
+            "unexpected send failure: {err}"
         );
-        assert!(result.unwrap_err().contains("stdin closed"));
         assert!(proc.pending.remove("test").is_none());
         assert!(request(&proc, Value::Null, Duration::from_millis(10))
             .unwrap_err()
