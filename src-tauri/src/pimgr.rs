@@ -298,11 +298,25 @@ mod tests {
         let mut command = Command::new("node");
         #[cfg(windows)]
         command.creation_flags(CREATE_NO_WINDOW);
-        command.args(["-e", "const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},1200)'],{stdio:'inherit',windowsHide:true,detached:true}); c.unref(); process.exit(0);"]);
+        // The grandchild holds the inherited pipes for 30 s — far past any
+        // runner noise, so a drain wait can never masquerade as a prompt kill.
+        command.args(["-e", "const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},30000)'],{stdio:'inherit',windowsHide:true,detached:true}); c.unref(); process.exit(0);"]);
         let started = std::time::Instant::now();
         let result = run_update_command(command, Duration::from_millis(300));
-        assert!(started.elapsed() < Duration::from_millis(1000), "pipe drain outlived update deadline");
-        assert!(result.is_err(), "inherited pipes must not turn a deadline into success");
+        // The 300 ms deadline is what production must honor; the outer bound
+        // only has to sit far below the drain time with headroom for
+        // hosted-runner spawn/attach/teardown noise (first CI run failed at
+        // ~1 s on a cold Windows runner).
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "pipe drain outlived update deadline (took {:?})",
+            started.elapsed()
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("timed out"),
+            "inherited pipes must not turn a deadline into success: {err}"
+        );
     }
 
     #[test]
