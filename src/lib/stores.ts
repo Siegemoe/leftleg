@@ -1121,6 +1121,7 @@ export function newSession() {
 }
 
 async function newSessionImpl() {
+  const outgoing = get(activeSessionPath);
   try {
     const res = await requestForView<{ success: boolean; error?: string; data?: { cancelled: boolean } }>({ type: "new_session" }, 120);
     if (!res.success) {
@@ -1134,6 +1135,7 @@ async function newSessionImpl() {
     finalizeStreaming();
     streaming.set(false);
     awaitingAgentStart.delete(get(projectDir));
+    settleSwitchedAwaySession(outgoing);
     queue.set({ steering: [], followUp: [] });
     items.set([]);
     activeSessionPath.set(null);
@@ -1286,6 +1288,7 @@ export function openSession(path: string) { return navigate(() => openSessionImp
 
 async function openSessionImpl(path: string) {
   if (get(activeSessionPath) === path) return;
+  const outgoing = get(activeSessionPath);
   const info = get(sessions).find((s) => s.path === path);
   if (info?.cwd && info.cwd !== get(projectDir)) {
     // Cross-project open: focus (or spawn) that project's process on this session.
@@ -1303,6 +1306,7 @@ async function openSessionImpl(path: string) {
       return;
     }
     finalizeStreaming();
+    settleSwitchedAwaySession(outgoing);
     items.set([]);
     queue.set({ steering: [], followUp: [] });
     composerDraft.set(null);
@@ -1562,6 +1566,15 @@ function settleProjectSessionsOnProcessExit(project: string, expected: boolean) 
       setSessionStatus(path, "attention", "process exited");
     }
   }
+}
+
+/** A mid-turn session switch leaves the outgoing session with no future
+ * agent_end — events land on the surface's new active path — so its
+ * "Working" pill would pulse forever. Settle it like the exit sweep's
+ * expected branch: active → idle, any attention mark preserved. */
+function settleSwitchedAwaySession(outgoing: string | null) {
+  if (!outgoing) return;
+  if (get(sessionStates)[outgoing]?.status === "active") setSessionStatus(outgoing, "idle");
 }
 
 /**

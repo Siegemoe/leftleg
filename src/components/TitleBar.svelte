@@ -57,6 +57,9 @@
   }
   function onGlobalKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
+      // An element-level handler (rename input, composer palette) may have
+      // taken this key already — its preventDefault outranks this closer.
+      if (e.defaultPrevented) return;
       // ExtDialog (z-200) sits above everything this handler can close: with
       // one pending, Esc belongs to that layer — the dialog's own listener
       // (registered last, on demand) closes it and marks the event.
@@ -84,7 +87,7 @@
     // Registry-driven accelerators (defaults + user overrides from Settings →
     // Key bindings). These keys are free in this webview, so they work while
     // typing too; step aside when a modal owns the keyboard.
-    if (e.defaultPrevented || $settingsOpen || $extDialog || $projectSettingsDir || $newProjectOpen) return;
+    if (e.defaultPrevented || $settingsOpen || $extDialog || $projectSettingsDir || $newProjectOpen || $aboutOpen) return;
     const action = matchKeybinding(e, bindings);
     if (!action) return;
     e.preventDefault();

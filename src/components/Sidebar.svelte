@@ -4,9 +4,9 @@
   // Pinned/Active/Settled sections per project, status pills, drag-to-pin
   // with pinned reorder, row context menu, resizable width.
   import {
-    activeSessionPath, applyTheme, connected, extDialog, newSession, nowTick, openSession, openNewProject,
-    openProjectSettingsCard, pins,
-    projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled,
+    activeSessionPath, applyTheme, connected, extDialog, newSession, newProjectOpen, nowTick, openSession, openNewProject,
+    openProjectSettingsCard, pins, projectSettingsDir,
+    projectDir, projectMeta, projectScope, renameSession, reorderPin, rpcState, settled, fileCardOpen,
     sessionQuery, sessionStates, sessions, settledView, settleSession, settingsOpen,
     settingsProject, sidebarWidth, theme, togglePin, unsettleSession, visitedAt,
   } from "../lib/stores";
@@ -88,9 +88,12 @@
   }
   function onScopeWindowKeydown(e: KeyboardEvent) {
     // ExtDialog is the one layer that both outranks the popover and registers
-    // later — stand down for it; preventDefault so later-registered lower
-    // layers stand down in turn (topmost-only Esc, same ladder as the modals).
-    if (!scopeOpen || e.key !== "Escape" || e.defaultPrevented || $extDialog) return;
+    // later — stand down for it; so for the cards, which the accelerator can
+    // open while the popover is up (z-150 above this z-50 popover). Also
+    // stand down on FileCard (z-90, paints above). preventDefault so
+    // later-registered lower layers stand down in turn (topmost-only Esc).
+    if (!scopeOpen || e.key !== "Escape" || e.defaultPrevented) return;
+    if ($extDialog || $newProjectOpen || $projectSettingsDir || $fileCardOpen) return;
     e.preventDefault();
     scopeOpen = false;
   }
