@@ -6,7 +6,18 @@
   // runs the same flow through the folder picker for brand-new projects.
   import { fade } from "svelte/transition";
   import { ArrowRight, FileText, Folder, Paperclip, Send } from "@lucide/svelte";
-  import { projectMeta, projectDir, activeSessionPath, sessions, statusNote, transientNote, switchToProject, sendPrompt, lastSessionFor, updateInstallLock } from "../lib/stores";
+  import {
+    projectMeta,
+    projectDir,
+    activeSessionPath,
+    sessions,
+    statusNote,
+    transientNote,
+    switchToProject,
+    sendPrompt,
+    lastSessionFor,
+    updateInstallLock,
+  } from "../lib/stores";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { projectIconStyle } from "../lib/project-icons";
   import ProjectIcon from "./ProjectIcon.svelte";
@@ -78,7 +89,13 @@
       }
       const isImage = IMAGE_TYPES.has(ext(f.name));
       const data = f.data; // narrowed to string above; property narrowing doesn't reach the update callback
-      startupDraft.update((draft) => ({ ...draft, attachments: [...draft.attachments, { name: f.name, mimeType: isImage ? mimeFor(f.name) : "text/plain", data, isImage }] }));
+      startupDraft.update((draft) => ({
+        ...draft,
+        attachments: [
+          ...draft.attachments,
+          { name: f.name, mimeType: isImage ? mimeFor(f.name) : "text/plain", data, isImage },
+        ],
+      }));
     }
   }
 
@@ -87,7 +104,10 @@
     // recovered) anyway while the UI showed it gone. A disabled button never
     // reaches this in a real browser; the guard also covers synthetic events.
     if (busy) return;
-    startupDraft.update((draft) => ({ ...draft, attachments: draft.attachments.filter((_, idx) => idx !== i) }));
+    startupDraft.update((draft) => ({
+      ...draft,
+      attachments: draft.attachments.filter((_, idx) => idx !== i),
+    }));
   }
 
   function dataUrlOf(a: ComposerAttachment): string {
@@ -132,7 +152,10 @@
     if (files.length === 0) return;
     e.preventDefault();
     for (const f of files) {
-      if (f.size > 20 * 1024 * 1024) { transientNote("Pasted image exceeds 20 MiB limit"); continue; }
+      if (f.size > 20 * 1024 * 1024) {
+        transientNote("Pasted image exceeds 20 MiB limit");
+        continue;
+      }
       const read = new Promise<string>((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result as string);
@@ -159,12 +182,18 @@
         continue;
       }
       const b64 = dataUrl.split(",")[1] ?? "";
-      startupDraft.update((draft) => ({ ...draft, attachments: [...draft.attachments, {
-        name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
-        mimeType: f.type || "image/png",
-        data: b64,
-        isImage: true,
-      }] }));
+      startupDraft.update((draft) => ({
+        ...draft,
+        attachments: [
+          ...draft.attachments,
+          {
+            name: f.name || `pasted-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
+            mimeType: f.type || "image/png",
+            data: b64,
+            isImage: true,
+          },
+        ],
+      }));
     }
   }
 
@@ -186,13 +215,17 @@
     }
     // Consume only the submitted revision; later typing must survive.
     startupDraft.update((draft) => ({
-      ...draft, text: draft.text.startsWith(text) ? draft.text.slice(text.length) : draft.text,
+      ...draft,
+      text: draft.text.startsWith(text) ? draft.text.slice(text.length) : draft.text,
     }));
     // The submitted attachments leave this composer either way: delivered on
     // accept, recovered into the destination composer on rejection. A store
     // update (not $startupDraft) stays correct even when the open flow
     // resolves after the start view has unmounted.
-    startupDraft.update((draft) => ({ ...draft, attachments: draft.attachments.filter((a) => !sent.includes(a)) }));
+    startupDraft.update((draft) => ({
+      ...draft,
+      attachments: draft.attachments.filter((a) => !sent.includes(a)),
+    }));
   }
 
   // Every non-forgotten project we know about: union of session history and
@@ -259,13 +292,17 @@
 <div class="start" in:fade={{ duration: 140 }}>
   <div class="start-inner">
     <h1>Pick a project to begin</h1>
-    <p class="sub">Your message is sent to the project you choose — pi always runs inside a project folder.</p>
+    <p class="sub">
+      Your message is sent to the project you choose — pi always runs inside a project folder.
+    </p>
     {#if $statusNote}<p role="status">{$statusNote}</p>{/if}
 
     <div class="cards">
       {#each projects as [dir] (dir)}
         <button class="card" onclick={() => void open(dir)} disabled={busy} title={dir}>
-          <span class="icon" style={projectIconStyle($projectMeta[dir]?.color)}><ProjectIcon icon={$projectMeta[dir]?.icon} size={15} /></span>
+          <span class="icon" style={projectIconStyle($projectMeta[dir]?.color)}
+            ><ProjectIcon icon={$projectMeta[dir]?.icon} size={15} /></span
+          >
           <span class="name">{projectDisplayName(dir, $projectMeta[dir]?.name)}</span>
           <span class="go"><ArrowRight size={14} /></span>
         </button>
@@ -289,7 +326,12 @@
                 <FileText size={14} strokeWidth={2} />
               {/if}
               <span class="chipname" title={a.name}>{a.name}</span>
-              <button class="ghost rm" disabled={busy} onclick={() => removeAttachment(i)} title="Remove">×</button>
+              <button
+                class="ghost rm"
+                disabled={busy}
+                onclick={() => removeAttachment(i)}
+                title="Remove">×</button
+              >
             </div>
           {/each}
         </div>
@@ -303,13 +345,19 @@
         onkeydown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            transientNote("Enter won't send here — pick a project card above, or use the send button.");
+            transientNote(
+              "Enter won't send here — pick a project card above, or use the send button.",
+            );
           }
         }}
-        onpaste={onPaste}
-      ></textarea>
+        onpaste={onPaste}></textarea>
       <div class="actions">
-        <button class="ghost add" disabled={busy || $updateInstallLock} onclick={addFiles} title="Attach images or files">
+        <button
+          class="ghost add"
+          disabled={busy || $updateInstallLock}
+          onclick={addFiles}
+          title="Attach images or files"
+        >
           <Paperclip size={18} strokeWidth={2} />
         </button>
         <button
@@ -321,7 +369,9 @@
           <Send size={15} strokeWidth={2.2} />
         </button>
       </div>
-      <div class="hint">Pick a project card above, or send to a new folder with the send button.</div>
+      <div class="hint">
+        Pick a project card above, or send to a new folder with the send button.
+      </div>
     </div>
   </div>
 </div>
@@ -370,10 +420,18 @@
     border-radius: 12px;
     cursor: pointer;
     text-align: left;
-    transition: border-color 120ms ease, transform 120ms ease;
+    transition:
+      border-color 120ms ease,
+      transform 120ms ease;
   }
-  .card:hover { border-color: var(--accent); transform: translateY(-1px); }
-  .card:disabled { opacity: 0.6; cursor: default; }
+  .card:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .card:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
   .icon {
     display: inline-flex;
     align-items: center;
@@ -393,10 +451,18 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .go { color: var(--text-3); }
-  .card:hover .go { color: var(--accent); }
-  .ghostcard { border-style: dashed; }
-  .ghostcard .name { color: var(--text-3); }
+  .go {
+    color: var(--text-3);
+  }
+  .card:hover .go {
+    color: var(--accent);
+  }
+  .ghostcard {
+    border-style: dashed;
+  }
+  .ghostcard .name {
+    color: var(--text-3);
+  }
   .empty {
     grid-column: 1 / -1;
     color: var(--text-3);
@@ -431,10 +497,26 @@
     object-fit: cover;
     border-radius: 4px;
   }
-  .chip :global(svg) { flex-shrink: 0; color: var(--text-3); }
-  .chipname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
-  .rm { padding: 0 4px; font-size: 13px; line-height: 1; border: none; color: var(--text-3); }
-  .rm:hover { color: var(--danger); }
+  .chip :global(svg) {
+    flex-shrink: 0;
+    color: var(--text-3);
+  }
+  .chipname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-2);
+  }
+  .rm {
+    padding: 0 4px;
+    font-size: 13px;
+    line-height: 1;
+    border: none;
+    color: var(--text-3);
+  }
+  .rm:hover {
+    color: var(--danger);
+  }
   textarea {
     resize: none;
     background: var(--bg-inset);
@@ -447,7 +529,10 @@
     line-height: 1.5;
     min-height: 84px;
   }
-  textarea:focus { outline: none; border-color: var(--accent); }
+  textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
   .actions {
     display: flex;
     align-items: center;
@@ -461,7 +546,9 @@
     border-radius: 10px;
     flex-shrink: 0;
   }
-  .add:hover { color: var(--accent); }
+  .add:hover {
+    color: var(--accent);
+  }
   .send {
     display: inline-flex;
     align-items: center;

@@ -4,12 +4,19 @@ import { flushSync, mount, unmount } from "svelte";
 const mocks = vi.hoisted(() => ({
   piRequest: vi.fn(),
   piModuleInfo: vi.fn().mockResolvedValue({ name: "pi", version: "1", path: "/pi" }),
-  piIntegrityReport: vi.fn().mockResolvedValue({ extensions: [{ source: "built-in", trusted: true }] }),
+  piIntegrityReport: vi
+    .fn()
+    .mockResolvedValue({ extensions: [{ source: "built-in", trusted: true }] }),
 }));
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
-  return { ...actual, piRequest: mocks.piRequest, piModuleInfo: mocks.piModuleInfo, piIntegrityReport: mocks.piIntegrityReport };
+  return {
+    ...actual,
+    piRequest: mocks.piRequest,
+    piModuleInfo: mocks.piModuleInfo,
+    piIntegrityReport: mocks.piIntegrityReport,
+  };
 });
 
 import StatusCard from "./StatusCard.svelte";
@@ -25,7 +32,13 @@ async function settle() {
 function todoMessage(subject: string) {
   return {
     role: "assistant",
-    content: [{ type: "toolCall", name: "todo", arguments: { tasks: [{ key: subject, status: "pending", subject }] } }],
+    content: [
+      {
+        type: "toolCall",
+        name: "todo",
+        arguments: { tasks: [{ key: subject, status: "pending", subject }] },
+      },
+    ],
   };
 }
 
@@ -46,7 +59,10 @@ describe("status card state ownership", () => {
   it("discards the loaded task list and rescans when the active session changes", async () => {
     mocks.piRequest
       .mockResolvedValueOnce({ success: true, data: { messages: [todoMessage("session A task")] } })
-      .mockResolvedValueOnce({ success: true, data: { messages: [todoMessage("session B task")] } });
+      .mockResolvedValueOnce({
+        success: true,
+        data: { messages: [todoMessage("session B task")] },
+      });
     instance = mount(StatusCard, { target: document.body });
     await vi.waitFor(() => expect(mocks.piRequest).toHaveBeenCalledTimes(1));
     await settle();
@@ -60,9 +76,20 @@ describe("status card state ownership", () => {
   });
 
   it("shows the last task update when an assistant message contains multiple todo calls", async () => {
-    mocks.piRequest.mockResolvedValue({ success: true, data: { messages: [{
-      role: "assistant", content: [...todoMessage("outdated task").content, ...todoMessage("current task").content],
-    }] } });
+    mocks.piRequest.mockResolvedValue({
+      success: true,
+      data: {
+        messages: [
+          {
+            role: "assistant",
+            content: [
+              ...todoMessage("outdated task").content,
+              ...todoMessage("current task").content,
+            ],
+          },
+        ],
+      },
+    });
     instance = mount(StatusCard, { target: document.body });
     await settle();
     expect(document.body.textContent).toContain("current task");
@@ -73,12 +100,22 @@ describe("status card state ownership", () => {
     let resolveOld!: (value: unknown) => void;
     let resolveNew!: (value: unknown) => void;
     mocks.piRequest
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveNew = resolve; }));
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveNew = resolve;
+          }),
+      );
     instance = mount(StatusCard, { target: document.body });
-    await vi.waitFor(() => expect(mocks.piRequest).toHaveBeenCalledWith(
-      { type: "get_messages" }, 60, "/a", 7,
-    ));
+    await vi.waitFor(() =>
+      expect(mocks.piRequest).toHaveBeenCalledWith({ type: "get_messages" }, 60, "/a", 7),
+    );
 
     activeSessionPath.set("/a/another-session.jsonl");
     await vi.waitFor(() => expect(mocks.piRequest).toHaveBeenCalledTimes(2));
@@ -95,8 +132,18 @@ describe("status card state ownership", () => {
     let resolveOld!: (value: unknown) => void;
     let resolveNew!: (value: unknown) => void;
     mocks.piModuleInfo
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveNew = resolve; }));
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveNew = resolve;
+          }),
+      );
     instance = mount(StatusCard, { target: document.body });
     await settle(); // let run 1 execute with the deferred impl before changing owner
     activeSessionPath.set("/a/another-session.jsonl"); // owner change → effect re-runs

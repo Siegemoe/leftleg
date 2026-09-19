@@ -1,13 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTIONS, conflictingAction, effectiveBindings, formatBinding, matchKeybinding, parseCapture,
-  type ActionId, type KeyEventLike,
+  ACTIONS,
+  conflictingAction,
+  effectiveBindings,
+  formatBinding,
+  matchKeybinding,
+  parseCapture,
+  type ActionId,
+  type KeyEventLike,
 } from "./keybindings";
 
 // Minimal keydown stand-in — matchKeybinding/parseCapture only read these
 // properties off the event.
-const ev = (over: Partial<KeyEventLike>): KeyEventLike =>
-  ({ key: "", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...over });
+const ev = (over: Partial<KeyEventLike>): KeyEventLike => ({
+  key: "",
+  ctrlKey: false,
+  metaKey: false,
+  altKey: false,
+  shiftKey: false,
+  ...over,
+});
 
 const defaults = effectiveBindings({});
 
@@ -23,7 +35,9 @@ describe("matchKeybinding", () => {
   });
 
   it("distinguishes shift", () => {
-    expect(matchKeybinding(ev({ key: "n", ctrlKey: true, shiftKey: true }), defaults)).toBe("newProject");
+    expect(matchKeybinding(ev({ key: "n", ctrlKey: true, shiftKey: true }), defaults)).toBe(
+      "newProject",
+    );
     // Shift is not free: Ctrl+B with shift held owns no action.
     expect(matchKeybinding(ev({ key: "b", ctrlKey: true, shiftKey: true }), defaults)).toBeNull();
   });
@@ -49,14 +63,24 @@ describe("matchKeybinding", () => {
     // A non-Latin layout reports e.key as the local glyph ("т" on Russian for
     // the N key) while e.code still names the physical key — the letter
     // binding must fire on the code, not the glyph.
-    expect(matchKeybinding(ev({ key: "т", code: "KeyN", ctrlKey: true }), defaults)).toBe("newSession");
-    expect(matchKeybinding(ev({ key: "и", code: "KeyB", ctrlKey: true }), defaults)).toBe("toggleSidebar");
-    expect(matchKeybinding(ev({ key: "т", code: "KeyN", ctrlKey: true, shiftKey: true }), defaults)).toBe("newProject");
+    expect(matchKeybinding(ev({ key: "т", code: "KeyN", ctrlKey: true }), defaults)).toBe(
+      "newSession",
+    );
+    expect(matchKeybinding(ev({ key: "и", code: "KeyB", ctrlKey: true }), defaults)).toBe(
+      "toggleSidebar",
+    );
+    expect(
+      matchKeybinding(ev({ key: "т", code: "KeyN", ctrlKey: true, shiftKey: true }), defaults),
+    ).toBe("newProject");
     // e.key stays authoritative in the other direction: a glyph that happens
     // to match never needs the code to agree.
-    expect(matchKeybinding(ev({ key: "n", code: "KeyM", ctrlKey: true }), defaults)).toBe("newSession");
+    expect(matchKeybinding(ev({ key: "n", code: "KeyM", ctrlKey: true }), defaults)).toBe(
+      "newSession",
+    );
     // A glyph that matches neither key nor physical code is not a match.
-    expect(matchKeybinding(ev({ key: "и", code: "KeyB", ctrlKey: true, shiftKey: true }), defaults)).toBeNull();
+    expect(
+      matchKeybinding(ev({ key: "и", code: "KeyB", ctrlKey: true, shiftKey: true }), defaults),
+    ).toBeNull();
     // Punctuation keeps e.key-only matching: a code carrying the same glyph's
     // physical key must not substitute for a binding the key can't match.
     const rebound = { ...defaults, newSession: "Ctrl+Plus" };

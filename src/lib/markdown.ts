@@ -8,7 +8,17 @@ marked.setOptions({
 
 // Model-authored forms (fake credential prompts) and embedded frames have no
 // legitimate use in a chat transcript — strip them at the sanitizer.
-const FORBID_TAGS = ["form", "input", "button", "textarea", "select", "option", "iframe", "object", "embed"];
+const FORBID_TAGS = [
+  "form",
+  "input",
+  "button",
+  "textarea",
+  "select",
+  "option",
+  "iframe",
+  "object",
+  "embed",
+];
 
 export function renderMarkdown(src: string): string {
   const html = marked.parse(src, { async: false });

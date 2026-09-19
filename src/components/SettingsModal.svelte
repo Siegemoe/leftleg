@@ -2,7 +2,14 @@
   // Thin shell hosting the full settings workspace. All prior settings
   // functionality (runtime controls, theme, project presentation, extension
   // commands, session actions) moved into SettingsWorkspace categories.
-  import { settingsOpen, settingsProject, projectDir, lastProcByProject, navigating, extDialog } from "../lib/stores";
+  import {
+    settingsOpen,
+    settingsProject,
+    projectDir,
+    lastProcByProject,
+    navigating,
+    extDialog,
+  } from "../lib/stores";
   import SettingsWorkspace from "./settings/SettingsWorkspace.svelte";
 
   // Mirrors the workspace's draft state (pushed via onDirtyChange): closing
@@ -53,7 +60,13 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) close(); }} role="presentation">
+<div
+  class="overlay"
+  onclick={(e) => {
+    if (e.target === e.currentTarget) close();
+  }}
+  role="presentation"
+>
   <div class="panel" role="dialog" aria-modal="true">
     <header>
       <h2>Settings</h2>
@@ -99,7 +112,16 @@
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  h2 { margin: 0; font-size: 16px; }
-  .sub { flex: 1; font-size: 11px; color: var(--text-3); }
-  .x { padding: 4px 9px; }
+  h2 {
+    margin: 0;
+    font-size: 16px;
+  }
+  .sub {
+    flex: 1;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .x {
+    padding: 4px 9px;
+  }
 </style>

@@ -118,16 +118,16 @@ Frontend (`src/`):
 
 ## 3. Gates
 
-| Command | Runs | Catches | When required |
-| --- | --- | --- | --- |
-| `npm run build` | `svelte-check` + `vitest run` + `vite build` | template/type errors, broken tests, prod-build breakage | after **any** frontend change (AGENTS.md rule 1). Must be **0 errors AND 0 warnings**, tests green, clean vite build — treat a warning as a failure even if the tool would let it pass |
-| `npm run verify:functional` | full frontend gate + locked Rust tests | cross-stack behavioral regressions | before handing off a mixed frontend/Rust change |
-| `npm run verify` | Prettier + ESLint + frontend gate + rustfmt + Clippy + Rust tests | hygiene, unsafe promise use, and behavioral regressions | target whole-repository gate; hygiene remains advisory until the baseline described in `docs/CI.md` is cleared |
-| `npm run check` | `svelte-check` only | types/templates, fast | between edits while iterating |
-| `npm test` | `vitest run` | logic regressions | same, test-only |
-| `npm run check:rust` | `cargo check` | Rust compile errors | after **any** Rust change |
-| `npm run test:rust` | `cargo test` | framing/parsing/containment regressions | when framing/parsing/file-safety logic moved |
-| `npm run tauri build` | full signed release bundle | — | release only (§9) |
+| Command                     | Runs                                                              | Catches                                                 | When required                                                                                                                                                                          |
+| --------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run build`             | `svelte-check` + `vitest run` + `vite build`                      | template/type errors, broken tests, prod-build breakage | after **any** frontend change (AGENTS.md rule 1). Must be **0 errors AND 0 warnings**, tests green, clean vite build — treat a warning as a failure even if the tool would let it pass |
+| `npm run verify:functional` | full frontend gate + locked Rust tests                            | cross-stack behavioral regressions                      | before handing off a mixed frontend/Rust change                                                                                                                                        |
+| `npm run verify`            | Prettier + ESLint + frontend gate + rustfmt + Clippy + Rust tests | hygiene, unsafe promise use, and behavioral regressions | target whole-repository gate; hygiene remains advisory until the baseline described in `docs/CI.md` is cleared                                                                         |
+| `npm run check`             | `svelte-check` only                                               | types/templates, fast                                   | between edits while iterating                                                                                                                                                          |
+| `npm test`                  | `vitest run`                                                      | logic regressions                                       | same, test-only                                                                                                                                                                        |
+| `npm run check:rust`        | `cargo check`                                                     | Rust compile errors                                     | after **any** Rust change                                                                                                                                                              |
+| `npm run test:rust`         | `cargo test`                                                      | framing/parsing/containment regressions                 | when framing/parsing/file-safety logic moved                                                                                                                                           |
+| `npm run tauri build`       | full signed release bundle                                        | —                                                       | release only (§9)                                                                                                                                                                      |
 
 CI (`.github/workflows/ci.yml`) splits the gate into named jobs on every PR/push to master:
 
@@ -155,11 +155,11 @@ collide (§10).
 
 1. Design the action in `stores.ts` using `sendPrompt` (`:1029`) as the
    template: **guard → capture origin → act → patch surface**.
-   - *Guard:* `updateInstallLock`, `navigating`, connected + open project.
+   - _Guard:_ `updateInstallLock`, `navigating`, connected + open project.
      Never act with no view to act on.
-   - *Capture origin:* `originProject` / `originProc` / `originRevision` at
+   - _Capture origin:_ `originProject` / `originProc` / `originRevision` at
      the moment the action starts.
-   - *Act:* view-bound requests go through `requestForView` (`:959`) —
+   - _Act:_ view-bound requests go through `requestForView` (`:959`) —
      **never a bare `api.piRequest`** for view-updating work. The start-view
      trap: with no open project, a `project || null` fallback routes to
      Rust's active-process pointer and silently mutates a background project
@@ -170,7 +170,7 @@ collide (§10).
      itself and drives its own delivery patches onto the owning surface
      (foreground or background), because the optimistic bubble must update
      even if focus changed.
-   - *Patch surface:* update only the project that owns the response. A stale
+   - _Patch surface:_ update only the project that owns the response. A stale
      response (project/proc/revision moved) is dead on arrival —
      `requestForView` throws `VIEW_CHANGED_MSG` (`:951`), which callers may
      swallow silently because staleness is expected, not a failure
@@ -239,7 +239,7 @@ Same as §4.1, plus:
 - Surfaced errors go through `transientNote` (`:615`) — user-visible, timed,
   filtered from the status line for stale-view noise (AGENTS.md rule 5 /
   CONTRIBUTING ground rule 4). Nothing fails into a bare `catch` with no UI
-  trace; ignore only what is *expected* (e.g. `VIEW_CHANGED_MSG`), and say
+  trace; ignore only what is _expected_ (e.g. `VIEW_CHANGED_MSG`), and say
   so in a comment.
 - Per-session UI state (chips, working/idle) goes through `setSessionStatus`
   (`:317`) so every session row renders its own cue from the same store the

@@ -10,7 +10,12 @@
     action: () => void;
   }
 
-  let { x, y, items, onclose }: {
+  let {
+    x,
+    y,
+    items,
+    onclose,
+  }: {
     x: number;
     y: number;
     items: MenuItem[];
@@ -59,7 +64,13 @@
 
 <div class="menu" bind:this={el} style="left: {pos.x}px; top: {pos.y}px" role="menu">
   {#each items as item (item.label)}
-    <button class="item" class:danger={item.danger} disabled={item.disabled} role="menuitem" onclick={() => run(item)}>
+    <button
+      class="item"
+      class:danger={item.danger}
+      disabled={item.disabled}
+      role="menuitem"
+      onclick={() => run(item)}
+    >
       {item.label}
     </button>
   {/each}
@@ -89,8 +100,18 @@
     cursor: pointer;
     white-space: nowrap;
   }
-  .item:hover { background: var(--bg-surface-2); color: var(--text); }
-  .item.danger { color: var(--danger); }
-  .item:disabled { opacity: 0.45; cursor: default; }
-  .item:disabled:hover { background: transparent; }
+  .item:hover {
+    background: var(--bg-surface-2);
+    color: var(--text);
+  }
+  .item.danger {
+    color: var(--danger);
+  }
+  .item:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .item:disabled:hover {
+    background: transparent;
+  }
 </style>

@@ -8,6 +8,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 ## [Unreleased]
 
 ### Added
+
 - Title-bar logo returns to the start view: the active project's pi process
   keeps running in the background (mid-stream turns continue feeding the
   sidebar), and switching back restores the transcript, queue, and extension
@@ -34,6 +35,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   multiple simultaneously running sessions across projects.
 
 ### Fixed
+
 - Overlay ladders close topmost-only: Escape now steps aside for higher
   layers everywhere — the settings modal, both cards, the file viewer, the
   About card, and every menu/popover (the app closes exactly one layer per
@@ -67,6 +69,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 ## [0.6.2] — 2026-09-18
 
 ### Added
+
 - Diff and Files docks with guarded native Git summaries, a tracked-source
   browser, lazy file statistics, and a movable code-viewer card.
 - Branch-hover diff totals and a subagents dock for current agent activity.
@@ -85,6 +88,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   the window edge at its narrowest.
 
 ### Fixed
+
 - Prevent delayed RPC prompt delivery after a stdin write timeout by poisoning
   and stopping the ambiguous transport before queued writers can proceed.
 - Bound the complete pi-update process tree and inherited output pipes with a
@@ -99,6 +103,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 ## [0.5.1] — 2026-09-17
 
 ### Added
+
 - System tray with close-to-tray: the X button (and Alt+F4) now parks the app
   to the tray instead of exiting, so background pi projects keep streaming;
   File → Exit and the tray's Quit are the real exits and still kill pi
@@ -111,6 +116,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   serialized ones.
 
 ### Changed
+
 - New app icon set: bold monochrome mirrored-LL (thin L left, extra-bold
   mirrored L right, dark tile, legible at 16 px); unused android/ios icon
   variants dropped (Windows-only bundle).
@@ -122,6 +128,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 ## [0.4.1] — 2026-09-17
 
 ### Fixed
+
 - Startup pi updater now fires after boot settles: the launch-time call raced
   boot's navigation every start (fast-pathed the wait, then skipped at the
   re-check with no debounce stamp), so automatic pi harness/extension updates
@@ -131,6 +138,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   minisign-verified, so exposure was theoretical.
 
 ### Changed
+
 - First CI run on the repo: quality gate green; security job now actively
   enforcing (`.cargo/audit.toml` records the accepted glib advisory in-tool;
   unmaintained-crate warnings are reported but don't fail).
@@ -140,6 +148,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 ## [0.4.0] — 2026-09-17
 
 ### Added
+
 - Native path boundaries: scoped `open_path` (tool cards, artifacts, and the
   logs folder route through containment + an executable-extension denylist),
   `pick_and_read_files` dialog+read attachments (the renderer can only read
@@ -151,6 +160,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   weekly security audit job (npm audit + cargo audit).
 
 ### Fixed
+
 - Three-round fresh-eyes review loop (see `docs/AUDIT-2026-09-17.md`): null
   CSP; non-async Tauri commands blocking the main thread; pi-update subprocess
   bounded and killable; log rotation + line caps; streaming race (steer
@@ -163,12 +173,14 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   navigation race (fires post-boot, bounded wait, no-stamp retry).
 
 ### Changed
+
 - `opener:default` capability replaced with explicit `allow-open-url` /
   `allow-default-urls` (unscoped reveal grant dropped).
 
 ## [0.3.0] — 2026-09-15
 
 ### Added
+
 - Startup pi harness/extension update pipeline: guarded Rust runner,
   integrity gate, 12-hour debounce; extensions section in the status card.
 - Project icons: 40-emoji picker with user-chosen colors across the sidebar
@@ -179,20 +191,24 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   (the dropdown status card's redundant Updates section removed).
 
 ### Fixed
+
 - Project state and media handling hardening; thinking-card cleanup
   (`thinking_end` adopts authoritative content, render-time sanitize pass).
 
 ## [0.2.3] — 2026-09-14
 
 ### Changed
+
 - Footer layout: theme + settings on row 1, connection + branch chip on row 2.
 
 ## [0.2.2] — 2026-09-14
 
 ### Added
+
 - Custom title bar with menus, proactive update control, model dropdown.
 
 ### Changed
+
 - Composer reset, sidebar restructure, startup scene, git chip, status card;
   model pinning/search, status pill cleanup, filter-row swap; sidebar footer
   cleanup, media settings under Models.
@@ -200,6 +216,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 ## [0.2.1] — 2026-09-14
 
 ### Added
+
 - Image generation: `image_generate` companion (OpenRouter Image API,
   pi-registry auth), image placeholder UX, artifacts browser, asset-protocol
   streaming with project-scoped grants.
@@ -207,6 +224,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 ## [0.2.0] — 2026-09-14
 
 ### Added
+
 - Settings workspace: management bridge to pi (`/settings-mgmt` companion) with
   revision-checked, atomic, read-back-verified writes; core config, extension
   config editors, and per-package forms (plan, subagent, permissions, lens,
@@ -221,6 +239,7 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 - Research: image generation via OpenRouter for Leftleg.
 
 ### Fixed
+
 - ~19 correctness fixes across a two-round audit, including: stale transcript
   when opening another session of a streaming background project; unpaired
   history tool calls rendering as eternal spinners after reload; running tool
@@ -233,12 +252,14 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
   bridge reader.
 
 ### Changed
+
 - Settings status/cache hardening: serialized immutable snapshots,
   hash-based content revisions, same-directory atomic writes.
 
 ## [0.1.0] — 2026-09-12
 
 ### Added
+
 - Initial release: multi-project pi orchestration, streaming transcripts with
   tool cards, steering/follow-up queue, extension dialogs, session history and
   sidebar, GUI state persistence, vitest + cargo test suites gated into the

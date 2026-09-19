@@ -2,8 +2,8 @@
 
 ## Reporting a vulnerability
 
-Please report security issues **privately**, via GitHub's *Security → Report a
-vulnerability* on this repository — not as a public issue. Include reproduction
+Please report security issues **privately**, via GitHub's _Security → Report a
+vulnerability_ on this repository — not as a public issue. Include reproduction
 steps and affected versions. You can expect an initial response within a few
 days; fixes land in the next release and are noted in the changelog.
 

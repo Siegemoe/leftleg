@@ -16,8 +16,11 @@
     for (const it of $items) {
       if (it.kind !== "user") continue;
       const text = it.text.trim();
-      const label = text
-        || (it.images.length > 0 ? `[${it.images.length} image${it.images.length === 1 ? "" : "s"}]` : "(empty prompt)");
+      const label =
+        text ||
+        (it.images.length > 0
+          ? `[${it.images.length} image${it.images.length === 1 ? "" : "s"}]`
+          : "(empty prompt)");
       out.push({
         id: it.id,
         label: label.length > 200 ? label.slice(0, 200) + "…" : label,
@@ -85,7 +88,10 @@
     cursor: pointer;
     flex-shrink: 0;
   }
-  .rail-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .rail-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
   .ticks {
     flex: 1;
     display: flex;
@@ -100,7 +106,9 @@
     scrollbar-width: none;
     padding-top: 2px;
   }
-  .ticks::-webkit-scrollbar { display: none; }
+  .ticks::-webkit-scrollbar {
+    display: none;
+  }
   .tick {
     width: 14px;
     height: 3px;
@@ -110,16 +118,27 @@
     background: color-mix(in srgb, var(--text-3) 55%, transparent);
     cursor: pointer;
     flex-shrink: 0;
-    transition: width 120ms ease, background 120ms ease;
+    transition:
+      width 120ms ease,
+      background 120ms ease;
   }
-  .tick:hover { background: var(--text-2); }
+  .tick:hover {
+    background: var(--text-2);
+  }
   .tick.active {
     width: 18px;
     background: var(--accent);
   }
-  .tick.sending { background: var(--accent); animation: rail-pulse 1.2s infinite; }
-  .tick.failed { background: var(--danger); }
-  .tick.sending.active { animation: rail-pulse 1.2s infinite; }
+  .tick.sending {
+    background: var(--accent);
+    animation: rail-pulse 1.2s infinite;
+  }
+  .tick.failed {
+    background: var(--danger);
+  }
+  .tick.sending.active {
+    animation: rail-pulse 1.2s infinite;
+  }
   .none {
     width: 14px;
     height: 3px;
@@ -127,7 +146,12 @@
     background: color-mix(in srgb, var(--text-3) 25%, transparent);
   }
   @keyframes rail-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.45; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
   }
 </style>

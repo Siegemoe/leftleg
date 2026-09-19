@@ -14,7 +14,12 @@ vi.mock("../../lib/settings/mgmt", () => ({
   handleMgmtNotify: () => false,
   abortPendingMgmt: () => {},
   primeAgentDir: () => {},
-  agentDirStore: { subscribe: (fn: (v: string | null) => void) => { fn(null); return () => {}; } },
+  agentDirStore: {
+    subscribe: (fn: (v: string | null) => void) => {
+      fn(null);
+      return () => {};
+    },
+  },
   isCompanionCommand: () => false,
 }));
 vi.mock("../../lib/api", () => ({
@@ -30,7 +35,10 @@ import { keybindings, projectDir } from "../../lib/stores";
 
 let host: HTMLDivElement;
 let instance: ReturnType<typeof mount> | null = null;
-const settle = async () => { await new Promise((r) => setTimeout(r, 0)); flushSync(); };
+const settle = async () => {
+  await new Promise((r) => setTimeout(r, 0));
+  flushSync();
+};
 
 beforeEach(() => {
   host = document.createElement("div");

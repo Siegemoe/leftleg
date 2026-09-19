@@ -62,9 +62,15 @@
 
   // Reload when the card becomes visible (panel opens on this tab) or the
   // focused project changes.
-  const completedGenerations = $derived($items
-    .filter((item) => item.kind === "tool" && item.name === "image_generate" && item.status !== "running")
-    .map((item) => item.kind === "tool" ? item.toolCallId : "").join("\0"));
+  const completedGenerations = $derived(
+    $items
+      .filter(
+        (item) =>
+          item.kind === "tool" && item.name === "image_generate" && item.status !== "running",
+      )
+      .map((item) => (item.kind === "tool" ? item.toolCallId : ""))
+      .join("\0"),
+  );
   $effect(() => {
     const dir = $projectDir; // tracked: project switch while open refreshes the list
     void completedGenerations; // tracked: new outputs appear while the gallery stays open
@@ -84,8 +90,11 @@
   });
 
   async function openFile(path: string) {
-    try { await openPathLocal(path); }
-    catch (e) { transientNote(`Couldn't open: ${e}`); }
+    try {
+      await openPathLocal(path);
+    } catch (e) {
+      transientNote(`Couldn't open: ${e}`);
+    }
   }
 
   // Inline "Copied" feedback on the tile (status-bar notes are out of the
@@ -127,7 +136,9 @@
     const d = new Date(ms);
     const today = new Date();
     const sameDay = d.toDateString() === today.toDateString();
-    return sameDay ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return sameDay
+      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString([], { month: "short", day: "numeric" });
   }
 </script>
 
@@ -157,21 +168,38 @@
       <p class="state">Loading…</p>
     {:else if tab === "images"}
       {#if images.length === 0}
-        <p class="state">No generated images yet — ask the agent to create one (saved to <span class="mono">.pi/images/</span>).</p>
+        <p class="state">
+          No generated images yet — ask the agent to create one (saved to <span class="mono"
+            >.pi/images/</span
+          >).
+        </p>
       {:else}
         <div class="grid">
           {#each images as file (file.path)}
             <div class="tile">
               <div class="thumb">
                 {#if thumbFailed[file.path]}
-                  <button class="thumbfall mono" title={thumbFailed[file.path]} onclick={() => void openFile(file.path)}>⚠ preview unavailable — click to open</button>
+                  <button
+                    class="thumbfall mono"
+                    title={thumbFailed[file.path]}
+                    onclick={() => void openFile(file.path)}
+                    >⚠ preview unavailable — click to open</button
+                  >
                 {:else}
-                  <button class="thumbbtn" title="Open — {file.name}" onclick={() => void openFile(file.path)}>
+                  <button
+                    class="thumbbtn"
+                    title="Open — {file.name}"
+                    onclick={() => void openFile(file.path)}
+                  >
                     <img
                       src={convertFileSrc(file.path)}
                       alt={file.name}
                       loading="lazy"
-                      onerror={() => (thumbFailed = { ...thumbFailed, [file.path]: `preview failed: ${file.name}` })}
+                      onerror={() =>
+                        (thumbFailed = {
+                          ...thumbFailed,
+                          [file.path]: `preview failed: ${file.name}`,
+                        })}
                     />
                   </button>
                 {/if}
@@ -181,13 +209,25 @@
                 <span class="meta">{fmtSize(file.size)} · {fmtTime(file.modifiedMs)}</span>
               </div>
               <div class="tileactions">
-                <button class="ghost icon" title="Open externally" onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button>
+                <button
+                  class="ghost icon"
+                  title="Open externally"
+                  onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button
+                >
                 {#if copiedPath === file.path}
                   <span class="copied-chip"><Check size={11} strokeWidth={2.4} /> Copied</span>
                 {:else}
-                  <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
+                  <button
+                    class="ghost icon"
+                    title="Copy path"
+                    onclick={() => void copyPath(file.path)}><Copy size={13} /></button
+                  >
                 {/if}
-                <button class="ghost icon danger" title="Delete" onclick={() => void removeImage(file)}><Trash2 size={13} /></button>
+                <button
+                  class="ghost icon danger"
+                  title="Delete"
+                  onclick={() => void removeImage(file)}><Trash2 size={13} /></button
+                >
               </div>
             </div>
           {/each}
@@ -199,15 +239,27 @@
           <div class="docrow" class:missing={!file.exists}>
             <div class="docinfo">
               <span class="name mono">{file.name}</span>
-              <span class="meta" title={file.path}>{file.exists ? `${fmtSize(file.size)} · ${fmtTime(file.modifiedMs)}` : "not present"}</span>
+              <span class="meta" title={file.path}
+                >{file.exists
+                  ? `${fmtSize(file.size)} · ${fmtTime(file.modifiedMs)}`
+                  : "not present"}</span
+              >
             </div>
             <div class="tileactions">
               {#if file.exists}
-                <button class="ghost icon" title="Open externally — {file.path}" onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button>
+                <button
+                  class="ghost icon"
+                  title="Open externally — {file.path}"
+                  onclick={() => void openFile(file.path)}><ExternalLink size={13} /></button
+                >
                 {#if copiedPath === file.path}
                   <span class="copied-chip"><Check size={11} strokeWidth={2.4} /> Copied</span>
                 {:else}
-                  <button class="ghost icon" title="Copy path" onclick={() => void copyPath(file.path)}><Copy size={13} /></button>
+                  <button
+                    class="ghost icon"
+                    title="Copy path"
+                    onclick={() => void copyPath(file.path)}><Copy size={13} /></button
+                  >
                 {/if}
               {/if}
             </div>
@@ -234,7 +286,10 @@
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  h2 { margin: 0; font-size: 14.5px; }
+  h2 {
+    margin: 0;
+    font-size: 14.5px;
+  }
   .sub {
     flex: 1;
     font-size: 11px;
@@ -243,7 +298,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .spacer { flex: 1; }
+  .spacer {
+    flex: 1;
+  }
   .ghost.icon {
     display: inline-flex;
     align-items: center;
@@ -255,12 +312,26 @@
     color: var(--text-2);
     cursor: pointer;
   }
-  .ghost.icon:hover { background: var(--bg-surface-2); }
-  .ghost.danger { color: var(--danger); }
-  .ghost.danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
-  .iconspin { display: inline-flex; }
-  .iconspin.on { animation: rot 0.9s linear infinite; }
-  @keyframes rot { to { transform: rotate(360deg); } }
+  .ghost.icon:hover {
+    background: var(--bg-surface-2);
+  }
+  .ghost.danger {
+    color: var(--danger);
+  }
+  .ghost.danger:hover {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+  }
+  .iconspin {
+    display: inline-flex;
+  }
+  .iconspin.on {
+    animation: rot 0.9s linear infinite;
+  }
+  @keyframes rot {
+    to {
+      transform: rotate(360deg);
+    }
+  }
   .tabs {
     display: flex;
     gap: 4px;
@@ -277,8 +348,14 @@
     border-bottom: 2px solid transparent;
     cursor: pointer;
   }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab:hover {
+    color: var(--text);
+  }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
   .count {
     font-size: 10.5px;
     color: var(--text-3);
@@ -287,10 +364,22 @@
     padding: 1px 6px;
     margin-left: 4px;
   }
-  .tab.active .count { color: var(--accent); }
-  .content { flex: 1; overflow-y: auto; padding: 14px; }
-  .state { color: var(--text-3); font-size: 12.5px; padding: 24px 4px; }
-  .state.err { color: var(--danger); }
+  .tab.active .count {
+    color: var(--accent);
+  }
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+  }
+  .state {
+    color: var(--text-3);
+    font-size: 12.5px;
+    padding: 24px 4px;
+  }
+  .state.err {
+    color: var(--danger);
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -314,10 +403,33 @@
     align-items: center;
     justify-content: center;
   }
-  .thumbbtn { padding: 0; border: none; background: transparent; cursor: zoom-in; line-height: 0; width: 100%; height: 100%; }
-  .thumbbtn img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .thumbfall { font-size: 10.5px; color: var(--text-3); padding: 6px; text-align: center; }
-  .tilemeta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .thumbbtn {
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: zoom-in;
+    line-height: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .thumbbtn img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .thumbfall {
+    font-size: 10.5px;
+    color: var(--text-3);
+    padding: 6px;
+    text-align: center;
+  }
+  .tilemeta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
   .name {
     font-size: 11.5px;
     color: var(--text-2);
@@ -325,8 +437,15 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .meta { font-size: 10.5px; color: var(--text-3); }
-  .tileactions { display: flex; gap: 4px; align-items: center; }
+  .meta {
+    font-size: 10.5px;
+    color: var(--text-3);
+  }
+  .tileactions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
   .copied-chip {
     display: inline-flex;
     align-items: center;
@@ -336,7 +455,11 @@
     padding: 0 4px;
     user-select: none;
   }
-  .docs { display: flex; flex-direction: column; gap: 8px; }
+  .docs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
   .docrow {
     display: flex;
     align-items: center;
@@ -346,7 +469,18 @@
     background: var(--bg-inset);
     padding: 10px 12px;
   }
-  .docrow.missing { opacity: 0.5; }
-  .docinfo { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .hint { color: var(--text-3); font-size: 11px; }
+  .docrow.missing {
+    opacity: 0.5;
+  }
+  .docinfo {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .hint {
+    color: var(--text-3);
+    font-size: 11px;
+  }
 </style>

@@ -5,7 +5,9 @@ import { readFileSync } from "node:fs";
 // The updater compares the EMBEDDED tauri.conf.json version against the
 // release feed — that is the real build identity. Display it, not package
 // json's copy, so the two can never drift apart again.
-const tauriConf = JSON.parse(readFileSync("./src-tauri/tauri.conf.json", "utf8")) as { version: string };
+const tauriConf = JSON.parse(readFileSync("./src-tauri/tauri.conf.json", "utf8")) as {
+  version: string;
+};
 
 // https://vitejs.dev/config/
 export default defineConfig({

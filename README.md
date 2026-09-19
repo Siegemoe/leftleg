@@ -57,14 +57,14 @@ npm install
 npm run tauri dev
 ```
 
-| Script | Purpose |
-| --- | --- |
-| `npm run build` | quality gate: svelte-check (0 errors / 0 warnings) + vitest + vite build |
-| `npm run test` | frontend unit tests (vitest) |
-| `npm run verify:functional` | complete frontend + Rust behavioral gate |
-| `npm run verify` | formatting, lint, and all behavioral gates |
-| `npm run check:rust` / `npm run test:rust` | cargo check / cargo test |
-| `npm run tauri build` | signed release build + NSIS installer — see `docs/RELEASE.md` |
+| Script                                     | Purpose                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------ |
+| `npm run build`                            | quality gate: svelte-check (0 errors / 0 warnings) + vitest + vite build |
+| `npm run test`                             | frontend unit tests (vitest)                                             |
+| `npm run verify:functional`                | complete frontend + Rust behavioral gate                                 |
+| `npm run verify`                           | formatting, lint, and all behavioral gates                               |
+| `npm run check:rust` / `npm run test:rust` | cargo check / cargo test                                                 |
+| `npm run tauri build`                      | signed release build + NSIS installer — see `docs/RELEASE.md`            |
 
 The build gate is deliberate: template type errors and logic regressions fail at build time, not at runtime. `AGENTS.md` documents the repo's ground rules (Svelte 5 syntax only, pi owns agent state, errors never silent) — contributors, human or AI, should read it before opening a PR.
 

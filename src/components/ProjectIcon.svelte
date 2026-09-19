@@ -6,14 +6,18 @@
   import { projectIconComponent } from "../lib/project-icons";
   import { Folder } from "@lucide/svelte";
 
-  let { icon, size = 14, strokeWidth = 2 }: { icon?: string; size?: number; strokeWidth?: number } = $props();
+  let {
+    icon,
+    size = 14,
+    strokeWidth = 2,
+  }: { icon?: string; size?: number; strokeWidth?: number } = $props();
 
   let Comp = $derived(projectIconComponent(icon) ?? (icon ? null : Folder));
 </script>
 
 <span class="picon">
   {#if Comp}
-    <Comp size={size} strokeWidth={strokeWidth} />
+    <Comp {size} {strokeWidth} />
   {:else if icon}
     <span class="raw">{icon}</span>
   {/if}

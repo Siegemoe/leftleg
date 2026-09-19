@@ -45,7 +45,11 @@
   const focusFirst: Action<HTMLElement> = (node) => {
     const prior = document.activeElement as HTMLElement | null;
     node.querySelector<HTMLElement>("input, textarea, button")?.focus();
-    return { destroy() { prior?.focus(); } };
+    return {
+      destroy() {
+        prior?.focus();
+      },
+    };
   };
 </script>
 
@@ -53,41 +57,37 @@
 
 <div class="overlay">
   {#key d.id}
-  <div class="card" use:focusFirst>
-    <h3>{d.title || "Extension request"}</h3>
-    {#if d.message}
-      <p class="msg">{d.message}</p>
-    {/if}
+    <div class="card" use:focusFirst>
+      <h3>{d.title || "Extension request"}</h3>
+      {#if d.message}
+        <p class="msg">{d.message}</p>
+      {/if}
 
-    {#if d.method === "select"}
-      <div class="options">
-        {#each d.options ?? [] as opt, i (opt + ":" + i)}
-          <button onclick={() => respondToExtDialog({ value: opt })}>{opt}</button>
-        {/each}
-      </div>
-    {:else if d.method === "confirm"}
-      <div class="options">
-        <button class="primary" onclick={() => confirm(true)}>Yes</button>
-        <button onclick={() => confirm(false)}>No</button>
-      </div>
-    {:else if d.method === "input"}
-      <input
-        type="text"
-        bind:value={inputValue}
-        placeholder={d.placeholder ?? ""}
-      />
-      <div class="options">
-        <button class="primary" onclick={submitValue}>OK</button>
-        <button onclick={cancel}>Cancel</button>
-      </div>
-    {:else if d.method === "editor"}
-      <textarea bind:value={inputValue} rows="8"></textarea>
-      <div class="options">
-        <button class="primary" onclick={submitValue}>Save</button>
-        <button onclick={cancel}>Cancel</button>
-      </div>
-    {/if}
-  </div>
+      {#if d.method === "select"}
+        <div class="options">
+          {#each d.options ?? [] as opt, i (opt + ":" + i)}
+            <button onclick={() => respondToExtDialog({ value: opt })}>{opt}</button>
+          {/each}
+        </div>
+      {:else if d.method === "confirm"}
+        <div class="options">
+          <button class="primary" onclick={() => confirm(true)}>Yes</button>
+          <button onclick={() => confirm(false)}>No</button>
+        </div>
+      {:else if d.method === "input"}
+        <input type="text" bind:value={inputValue} placeholder={d.placeholder ?? ""} />
+        <div class="options">
+          <button class="primary" onclick={submitValue}>OK</button>
+          <button onclick={cancel}>Cancel</button>
+        </div>
+      {:else if d.method === "editor"}
+        <textarea bind:value={inputValue} rows="8"></textarea>
+        <div class="options">
+          <button class="primary" onclick={submitValue}>Save</button>
+          <button onclick={cancel}>Cancel</button>
+        </div>
+      {/if}
+    </div>
   {/key}
 </div>
 
@@ -112,8 +112,21 @@
     flex-direction: column;
     gap: 12px;
   }
-  h3 { margin: 0; font-size: 14.5px; }
-  .msg { margin: 0; font-size: 13px; color: var(--text-2); }
-  .options { display: flex; gap: 8px; flex-wrap: wrap; }
-  textarea { resize: vertical; }
+  h3 {
+    margin: 0;
+    font-size: 14.5px;
+  }
+  .msg {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-2);
+  }
+  .options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  textarea {
+    resize: vertical;
+  }
 </style>

@@ -28,7 +28,13 @@
 
   async function refresh(dir: string = $projectDir) {
     const revision = ++refreshRevision;
-    if (!dir) { tree = buildFileTree([]); isRepo = false; loadError = ""; loading = false; return; }
+    if (!dir) {
+      tree = buildFileTree([]);
+      isRepo = false;
+      loadError = "";
+      loading = false;
+      return;
+    }
     loading = true;
     loadError = "";
     try {
@@ -87,14 +93,17 @@
 
   async function loadStatsFor(nodes: FileTreeNode[], revision: number = refreshRevision) {
     const dir = $projectDir;
-    const wanted = nodes.filter((n) => !n.dir && !stats.has(n.path) && statsInFlight.get(n.path) !== revision);
+    const wanted = nodes.filter(
+      (n) => !n.dir && !stats.has(n.path) && statsInFlight.get(n.path) !== revision,
+    );
     if (!dir || wanted.length === 0) return;
     for (const n of wanted) statsInFlight.set(n.path, revision);
     try {
       // The backend caps a batch at 200 paths and drops the tail, so big
       // directories chunk here to still get their numbers.
       const chunks: string[][] = [];
-      for (let i = 0; i < wanted.length; i += 200) chunks.push(wanted.slice(i, i + 200).map((n) => n.path));
+      for (let i = 0; i < wanted.length; i += 200)
+        chunks.push(wanted.slice(i, i + 200).map((n) => n.path));
       const groups = await Promise.all(chunks.map((paths) => fileStats(dir, paths)));
       if (dir !== $projectDir || revision !== refreshRevision) return;
       // $state proxies Map — direct mutation is reactive; no copy needed.
@@ -144,7 +153,11 @@
     <div class="empty">Not a git repository.</div>
   {:else}
     <div class="files-head">
-      <span class="count">{truncated ? "first 5000 tracked files" : `${tree.children.length} top-level entr${tree.children.length === 1 ? "y" : "ies"}`}</span>
+      <span class="count"
+        >{truncated
+          ? "first 5000 tracked files"
+          : `${tree.children.length} top-level entr${tree.children.length === 1 ? "y" : "ies"}`}</span
+      >
       <span class="spacer"></span>
       <button class="ghost icon" title="Refresh file tree" onclick={() => void refresh()}>
         <RefreshCw size={13} strokeWidth={2} />
@@ -153,8 +166,16 @@
     <div class="tree">
       {#each visible as node (node.path)}
         {#if node.dir}
-          <button class="row dir" style="padding-left: {8 + depthOf(node.path) * 14}px" aria-expanded={expanded.has(node.path)} onclick={() => toggleDir(node)}>
-            {#if expanded.has(node.path)}<ChevronDown size={13} strokeWidth={2} />{:else}<ChevronRight size={13} strokeWidth={2} />{/if}
+          <button
+            class="row dir"
+            style="padding-left: {8 + depthOf(node.path) * 14}px"
+            aria-expanded={expanded.has(node.path)}
+            onclick={() => toggleDir(node)}
+          >
+            {#if expanded.has(node.path)}<ChevronDown
+                size={13}
+                strokeWidth={2}
+              />{:else}<ChevronRight size={13} strokeWidth={2} />{/if}
             <span class="name">{node.name}</span>
           </button>
         {:else}
@@ -183,36 +204,100 @@
 </div>
 
 <style>
-  .files-panel { display: flex; flex-direction: column; min-height: 100%; }
+  .files-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
   .files-head {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 12px; border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; background: var(--bg-surface); z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg-surface);
+    z-index: 1;
   }
-  .count { font-size: 11px; color: var(--text-3); }
-  .spacer { flex: 1; }
+  .count {
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .spacer {
+    flex: 1;
+  }
   .ghost.icon {
-    display: inline-flex; align-items: center; justify-content: center; padding: 4px;
-    background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
-    color: var(--text-2); cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    cursor: pointer;
   }
-  .ghost.icon:hover { background: var(--bg-surface-2); }
-  .tree { display: flex; flex-direction: column; padding: 4px 0; }
+  .ghost.icon:hover {
+    background: var(--bg-surface-2);
+  }
+  .tree {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 0;
+  }
   .row {
-    display: flex; align-items: center; gap: 4px; width: 100%;
-    padding: 3px 10px 3px 8px; background: transparent; border: none;
-    color: var(--text-2); font-size: 12px; text-align: left; cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 3px 10px 3px 8px;
+    background: transparent;
+    border: none;
+    color: var(--text-2);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
     border-radius: 0;
   }
-  .row:hover { background: var(--bg-surface-2); color: var(--text); }
-  .row :global(svg) { flex-shrink: 0; color: var(--text-3); }
-  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dir .name { font-weight: 600; }
-  .file .name { font-family: var(--font-mono); font-size: 11.5px; min-width: 0; flex-shrink: 1; }
-  .meta {
-    margin-left: auto; display: flex; gap: 8px; flex-shrink: 0;
-    font-size: 10.5px; color: var(--text-3); font-family: var(--font-mono);
+  .row:hover {
+    background: var(--bg-surface-2);
+    color: var(--text);
   }
-  .empty { padding: 24px 16px; text-align: center; color: var(--text-3); font-size: 12.5px; }
-  .empty.error { color: var(--danger); }
+  .row :global(svg) {
+    flex-shrink: 0;
+    color: var(--text-3);
+  }
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dir .name {
+    font-weight: 600;
+  }
+  .file .name {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .meta {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+    font-size: 10.5px;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+  }
+  .empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--text-3);
+    font-size: 12.5px;
+  }
+  .empty.error {
+    color: var(--danger);
+  }
 </style>

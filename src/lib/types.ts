@@ -37,7 +37,11 @@ export type ContentBlock =
   | { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> };
 
 export interface Usage {
-  input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
   cost?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
 }
 
@@ -225,8 +229,16 @@ export interface PiEvent {
   toolCallId?: string;
   toolName?: string;
   args?: Record<string, unknown>;
-  partialResult?: { content?: Array<{ type: string; text?: string }>; details?: Record<string, unknown> };
-  result?: { content?: Array<{ type: string; text?: string }>; details?: Record<string, unknown>; tokensBefore?: number; estimatedTokensAfter?: number };
+  partialResult?: {
+    content?: Array<{ type: string; text?: string }>;
+    details?: Record<string, unknown>;
+  };
+  result?: {
+    content?: Array<{ type: string; text?: string }>;
+    details?: Record<string, unknown>;
+    tokensBefore?: number;
+    estimatedTokensAfter?: number;
+  };
   isError?: boolean;
   usage?: Usage;
   // extension ui

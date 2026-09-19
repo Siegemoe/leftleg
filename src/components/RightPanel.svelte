@@ -5,7 +5,12 @@
   // shows the active view, its own scrollbar, and a close button. Mirrors
   // the left sidebar's drag-to-resize handle with the direction flipped.
   import { X } from "@lucide/svelte";
-  import { rightPanelOpen, rightPanelTab, rightPanelWidth, type RightPanelTab } from "../lib/stores";
+  import {
+    rightPanelOpen,
+    rightPanelTab,
+    rightPanelWidth,
+    type RightPanelTab,
+  } from "../lib/stores";
   import StatusCard from "./StatusCard.svelte";
   import Artifacts from "./Artifacts.svelte";
   import DiffPanel from "./DiffPanel.svelte";
@@ -48,7 +53,12 @@
 </script>
 
 <aside style="width: {$rightPanelWidth}px">
-  <button type="button" class="resize-handle" onpointerdown={startResize} aria-label="Resize right panel"></button>
+  <button
+    type="button"
+    class="resize-handle"
+    onpointerdown={startResize}
+    aria-label="Resize right panel"
+  ></button>
   <div class="panel-head">
     <span class="panel-title">{TAB_LABELS[$rightPanelTab]}</span>
     <span class="spacer"></span>
@@ -100,7 +110,9 @@
     padding: 0;
     z-index: 5;
   }
-  .resize-handle:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .resize-handle:hover {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
   .panel-head {
     display: flex;
     align-items: center;
@@ -115,7 +127,9 @@
     color: var(--text-2);
     letter-spacing: 0.2px;
   }
-  .spacer { flex: 1; }
+  .spacer {
+    flex: 1;
+  }
   .ghost.icon {
     display: inline-flex;
     align-items: center;
@@ -127,7 +141,9 @@
     color: var(--text-2);
     cursor: pointer;
   }
-  .ghost.icon:hover { background: var(--bg-surface-2); }
+  .ghost.icon:hover {
+    background: var(--bg-surface-2);
+  }
   .panel-body {
     flex: 1;
     min-height: 0;
@@ -151,5 +167,7 @@
     font-weight: 600;
     color: var(--text-2);
   }
-  .ph-hint { font-size: 12px; }
+  .ph-hint {
+    font-size: 12px;
+  }
 </style>

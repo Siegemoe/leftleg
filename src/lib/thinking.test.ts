@@ -16,9 +16,7 @@ describe("sanitizeThinking", () => {
   });
 
   it("removes stray unmatched tags anywhere (both spellings)", () => {
-    expect(sanitizeThinking(`foo${OPEN}\n${CLOSE}ar${OPEN_LONG}x${CLOSE_LONG}`)).toBe(
-      "foo\narx",
-    );
+    expect(sanitizeThinking(`foo${OPEN}\n${CLOSE}ar${OPEN_LONG}x${CLOSE_LONG}`)).toBe("foo\narx");
   });
 
   it("collapses whitespace runs and trims", () => {
@@ -31,7 +29,9 @@ describe("sanitizeThinking", () => {
 
   it("strips ANSI escape sequences (truecolor SGR, reset, etc.)", () => {
     expect(
-      sanitizeThinking("\x1b[38;2;138;190;183mThinking:\x1b[39m \x1b[90mI have all the CSS context.\x1b[0m"),
+      sanitizeThinking(
+        "\x1b[38;2;138;190;183mThinking:\x1b[39m \x1b[90mI have all the CSS context.\x1b[0m",
+      ),
     ).toBe("Thinking: I have all the CSS context.");
   });
 

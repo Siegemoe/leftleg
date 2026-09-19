@@ -1,17 +1,46 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
-vi.mock("../api", () => ({ piRequest: vi.fn(), piSend: vi.fn(), listSessions: vi.fn().mockResolvedValue([]), getAgentDir: vi.fn().mockResolvedValue("C:\\agent") }));
+vi.mock("../api", () => ({
+  piRequest: vi.fn(),
+  piSend: vi.fn(),
+  listSessions: vi.fn().mockResolvedValue([]),
+  getAgentDir: vi.fn().mockResolvedValue("C:\\agent"),
+}));
 import * as api from "../api";
-import { commands, projectDir, lastProcByProject, handleEvent, handlePiExit, notifications, recordProcess } from "../stores";
-import { mgmtRequest, abortPendingMgmt, bindManagement, setManagementScope, clearManagementScope } from "./mgmt";
-const COMPANION_CMD = { name: "settings-mgmt", source: "extension", sourceInfo: { path: "C:\\agent\\extensions\\leftleg-settings\\index.ts" } };
+import {
+  commands,
+  projectDir,
+  lastProcByProject,
+  handleEvent,
+  handlePiExit,
+  notifications,
+  recordProcess,
+} from "../stores";
+import {
+  mgmtRequest,
+  abortPendingMgmt,
+  bindManagement,
+  setManagementScope,
+  clearManagementScope,
+} from "./mgmt";
+const COMPANION_CMD = {
+  name: "settings-mgmt",
+  source: "extension",
+  sourceInfo: { path: "C:\\agent\\extensions\\leftleg-settings\\index.ts" },
+};
 beforeEach(() => {
   vi.useFakeTimers();
-  projectDir.set("/a"); lastProcByProject.set({ "/a": 1, "/b": 2 });
-  commands.set([{ ...COMPANION_CMD }]); notifications.set([]);
+  projectDir.set("/a");
+  lastProcByProject.set({ "/a": 1, "/b": 2 });
+  commands.set([{ ...COMPANION_CMD }]);
+  notifications.set([]);
   vi.mocked(api.piRequest).mockReset().mockResolvedValue({ success: true });
 });
-afterEach(() => { abortPendingMgmt("test cleanup"); setManagementScope(undefined); vi.useRealTimers(); });
+afterEach(() => {
+  abortPendingMgmt("test cleanup");
+  setManagementScope(undefined);
+  vi.useRealTimers();
+});
 /** The send path awaits the agent-dir lookup before its first wire send, so
  * callers that read the wire after mgmtRequest() must wait until the request
  * is actually registered and sent — a fixed microtask count would break on
@@ -37,7 +66,16 @@ function replyPayload(callIndex: number): { id: string } {
 function reply(ok = true, project = "/a", proc = 1) {
   const command = vi.mocked(api.piRequest).mock.calls[0][0];
   const payload = JSON.parse(String(command.message).slice("/settings-mgmt ".length));
-  return handleEvent({ type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: payload.id, ok, data: { answer: 42 }, error: "nope" }) }, { project, proc });
+  return handleEvent(
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message:
+        "LeftlegMgmt:" +
+        JSON.stringify({ id: payload.id, ok, data: { answer: 42 }, error: "nope" }),
+    },
+    { project, proc },
+  );
 }
 it("routes replies after the requesting project goes into the background", async () => {
   // The switch lands during the agent-dir await, so the captured project /a
@@ -52,7 +90,13 @@ it("routes replies after the requesting project goes into the background", async
   projectDir.set("/b");
   await untilCalls(2);
   handleEvent(
-    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 42 }, error: "nope" }) },
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message:
+        "LeftlegMgmt:" +
+        JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 42 }, error: "nope" }),
+    },
     { project: "/a", proc: 1 },
   );
   await expect(pending).resolves.toEqual({ answer: 42 });
@@ -78,7 +122,12 @@ it("a project that went to the background mid-gate is validated against its own 
   expect((send[0] as { type: string }).type).toBe("prompt");
   expect(send[2]).toBe("/a");
   handleEvent(
-    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 11 } }) },
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message:
+        "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 11 } }),
+    },
     { project: "/a", proc: 1 },
   );
   await expect(pending).resolves.toEqual({ answer: 11 });
@@ -138,7 +187,12 @@ it("an explicit target at the start view rides that project's own process", asyn
   expect(send[2]).toBe("/c");
   expect(send[3]).toBe(3);
   handleEvent(
-    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 7 } }) },
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message:
+        "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 7 } }),
+    },
     { project: "/c", proc: 3 },
   );
   await expect(pending).resolves.toEqual({ answer: 7 });
@@ -149,7 +203,9 @@ it("a background target without the companion command is gated by its own proces
   // vouch for /c. The probe asks /c, gets nothing, and no prompt is sent.
   lastProcByProject.set({ "/a": 1, "/c": 3 });
   vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: { commands: [] } });
-  await expect(mgmtRequest("ping", {}, undefined, { project: "/c", proc: 3 })).rejects.toThrow("Settings companion unavailable");
+  await expect(mgmtRequest("ping", {}, undefined, { project: "/c", proc: 3 })).rejects.toThrow(
+    "Settings companion unavailable",
+  );
   expect(api.piRequest).toHaveBeenCalledTimes(1);
 });
 
@@ -159,9 +215,19 @@ it("a background target serving settings-mgmt as a prompt template is refused", 
   lastProcByProject.set({ "/a": 1, "/c": 3 });
   vi.mocked(api.piRequest).mockResolvedValue({
     success: true,
-    data: { commands: [{ name: "settings-mgmt", source: "prompt", sourceInfo: { path: "C:\\proj\\.pi\\prompts\\settings-mgmt.md" } }] },
+    data: {
+      commands: [
+        {
+          name: "settings-mgmt",
+          source: "prompt",
+          sourceInfo: { path: "C:\\proj\\.pi\\prompts\\settings-mgmt.md" },
+        },
+      ],
+    },
   });
-  await expect(mgmtRequest("ping", {}, undefined, { project: "/c", proc: 3 })).rejects.toThrow("Settings companion unavailable");
+  await expect(mgmtRequest("ping", {}, undefined, { project: "/c", proc: 3 })).rejects.toThrow(
+    "Settings companion unavailable",
+  );
   expect(api.piRequest).toHaveBeenCalledTimes(1);
 });
 
@@ -176,7 +242,12 @@ it("a form bound to an explicit target stays on that target across foreground sw
   await untilCalls(2);
   expect(vi.mocked(api.piRequest).mock.calls[1][2]).toBe("/c");
   handleEvent(
-    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 9 } }) },
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message:
+        "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 9 } }),
+    },
     { project: "/c", proc: 3 },
   );
   await expect(pending).resolves.toEqual({ answer: 9 });
@@ -191,7 +262,9 @@ it("a form bound to an explicit target rejects after that target's process is re
 
 it("an explicit target with no live pi process is refused instead of misrouted", async () => {
   lastProcByProject.set({ "/a": 1 }); // "/gone" has no process
-  await expect(mgmtRequest("ping", {}, undefined, { project: "/gone" })).rejects.toThrow("no active pi process");
+  await expect(mgmtRequest("ping", {}, undefined, { project: "/gone" })).rejects.toThrow(
+    "no active pi process",
+  );
   expect(api.piRequest).not.toHaveBeenCalled();
 });
 
@@ -210,7 +283,12 @@ it("a bare-bound form rides the workspace scope when one is set", async () => {
   expect(vi.mocked(api.piRequest).mock.calls[1][2]).toBe("/c");
   expect(vi.mocked(api.piRequest).mock.calls[1][3]).toBe(3);
   handleEvent(
-    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 9 } }) },
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message:
+        "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 9 } }),
+    },
     { project: "/c", proc: 3 },
   );
   await expect(pending).resolves.toEqual({ answer: 9 });
@@ -269,7 +347,12 @@ it("a stale destroy cannot drop a remounted workspace's fresh scope", async () =
   // had the stale clear won, this bind would have captured /d and ridden it
   expect(vi.mocked(api.piRequest).mock.calls[1][2]).toBe("/c");
   handleEvent(
-    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 9 } }) },
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message:
+        "LeftlegMgmt:" + JSON.stringify({ id: replyPayload(1).id, ok: true, data: { answer: 9 } }),
+    },
     { project: "/c", proc: 3 },
   );
   await expect(pending).resolves.toEqual({ answer: 9 });
@@ -283,25 +366,49 @@ it("a bare-bound form rejects after its scoped target's process is replaced", as
   expect(api.piRequest).not.toHaveBeenCalled();
 });
 it("a prompt template named settings-mgmt does not satisfy the availability gate", async () => {
-  commands.set([{ name: "settings-mgmt", source: "prompt", sourceInfo: { path: "C:\\proj\\.pi\\prompts\\settings-mgmt.md" } }]);
+  commands.set([
+    {
+      name: "settings-mgmt",
+      source: "prompt",
+      sourceInfo: { path: "C:\\proj\\.pi\\prompts\\settings-mgmt.md" },
+    },
+  ]);
   await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
   expect(api.piRequest).not.toHaveBeenCalled();
 });
 it("an extension command outside the agent's extensions dir fails the gate once agentDir resolves", async () => {
   await api.getAgentDir();
-  commands.set([{ name: "settings-mgmt", source: "extension", sourceInfo: { path: "C:\\proj\\.pi\\extensions\\evil\\index.ts" } }]);
+  commands.set([
+    {
+      name: "settings-mgmt",
+      source: "extension",
+      sourceInfo: { path: "C:\\proj\\.pi\\extensions\\evil\\index.ts" },
+    },
+  ]);
   await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
   expect(api.piRequest).not.toHaveBeenCalled();
 });
 it("a same-named project-local extension passes the substring but fails the anchored gate", async () => {
   // A trusted repo shipping its own extensions/leftleg-settings must not be
   // mistaken for the companion: the path check is anchored to the agent dir.
-  commands.set([{ name: "settings-mgmt", source: "extension", sourceInfo: { path: "C:\\proj\\.pi\\extensions\\leftleg-settings\\index.ts" } }]);
+  commands.set([
+    {
+      name: "settings-mgmt",
+      source: "extension",
+      sourceInfo: { path: "C:\\proj\\.pi\\extensions\\leftleg-settings\\index.ts" },
+    },
+  ]);
   await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
   expect(api.piRequest).not.toHaveBeenCalled();
 });
 it("an extension command with a different name fails the gate even from the companion dir", async () => {
-  commands.set([{ name: "other-command", source: "extension", sourceInfo: { path: "C:\\agent\\extensions\\leftleg-settings\\index.ts" } }]);
+  commands.set([
+    {
+      name: "other-command",
+      source: "extension",
+      sourceInfo: { path: "C:\\agent\\extensions\\leftleg-settings\\index.ts" },
+    },
+  ]);
   await expect(mgmtRequest("ping")).rejects.toThrow("Settings companion unavailable");
   expect(api.piRequest).not.toHaveBeenCalled();
 });
@@ -332,7 +439,11 @@ it("a spoofed notify with a guessed id cannot resolve a pending request", async 
   const sent = vi.mocked(api.piRequest).mock.calls[0][0] as { message: string };
   const realId = JSON.parse(String(sent.message).slice("/settings-mgmt ".length)).id as string;
   handleEvent(
-    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: realId, ok: true, data: { spoofed: true } }) },
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message: "LeftlegMgmt:" + JSON.stringify({ id: realId, ok: true, data: { spoofed: true } }),
+    },
     { project: "/b", proc: 2 },
   );
   await vi.advanceTimersByTimeAsync(60_100);
@@ -342,7 +453,11 @@ it("wrong-origin replies are ignored, not rejected — the request survives for 
   const pending = mgmtRequest("ping");
   await untilSent();
   handleEvent(
-    { type: "extension_ui_request", method: "notify", message: "LeftlegMgmt:" + JSON.stringify({ id: "whatever", ok: false, error: "spoof" }) },
+    {
+      type: "extension_ui_request",
+      method: "notify",
+      message: "LeftlegMgmt:" + JSON.stringify({ id: "whatever", ok: false, error: "spoof" }),
+    },
     { project: "/b", proc: 2 },
   );
   await reply();

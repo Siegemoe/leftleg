@@ -19,7 +19,13 @@ vi.mock("../lib/api", () => ({
 
 import * as api from "../lib/api";
 import Composer from "./Composer.svelte";
-import { composerDraft, connected, projectDir, requestComposerText, streaming } from "../lib/stores";
+import {
+  composerDraft,
+  connected,
+  projectDir,
+  requestComposerText,
+  streaming,
+} from "../lib/stores";
 
 let host: HTMLElement;
 let instance: ReturnType<typeof mount> | null = null;
@@ -100,7 +106,12 @@ describe("Composer draft revisions", () => {
 
   it("typing while awaiting acceptance survives: only the submitted part is cleared", async () => {
     let release!: (v: unknown) => void;
-    vi.mocked(api.piRequest).mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    vi.mocked(api.piRequest).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
     instance = mount(Composer, { target: host });
     flushSync();
 
@@ -117,7 +128,12 @@ describe("Composer draft revisions", () => {
 
   it("an extension draft pushed mid-flight survives acceptance untouched", async () => {
     let release!: (v: unknown) => void;
-    vi.mocked(api.piRequest).mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    vi.mocked(api.piRequest).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
     instance = mount(Composer, { target: host });
     flushSync();
 
@@ -136,7 +152,12 @@ describe("Composer draft revisions", () => {
 
   it("attachments added while awaiting acceptance survive too", async () => {
     let release!: (v: unknown) => void;
-    vi.mocked(api.piRequest).mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    vi.mocked(api.piRequest).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
     instance = mount(Composer, { target: host });
     flushSync();
 
@@ -155,12 +176,15 @@ describe("Composer draft revisions", () => {
     await settle();
     release({ success: true });
     await settle();
-    expect([...host.querySelectorAll(".attachments .name")].map((n) => n.textContent)).toEqual(["second.png"]);
+    expect([...host.querySelectorAll(".attachments .name")].map((n) => n.textContent)).toEqual([
+      "second.png",
+    ]);
   });
 
   it("scopes drafts and remembers that an extension draft has already been edited", async () => {
     instance = mount(Composer, { target: host, props: { draftKey: "draft-a" } });
-    requestComposerText("seed"); await settle();
+    requestComposerText("seed");
+    await settle();
     type("user revision");
     const old = { text: "seed", nonce: 1 };
     const { get } = await import("svelte/store");
@@ -168,23 +192,34 @@ describe("Composer draft revisions", () => {
     await unmount(instance);
     composerDraft.set(null);
     instance = mount(Composer, { target: host, props: { draftKey: "draft-b" } });
-    flushSync(); expect(textArea().value).toBe("");
-    type("other project"); await unmount(instance);
+    flushSync();
+    expect(textArea().value).toBe("");
+    type("other project");
+    await unmount(instance);
     composerDraft.set(old);
     instance = mount(Composer, { target: host, props: { draftKey: "draft-a" } });
-    flushSync(); expect(textArea().value).toBe("user revision");
+    flushSync();
+    expect(textArea().value).toBe("user revision");
   });
 
   it("keeps an in-flight submission disabled after returning to its draft", async () => {
     let release!: (v: unknown) => void;
-    vi.mocked(api.piRequest).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    vi.mocked(api.piRequest).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          release = r;
+        }),
+    );
     instance = mount(Composer, { target: host, props: { draftKey: "pending-draft" } });
-    flushSync(); type("pending"); clickSend();
+    flushSync();
+    type("pending");
+    clickSend();
     await unmount(instance);
     instance = mount(Composer, { target: host, props: { draftKey: "pending-draft" } });
     flushSync();
     expect(host.querySelector<HTMLButtonElement>('[title="Send"]')!.disabled).toBe(true);
-    release({ success: true }); await settle();
+    release({ success: true });
+    await settle();
     expect(textArea().value).toBe("");
   });
 });

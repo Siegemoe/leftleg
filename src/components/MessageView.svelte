@@ -19,7 +19,11 @@
 
   function responseText(): string {
     if (item.kind !== "assistant") return "";
-    return item.blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n\n").trim();
+    return item.blocks
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n\n")
+      .trim();
   }
 
   // "Copied" feedback lives right on the button, where the action happened —
@@ -59,9 +63,20 @@
       {/if}
       {#if item.status === "failed"}
         <div class="delivery-note">
-          <span class="delivery-text"><TriangleAlert size={12} strokeWidth={2} class="ic-inline" /> Not delivered{item.error ? ` — ${item.error}` : ""}</span>
-          <button class="retry" onclick={() => onRetry(item.id)} title="Send this message again">Retry</button>
-          <button class="dismiss" onclick={() => onDismiss(item.id)} title="Discard this message" aria-label="Discard failed message">×</button>
+          <span class="delivery-text"
+            ><TriangleAlert size={12} strokeWidth={2} class="ic-inline" /> Not delivered{item.error
+              ? ` — ${item.error}`
+              : ""}</span
+          >
+          <button class="retry" onclick={() => onRetry(item.id)} title="Send this message again"
+            >Retry</button
+          >
+          <button
+            class="dismiss"
+            onclick={() => onDismiss(item.id)}
+            title="Discard this message"
+            aria-label="Discard failed message">×</button
+          >
         </div>
       {/if}
     </div>
@@ -78,18 +93,27 @@
             <summary>
               <Lightbulb size={12} strokeWidth={2} class="ic-inline" />
               {block.done ? "Thought process" : "Thinking…"}
-              {#if block.durationMs}<span class="think-dur">· {formatDuration(block.durationMs)}</span>{/if}
+              {#if block.durationMs}<span class="think-dur"
+                  >· {formatDuration(block.durationMs)}</span
+                >{/if}
             </summary>
             <div class="think-body">{sanitizeThinking(block.text)}</div>
           </details>
         {:else if block.type === "text"}
           {#if block.text.trim()}
-            <div class="md body">{@html item.streaming ? renderStreamingMarkdown(block.text) : renderMarkdown(block.text)}</div>
+            <div class="md body">
+              {@html item.streaming
+                ? renderStreamingMarkdown(block.text)
+                : renderMarkdown(block.text)}
+            </div>
           {/if}
         {/if}
       {/each}
       {#if item.errorMessage}
-        <div class="error-note"><TriangleAlert size={12} strokeWidth={2} class="ic-inline" /> {item.errorMessage}</div>
+        <div class="error-note">
+          <TriangleAlert size={12} strokeWidth={2} class="ic-inline" />
+          {item.errorMessage}
+        </div>
       {/if}
       {#if item.streaming}
         <span class="cursor"></span>
@@ -100,8 +124,16 @@
               <span class="turn-meta">turn · {formatDuration(item.turnDurationMs)}</span>
             {/if}
             {#if responseText()}
-              <button class="copy-btn" class:done={copied} title={copied ? "Copied" : "Copy response text"} onclick={() => void copyResponse()}>
-                {#if copied}<Check size={11} strokeWidth={2.4} /> Copied{:else}<Copy size={11} strokeWidth={2} /> Copy{/if}
+              <button
+                class="copy-btn"
+                class:done={copied}
+                title={copied ? "Copied" : "Copy response text"}
+                onclick={() => void copyResponse()}
+              >
+                {#if copied}<Check size={11} strokeWidth={2.4} /> Copied{:else}<Copy
+                    size={11}
+                    strokeWidth={2}
+                  /> Copy{/if}
               </button>
             {/if}
           </div>
@@ -112,17 +144,19 @@
 {:else if item.kind === "tool"}
   <ToolCard {item} />
 {:else if item.kind === "bash"}
-  <ToolCard item={{
-    kind: "tool",
-    id: item.id,
-    toolCallId: "bash",
-    name: "bash",
-    args: JSON.stringify({ command: item.command }, null, 2),
-    status: item.isError ? "error" : "done",
-    output: item.output,
-    outputTruncated: false,
-    isError: item.isError,
-  }} />
+  <ToolCard
+    item={{
+      kind: "tool",
+      id: item.id,
+      toolCallId: "bash",
+      name: "bash",
+      args: JSON.stringify({ command: item.command }, null, 2),
+      status: item.isError ? "error" : "done",
+      output: item.output,
+      outputTruncated: false,
+      isError: item.isError,
+    }}
+  />
 {/if}
 
 <style>
@@ -130,7 +164,9 @@
     display: flex;
     padding: 6px 24px;
   }
-  .row.user { justify-content: flex-end; }
+  .row.user {
+    justify-content: flex-end;
+  }
   .bubble {
     max-width: 78%;
     border-radius: 14px;
@@ -147,7 +183,9 @@
     border: 1px solid var(--danger);
     border-bottom-right-radius: 14px;
   }
-  .user-bubble.failed :global(.md) { opacity: 0.8; }
+  .user-bubble.failed :global(.md) {
+    opacity: 0.8;
+  }
   .delivery-note {
     display: flex;
     align-items: center;
@@ -172,8 +210,14 @@
     background: transparent;
     cursor: pointer;
   }
-  .retry:hover { background: var(--danger); color: #fff; }
-  :global(.ic-inline) { vertical-align: -2px; flex-shrink: 0; }
+  .retry:hover {
+    background: var(--danger);
+    color: #fff;
+  }
+  :global(.ic-inline) {
+    vertical-align: -2px;
+    flex-shrink: 0;
+  }
   .dismiss {
     flex-shrink: 0;
     font-size: 13px;
@@ -185,11 +229,22 @@
     cursor: pointer;
     opacity: 0.8;
   }
-  .dismiss:hover { opacity: 1; }
-  .user-bubble :global(.md p) { margin: 0.15em 0; }
-  .user-bubble :global(a) { color: var(--on-accent); }
-  .user-bubble :global(code) { background: rgba(255,255,255,0.18); }
-  .user-bubble :global(pre) { background: rgba(0,0,0,0.25); border-color: rgba(255,255,255,0.15); }
+  .dismiss:hover {
+    opacity: 1;
+  }
+  .user-bubble :global(.md p) {
+    margin: 0.15em 0;
+  }
+  .user-bubble :global(a) {
+    color: var(--on-accent);
+  }
+  .user-bubble :global(code) {
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .user-bubble :global(pre) {
+    background: rgba(0, 0, 0, 0.25);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
   .thumbs {
     display: flex;
     gap: 6px;
@@ -209,9 +264,17 @@
     border-radius: 6px;
     padding: 4px 8px;
   }
-  .row.assistant { flex-direction: column; }
-  .stack { display: flex; flex-direction: column; gap: 2px; }
-  .body { padding: 2px 0; }
+  .row.assistant {
+    flex-direction: column;
+  }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .body {
+    padding: 2px 0;
+  }
   .thinking {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -234,7 +297,9 @@
     text-transform: uppercase;
     letter-spacing: 0.4px;
   }
-  .thinking summary::marker { content: ""; }
+  .thinking summary::marker {
+    content: "";
+  }
   .think-body {
     padding: 4px 12px 8px;
     white-space: pre-wrap;
@@ -277,13 +342,21 @@
     cursor: pointer;
     opacity: 0.75;
   }
-  .copy-btn:hover { color: var(--text); border-color: var(--border-strong); opacity: 1; }
+  .copy-btn:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    opacity: 1;
+  }
   .copy-btn.done {
     color: var(--ok);
     border-color: color-mix(in srgb, var(--ok) 45%, transparent);
     opacity: 1;
   }
-  .turn-meta { font-size: 10.5px; color: var(--text-3); user-select: none; }
+  .turn-meta {
+    font-size: 10.5px;
+    color: var(--text-3);
+    user-select: none;
+  }
   .error-note {
     color: var(--danger);
     font-size: 12.5px;
@@ -298,5 +371,9 @@
     animation: blink 1s steps(2) infinite;
     margin: 4px 0 0 2px;
   }
-  @keyframes blink { 50% { opacity: 0; } }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
 </style>

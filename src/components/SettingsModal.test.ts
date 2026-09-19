@@ -14,7 +14,12 @@ vi.mock("../lib/settings/mgmt", () => ({
   handleMgmtNotify: () => false,
   abortPendingMgmt: () => {},
   primeAgentDir: () => {},
-  agentDirStore: { subscribe: (fn: (v: string | null) => void) => { fn(null); return () => {}; } },
+  agentDirStore: {
+    subscribe: (fn: (v: string | null) => void) => {
+      fn(null);
+      return () => {};
+    },
+  },
   isCompanionCommand: () => false,
 }));
 vi.mock("../lib/api", () => ({
@@ -27,13 +32,22 @@ vi.mock("../lib/api", () => ({
 
 import SettingsModal from "./SettingsModal.svelte";
 import {
-  extDialog, keybindings, lastProcByProject, projectDir, settingsOpen, settingsProject,
+  extDialog,
+  keybindings,
+  lastProcByProject,
+  projectDir,
+  settingsOpen,
+  settingsProject,
 } from "../lib/stores";
 
 let host: HTMLDivElement;
 let instance: ReturnType<typeof mount> | null = null;
-const settle = async () => { await new Promise((r) => setTimeout(r, 0)); flushSync(); };
-const esc = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+const settle = async () => {
+  await new Promise((r) => setTimeout(r, 0));
+  flushSync();
+};
+const esc = () =>
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
 beforeEach(() => {
   host = document.createElement("div");

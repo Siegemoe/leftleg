@@ -6,7 +6,11 @@
   import type { AgentMessage } from "../lib/types";
   import { activeSessionPath, lastProcByProject, projectDir } from "../lib/stores";
 
-  interface TodoTask { key: string; status: string; subject: string }
+  interface TodoTask {
+    key: string;
+    status: string;
+    subject: string;
+  }
 
   let todos = $state<TodoTask[] | null>(null);
   let todosLoaded = $state(false);
@@ -32,12 +36,20 @@
     // project change refreshes them like before; a stale response is dropped
     // via the revision counter, like the todos fetch.)
     void (async () => {
-      try { const info = await piModuleInfo(); if (rev === revision) piInfo = info; }
-      catch { if (rev === revision) piInfo = null; }
+      try {
+        const info = await piModuleInfo();
+        if (rev === revision) piInfo = info;
+      } catch {
+        if (rev === revision) piInfo = null;
+      }
     })();
     void (async () => {
-      try { const report = await piIntegrityReport(); if (rev === revision) integrity = report; }
-      catch { if (rev === revision) integrity = null; }
+      try {
+        const report = await piIntegrityReport();
+        if (rev === revision) integrity = report;
+      } catch {
+        if (rev === revision) integrity = null;
+      }
     })();
     // The Status dock is openable at the start view; with no owner project
     // there is no session to scan and the fetch would resolve against the
@@ -50,9 +62,15 @@
     void (async () => {
       try {
         const res = await piRequest<{ success: boolean; data?: { messages: AgentMessage[] } }>(
-          { type: "get_messages" }, 60, ownerProject || null, ownerProc,
+          { type: "get_messages" },
+          60,
+          ownerProject || null,
+          ownerProc,
         );
-        const msgs = res.success && Array.isArray(res.data?.messages) ? (res.data!.messages as AgentMessage[]) : [];
+        const msgs =
+          res.success && Array.isArray(res.data?.messages)
+            ? (res.data!.messages as AgentMessage[])
+            : [];
         let found: TodoTask[] | null = null;
         for (let i = msgs.length - 1; i >= 0 && !found; i--) {
           const content = msgs[i].content;
@@ -60,7 +78,12 @@
           for (let j = blocks.length - 1; j >= 0; j--) {
             const b = blocks[j];
             const blk = b as { type?: string; name?: string; arguments?: { tasks?: unknown } };
-            if (blk.type === "toolCall" && blk.name === "todo" && blk.arguments && Array.isArray(blk.arguments.tasks)) {
+            if (
+              blk.type === "toolCall" &&
+              blk.name === "todo" &&
+              blk.arguments &&
+              Array.isArray(blk.arguments.tasks)
+            ) {
               found = (blk.arguments.tasks as TodoTask[]).map((t) => ({
                 key: String(t.key ?? ""),
                 status: String(t.status ?? "pending"),
@@ -87,10 +110,14 @@
     {:else if !todos || todos.length === 0}
       <p class="dim">No task list in this session yet.</p>
     {:else}
-      <div class="tsum">{todos.filter((t) => t.status === "completed").length}/{todos.length} done</div>
+      <div class="tsum">
+        {todos.filter((t) => t.status === "completed").length}/{todos.length} done
+      </div>
       {#each todos as t (t.key)}
         <div class="task">
-          <span class="st {t.status}">{t.status === "completed" ? "✓" : t.status === "in_progress" ? "●" : "○"}</span>
+          <span class="st {t.status}"
+            >{t.status === "completed" ? "✓" : t.status === "in_progress" ? "●" : "○"}</span
+          >
           <span class="subj" class:done={t.status === "completed"}>{t.subject}</span>
         </div>
       {/each}
@@ -131,18 +158,65 @@
     display: flex;
     flex-direction: column;
   }
-  .statuscard section { padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .statuscard section:last-child { border-bottom: none; }
-  .statuscard h4 { margin: 0 0 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-3); }
-  .dim { color: var(--text-3); font-size: 12px; margin: 2px 0; }
-  .warn { color: var(--danger); }
-  .tsum { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
-  .task { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 12.5px; }
-  .st { width: 14px; text-align: center; flex-shrink: 0; }
-  .st.completed { color: var(--ok); }
-  .st.in_progress { color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
-  .st.pending { color: var(--text-3); }
-  .subj { color: var(--text-2); }
-  .subj.done { color: var(--text-3); text-decoration: line-through; }
-  @keyframes pulse { 50% { opacity: 0.35; } }
+  .statuscard section {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .statuscard section:last-child {
+    border-bottom: none;
+  }
+  .statuscard h4 {
+    margin: 0 0 6px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-3);
+  }
+  .dim {
+    color: var(--text-3);
+    font-size: 12px;
+    margin: 2px 0;
+  }
+  .warn {
+    color: var(--danger);
+  }
+  .tsum {
+    font-size: 11px;
+    color: var(--text-3);
+    margin-bottom: 4px;
+  }
+  .task {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 12.5px;
+  }
+  .st {
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .st.completed {
+    color: var(--ok);
+  }
+  .st.in_progress {
+    color: var(--accent);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .st.pending {
+    color: var(--text-3);
+  }
+  .subj {
+    color: var(--text-2);
+  }
+  .subj.done {
+    color: var(--text-3);
+    text-decoration: line-through;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
 </style>

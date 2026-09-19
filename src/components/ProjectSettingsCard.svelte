@@ -7,21 +7,33 @@
   import { untrack } from "svelte";
   import ProjectIcon from "./ProjectIcon.svelte";
   import {
-    PROJECT_COLOR_CHOICES, PROJECT_ICON_CHOICES, projectIconLabel, projectIconStyle,
+    PROJECT_COLOR_CHOICES,
+    PROJECT_ICON_CHOICES,
+    projectIconLabel,
+    projectIconStyle,
   } from "../lib/project-icons";
   import { projectDisplayName } from "../lib/sidebar-model";
   import { openPathLocal } from "../lib/api";
   import {
-    extDialog, forgetProject, lastProcByProject, projectDir, projectMeta, projectSettingsDir,
-    restoreProject, settingsOpen, settingsProject, transientNote, updateProjectMeta,
+    extDialog,
+    forgetProject,
+    lastProcByProject,
+    projectDir,
+    projectMeta,
+    projectSettingsDir,
+    restoreProject,
+    settingsOpen,
+    settingsProject,
+    transientNote,
+    updateProjectMeta,
   } from "../lib/stores";
 
   let name = $state("");
 
   const dir = $derived($projectSettingsDir);
-  const meta = $derived.by(() => (dir ? $projectMeta[dir] ?? {} : {}));
+  const meta = $derived.by(() => (dir ? ($projectMeta[dir] ?? {}) : {}));
   const displayName = $derived(dir ? projectDisplayName(dir, $projectMeta[dir]?.name) : "");
-  const folderName = $derived(dir ? dir.split(/[\\/]/).filter(Boolean).pop() ?? dir : "");
+  const folderName = $derived(dir ? (dir.split(/[\\/]/).filter(Boolean).pop() ?? dir) : "");
 
   // Fresh controls per target: reopening on another project (or reopening at
   // all) must not keep the previous project's half-typed name. untrack keeps
@@ -87,17 +99,27 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#if dir}
-  <div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) close(); }} role="presentation">
+  <div
+    class="overlay"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) close();
+    }}
+    role="presentation"
+  >
     <div class="card" role="dialog" aria-modal="true" aria-label="Project settings">
       <header class="card-head">
         <div class="head-id">
-          <span class="head-icon" style={projectIconStyle(meta.color)}><ProjectIcon icon={meta.icon} size={16} /></span>
+          <span class="head-icon" style={projectIconStyle(meta.color)}
+            ><ProjectIcon icon={meta.icon} size={16} /></span
+          >
           <div class="head-text">
             <h3>{displayName}</h3>
             <span class="head-dir mono" title={dir}>{dir}</span>
           </div>
         </div>
-        <button class="ghost icon" title="Close (Esc)" onclick={close}><X size={14} strokeWidth={2} /></button>
+        <button class="ghost icon" title="Close (Esc)" onclick={close}
+          ><X size={14} strokeWidth={2} /></button
+        >
       </header>
       <div class="card-body">
         <label class="field">
@@ -119,8 +141,10 @@
                 class:active={meta.icon === icon}
                 title={projectIconLabel(icon)}
                 aria-label={projectIconLabel(icon)}
-                onclick={() => updateProjectMeta(dir, { icon: icon === meta.icon ? undefined : icon })}
-              ><ProjectIcon icon={icon} size={15} /></button>
+                onclick={() =>
+                  updateProjectMeta(dir, { icon: icon === meta.icon ? undefined : icon })}
+                ><ProjectIcon {icon} size={15} /></button
+              >
             {/each}
           </div>
         </div>
@@ -135,7 +159,8 @@
                   style={`background:${c}`}
                   title={c}
                   aria-label={`icon color ${c}`}
-                  onclick={() => updateProjectMeta(dir, { color: meta.color === c ? undefined : c })}
+                  onclick={() =>
+                    updateProjectMeta(dir, { color: meta.color === c ? undefined : c })}
                 ></button>
               {:else}
                 <button
@@ -168,14 +193,21 @@
             <button
               class="rowbtn"
               disabled={dir === $projectDir || !!$lastProcByProject[dir]}
-              title={dir === $projectDir ? "The active project can't be hidden" : $lastProcByProject[dir] ? "Stop the project's pi process before hiding it" : undefined}
+              title={dir === $projectDir
+                ? "The active project can't be hidden"
+                : $lastProcByProject[dir]
+                  ? "Stop the project's pi process before hiding it"
+                  : undefined}
               onclick={() => forgetProject(dir)}
             >
               <EyeOff size={13} strokeWidth={2} />
               <span>Hide project</span>
             </button>
           {/if}
-          <p class="hint">Hidden projects leave the sidebar lists but stay in Settings — restore from the projects section, or here.</p>
+          <p class="hint">
+            Hidden projects leave the sidebar lists but stay in Settings — restore from the projects
+            section, or here.
+          </p>
         </div>
       </div>
       <footer class="card-foot">
@@ -236,7 +268,10 @@
     flex-direction: column;
     min-width: 0;
   }
-  .card-head h3 { margin: 0; font-size: 14px; }
+  .card-head h3 {
+    margin: 0;
+    font-size: 14px;
+  }
   .head-dir {
     font-size: 10.5px;
     color: var(--text-3);
@@ -251,8 +286,17 @@
     gap: 12px;
     overflow-y: auto;
   }
-  .field { display: flex; flex-direction: column; gap: 5px; }
-  .label { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.4px; }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .label {
+    font-size: 11px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
   .field input {
     padding: 7px 10px;
     background: var(--bg-inset);
@@ -262,7 +306,9 @@
     font-size: 12.5px;
     outline: none;
   }
-  .field input:focus { border-color: var(--accent); }
+  .field input:focus {
+    border-color: var(--accent);
+  }
   .icon-grid {
     display: flex;
     flex-wrap: wrap;
@@ -279,9 +325,14 @@
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
   }
-  .ghost.icon-pick:hover { background: var(--bg-hover); }
+  .ghost.icon-pick:hover {
+    background: var(--bg-hover);
+  }
   .icon-pick.active,
-  .icon-pick.active:hover { background: var(--accent-soft); color: var(--accent); }
+  .icon-pick.active:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
   .color-grid {
     display: flex;
     flex-wrap: wrap;
@@ -297,9 +348,17 @@
     cursor: pointer;
     flex-shrink: 0;
   }
-  .color-pick:hover { transform: scale(1.12); }
-  .color-pick.active { border-color: var(--bg-surface); box-shadow: 0 0 0 1.5px var(--text-2); }
-  .color-pick.none { background: transparent; border: 1.5px dashed var(--text-3); }
+  .color-pick:hover {
+    transform: scale(1.12);
+  }
+  .color-pick.active {
+    border-color: var(--bg-surface);
+    box-shadow: 0 0 0 1.5px var(--text-2);
+  }
+  .color-pick.none {
+    background: transparent;
+    border: 1.5px dashed var(--text-3);
+  }
   .rows {
     display: flex;
     flex-direction: column;
@@ -317,8 +376,14 @@
     font-size: 12.5px;
     color: var(--text-2);
   }
-  .rowbtn:hover { color: var(--text); }
-  .hint { margin: 0; font-size: 11.5px; color: var(--text-3); }
+  .rowbtn:hover {
+    color: var(--text);
+  }
+  .hint {
+    margin: 0;
+    font-size: 11.5px;
+    color: var(--text-3);
+  }
   .card-foot {
     display: flex;
     justify-content: space-between;
@@ -335,7 +400,10 @@
     cursor: pointer;
     font-size: 12px;
   }
-  .ghost:hover { border-color: var(--border-strong); color: var(--text); }
+  .ghost:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
   .ghost.icon {
     display: inline-flex;
     align-items: center;
@@ -346,7 +414,9 @@
     background: transparent;
     color: var(--text-2);
   }
-  .ghost.icon:hover { background: var(--bg-surface-2); }
+  .ghost.icon:hover {
+    background: var(--bg-surface-2);
+  }
   .primary {
     padding: 6px 16px;
     background: var(--accent);
@@ -357,5 +427,8 @@
     font-size: 12px;
     font-weight: 600;
   }
-  .primary:disabled { opacity: 0.45; cursor: default; }
+  .primary:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
 </style>

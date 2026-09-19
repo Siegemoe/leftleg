@@ -44,7 +44,10 @@ export function cloneJson<T>(v: T): T {
 }
 
 /** Undefined form fields mean remove the override, not an empty merge. */
-export function preparePatch(patch: Record<string, unknown>, prefix = ""): { patch: Record<string, unknown>; unsetKeys: string[] } {
+export function preparePatch(
+  patch: Record<string, unknown>,
+  prefix = "",
+): { patch: Record<string, unknown>; unsetKeys: string[] } {
   const clean: Record<string, unknown> = {};
   const unsetKeys: string[] = [];
   for (const [key, value] of Object.entries(patch)) {
@@ -97,20 +100,20 @@ export const DOCUMENTED_DEFAULTS: Record<string, unknown> = {
   "retry.baseDelayMs": 2000,
   "retry.provider.maxRetries": 0,
   "retry.provider.maxRetryDelayMs": 60000,
-  "steeringMode": "one-at-a-time",
-  "followUpMode": "one-at-a-time",
-  "transport": "auto",
-  "httpIdleTimeoutMs": 300000,
-  "websocketConnectTimeoutMs": 15000,
+  steeringMode: "one-at-a-time",
+  followUpMode: "one-at-a-time",
+  transport: "auto",
+  httpIdleTimeoutMs: 300000,
+  websocketConnectTimeoutMs: 15000,
   "images.autoResize": true,
   "images.blockImages": false,
-  "theme": "dark",
-  "defaultProjectTrust": "ask",
-  "enableInstallTelemetry": true,
-  "enableAnalytics": false,
-  "hideThinkingBlock": false,
-  "showCacheMissNotices": false,
-  "enableSkillCommands": true,
+  theme: "dark",
+  defaultProjectTrust: "ask",
+  enableInstallTelemetry: true,
+  enableAnalytics: false,
+  hideThinkingBlock: false,
+  showCacheMissNotices: false,
+  enableSkillCommands: true,
   "warnings.anthropicExtraUsage": true,
 };
 
@@ -118,7 +121,16 @@ export function defaultValue(path: string): unknown {
   return DOCUMENTED_DEFAULTS[path];
 }
 
-export const BUILTIN_TOOLS = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"] as const;
+export const BUILTIN_TOOLS = [
+  "read",
+  "bash",
+  "powershell",
+  "edit",
+  "write",
+  "grep",
+  "find",
+  "ls",
+] as const;
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 

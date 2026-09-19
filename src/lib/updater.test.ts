@@ -21,7 +21,13 @@ vi.mock("./stores", () => ({
 }));
 
 import {
-  applyUpdate, checkForUpdates, dismissUpdate, updateAvailable, updateError, updateStatus, updateCheck,
+  applyUpdate,
+  checkForUpdates,
+  dismissUpdate,
+  updateAvailable,
+  updateError,
+  updateStatus,
+  updateCheck,
 } from "./updater";
 import { updateInstallLock } from "./stores";
 
@@ -72,7 +78,12 @@ describe("safe update installation", () => {
     const fresh = fakeUpdate();
     updateAvailable.set(previous as never);
     let finishCheck!: (value: unknown) => void;
-    mocks.check.mockImplementation(() => new Promise((resolve) => { finishCheck = resolve; }));
+    mocks.check.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCheck = resolve;
+        }),
+    );
     const checking = checkForUpdates();
     const applying = applyUpdate();
     const downloadedBeforeCheck = previous.download.mock.calls.length;
@@ -90,7 +101,12 @@ describe("safe update installation", () => {
     const fresh = fakeUpdate();
     updateAvailable.set(previous as never);
     let finishCheck!: (value: unknown) => void;
-    mocks.check.mockImplementation(() => new Promise((resolve) => { finishCheck = resolve; }));
+    mocks.check.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCheck = resolve;
+        }),
+    );
     const checking = checkForUpdates();
     await dismissUpdate();
     finishCheck(fresh);
@@ -120,8 +136,13 @@ describe("safe update installation", () => {
     const update = fakeUpdate();
     updateAvailable.set(update as never);
     const order: string[] = [];
-    mocks.prepareForUpdate.mockImplementation(async () => { order.push("prepare"); return 2; });
-    update.install.mockImplementation(async () => { order.push("install"); });
+    mocks.prepareForUpdate.mockImplementation(async () => {
+      order.push("prepare");
+      return 2;
+    });
+    update.install.mockImplementation(async () => {
+      order.push("install");
+    });
 
     await applyUpdate();
 
@@ -133,7 +154,12 @@ describe("safe update installation", () => {
   it("coalesces repeated install clicks into one download and install", async () => {
     let finishDownload!: () => void;
     const update = fakeUpdate();
-    update.download.mockImplementation(() => new Promise<void>((resolve) => { finishDownload = resolve; }));
+    update.download.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDownload = resolve;
+        }),
+    );
     updateAvailable.set(update as never);
 
     const first = applyUpdate();

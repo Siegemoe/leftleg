@@ -151,10 +151,17 @@ async function targetCommands(project: string, proc: number): Promise<ExtCommand
 }
 
 /** Consume a notify message if it is a management reply. Returns true when consumed. */
-export function handleMgmtNotify(message: string, origin?: { project: string; proc: number }): boolean {
+export function handleMgmtNotify(
+  message: string,
+  origin?: { project: string; proc: number },
+): boolean {
   if (!message.startsWith(MGMT_MARKER)) return false;
   try {
-    const reply = JSON.parse(message.slice(MGMT_MARKER.length)) as { id?: string; ok?: boolean; error?: unknown };
+    const reply = JSON.parse(message.slice(MGMT_MARKER.length)) as {
+      id?: string;
+      ok?: boolean;
+      error?: unknown;
+    };
     const p = reply.id ? pending.get(reply.id) : undefined;
     if (p && origin && (p.project !== origin.project || p.proc !== origin.proc)) {
       // Wrong-origin noise (another extension in the same pi process spoofing
@@ -186,7 +193,8 @@ function stringifyError(err: unknown): string {
 /** Reject everything pending (used when the pi process exits). */
 export function abortPendingMgmt(reason: string, project?: string, proc?: number): void {
   for (const [id, p] of pending) {
-    if (project !== undefined && p.project !== project || proc !== undefined && p.proc !== proc) continue;
+    if ((project !== undefined && p.project !== project) || (proc !== undefined && p.proc !== proc))
+      continue;
     clearTimeout(p.timer);
     p.reject(new Error(reason));
     pending.delete(id);
@@ -228,8 +236,15 @@ export function bindManagement(explicit?: MgmtTarget) {
   const stillBound = target
     ? () => get(lastProcByProject)[project] === proc
     : () => project === get(projectDir) && proc === currentGeneration();
-  return async <T = Record<string, unknown>>(op: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> => {
-    if (!stillBound()) return Promise.reject(new Error("Project or process changed — reopen settings before saving"));
+  return async <T = Record<string, unknown>>(
+    op: string,
+    params: Record<string, unknown> = {},
+    timeoutMs?: number,
+  ): Promise<T> => {
+    if (!stillBound())
+      return Promise.reject(
+        new Error("Project or process changed — reopen settings before saving"),
+      );
     return mgmtRequest<T>(op, params, timeoutMs, target);
   };
 }
@@ -301,9 +316,11 @@ export async function mgmtRequest<T = Record<string, unknown>>(
       clearTimeout(p.timer);
       pending.delete(id);
     }
-    throw new Error(requestProc !== gen
-      ? "settings companion became unavailable (process changed)"
-      : MGMT_UNAVAILABLE);
+    throw new Error(
+      requestProc !== gen
+        ? "settings companion became unavailable (process changed)"
+        : MGMT_UNAVAILABLE,
+    );
   }
 
   // Observe both promises immediately: notify can reject before the prompt
@@ -315,7 +332,8 @@ export async function mgmtRequest<T = Record<string, unknown>>(
       project,
       gen,
     ).then((res) => {
-      if (!res.success) throw new Error(`management request rejected: ${res.error ?? "pi refused the command"}`);
+      if (!res.success)
+        throw new Error(`management request rejected: ${res.error ?? "pi refused the command"}`);
     });
     const [, reply] = await Promise.all([accepted, promise]);
     return ((reply as { data?: T }).data ?? reply) as T;

@@ -13,29 +13,52 @@ beforeEach(() => {
   vi.stubEnv("PI_CODING_AGENT_DIR", dir);
   activeTools = ["read", "bash"];
   companion({
-    registerCommand: (_: string, options: { handler: typeof handler }) => { handler = options.handler; },
+    registerCommand: (_: string, options: { handler: typeof handler }) => {
+      handler = options.handler;
+    },
     getActiveTools: () => activeTools,
-    setActiveTools: (tools: string[]) => { activeTools = tools; },
+    setActiveTools: (tools: string[]) => {
+      activeTools = tools;
+    },
   } as never);
 });
-afterEach(() => { vi.unstubAllEnvs(); rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => {
+  vi.unstubAllEnvs();
+  rmSync(dir, { recursive: true, force: true });
+});
 // Structured mgmt replies as read by these tests (subset of the real shape).
 type MgmtReply = { ok?: boolean; data?: { activeTools?: string[] } };
 async function request(op: string, params: Record<string, unknown> = {}) {
   let reply: MgmtReply = {};
   await handler(JSON.stringify({ v: 1, id: "test", op, ...params }), {
-    cwd: dir, ui: { notify: (message: string) => { reply = JSON.parse(message.slice("LeftlegMgmt:".length)); } },
+    cwd: dir,
+    ui: {
+      notify: (message: string) => {
+        reply = JSON.parse(message.slice("LeftlegMgmt:".length));
+      },
+    },
   } as never);
   return reply;
 }
 describe("companion boundary regressions", () => {
   it("applies resets and edits as one revision-checked write", async () => {
     const file = join(dir, "settings.json");
-    writeFileSync(file, JSON.stringify({ retry: { enabled: false, maxRetries: 3 }, theme: "dark" }));
-    const result = await request("write", { target: "settings-global", revision: computeRevision(file),
-      mode: "merge", unsetKeys: ["retry.enabled"], patch: { retry: { maxRetries: 5 } } });
+    writeFileSync(
+      file,
+      JSON.stringify({ retry: { enabled: false, maxRetries: 3 }, theme: "dark" }),
+    );
+    const result = await request("write", {
+      target: "settings-global",
+      revision: computeRevision(file),
+      mode: "merge",
+      unsetKeys: ["retry.enabled"],
+      patch: { retry: { maxRetries: 5 } },
+    });
     expect(result.ok).toBe(true);
-    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ retry: { maxRetries: 5 }, theme: "dark" });
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({
+      retry: { maxRetries: 5 },
+      theme: "dark",
+    });
   });
   it("rejects raw writes to the generated models cache", async () => {
     const file = join(dir, "models-store.json");
@@ -61,7 +84,15 @@ describe("companion boundary regressions", () => {
   });
   it("rejects null requests with a structured reply", async () => {
     let reply: MgmtReply = {};
-    await expect(handler("null", { ui: { notify: (m: string) => { reply = JSON.parse(m.slice("LeftlegMgmt:".length)); } } } as never)).resolves.toBeUndefined();
+    await expect(
+      handler("null", {
+        ui: {
+          notify: (m: string) => {
+            reply = JSON.parse(m.slice("LeftlegMgmt:".length));
+          },
+        },
+      } as never),
+    ).resolves.toBeUndefined();
     expect(reply.ok).toBe(false);
   });
 });

@@ -11,8 +11,15 @@
 // and `holdResponses` (request responses withheld until released).
 
 import type {
-  AgentMessage, ContentBlock, ExtCommand, ModelInfo,
-  PiEvent, RpcState, SessionInfo, SessionStats, ThinkingLevel,
+  AgentMessage,
+  ContentBlock,
+  ExtCommand,
+  ModelInfo,
+  PiEvent,
+  RpcState,
+  SessionInfo,
+  SessionStats,
+  ThinkingLevel,
 } from "../types";
 import { FIXTURE_COMMANDS, PROJECT_DIR } from "./fixtures";
 
@@ -77,7 +84,11 @@ export class FakePi {
   onEvent: (evt: PiEvent) => void = () => {};
   onExit: (payload: { expected: boolean }) => void = () => {};
 
-  private deferred: Array<{ resolve: (v: unknown) => void; reject: (e: Error) => void; compute: () => unknown }> = [];
+  private deferred: Array<{
+    resolve: (v: unknown) => void;
+    reject: (e: Error) => void;
+    compute: () => unknown;
+  }> = [];
   private pendingRun: string | null = null;
   private freshCount = 0;
   private tsBase = Date.parse("2026-01-01T10:00:00.000Z");
@@ -111,7 +122,8 @@ export class FakePi {
   piStart = async (cwd: string, sessionPath?: string | null): Promise<void> => {
     if (cwd !== this.projectDir) throw new Error(`not a directory: ${cwd}`);
     if (sessionPath) {
-      const known = this.sessions.some((s) => s.path === sessionPath) || this.messages.has(sessionPath);
+      const known =
+        this.sessions.some((s) => s.path === sessionPath) || this.messages.has(sessionPath);
       if (!known) throw new Error(`session file not found: ${sessionPath}`);
       this.sessionFile = sessionPath;
       if (!this.messages.has(sessionPath)) this.messages.set(sessionPath, []);
@@ -137,7 +149,8 @@ export class FakePi {
 
   listSessions = async (): Promise<SessionInfo[]> => this.sessions.map((s) => ({ ...s }));
 
-  readGuiState = async (): Promise<Record<string, unknown>> => JSON.parse(JSON.stringify(this.gui)) as Record<string, unknown>;
+  readGuiState = async (): Promise<Record<string, unknown>> =>
+    JSON.parse(JSON.stringify(this.gui)) as Record<string, unknown>;
 
   writeGuiState = async (state: Record<string, unknown>): Promise<void> => {
     this.gui = JSON.parse(JSON.stringify(state));
@@ -229,7 +242,9 @@ export class FakePi {
       case "get_state":
         return this.respond(cmd, true, this.stateData());
       case "get_messages":
-        return this.respond(cmd, true, { messages: this.currentMessages.map((m) => structuredClone(m)) });
+        return this.respond(cmd, true, {
+          messages: this.currentMessages.map((m) => structuredClone(m)),
+        });
       case "get_session_stats":
         return this.respond(cmd, true, this.statsData());
       case "get_available_models":
@@ -292,7 +307,9 @@ export class FakePi {
       case "abort_retry":
         return this.respond(cmd, true);
       case "export_html":
-        return this.respond(cmd, true, { path: String(cmd.outputPath ?? `${this.projectDir}/session-export.html`) });
+        return this.respond(cmd, true, {
+          path: String(cmd.outputPath ?? `${this.projectDir}/session-export.html`),
+        });
       case "clone": {
         if (this.cancelNextSwitch) {
           this.cancelNextSwitch = false;
@@ -301,7 +318,10 @@ export class FakePi {
         // Duplicate the active branch into a new session and switch to it.
         this.freshCount += 1;
         const target = `${this.projectDir}/sessions/fresh-${this.freshCount}.jsonl`;
-        this.messages.set(target, this.currentMessages.map((m) => structuredClone(m)));
+        this.messages.set(
+          target,
+          this.currentMessages.map((m) => structuredClone(m)),
+        );
         this.sessionFile = target;
         return this.respond(cmd, true, { cancelled: false });
       }
@@ -331,9 +351,11 @@ export class FakePi {
     const msgs = this.currentMessages;
     const userMessages = msgs.filter((m) => m.role === "user").length;
     const assistantMessages = msgs.filter((m) => m.role === "assistant").length;
-    const toolCalls = msgs.reduce((n, m) => (
-      n + (Array.isArray(m.content) ? m.content.filter((c) => c.type === "toolCall").length : 0)
-    ), 0);
+    const toolCalls = msgs.reduce(
+      (n, m) =>
+        n + (Array.isArray(m.content) ? m.content.filter((c) => c.type === "toolCall").length : 0),
+      0,
+    );
     return {
       sessionFile: this.sessionFile ?? undefined,
       userMessages,
@@ -363,7 +385,8 @@ export class FakePi {
       if (!this.messages.has(this.sessionFile)) this.messages.set(this.sessionFile, []);
       this.sessionName = null;
     } else {
-      const known = this.sessions.some((s) => s.path === sessionPath) || this.messages.has(sessionPath);
+      const known =
+        this.sessions.some((s) => s.path === sessionPath) || this.messages.has(sessionPath);
       if (!known) return this.respond(cmd, false, undefined, `session not found: ${sessionPath}`);
       this.sessionFile = sessionPath;
       if (!this.messages.has(sessionPath)) this.messages.set(sessionPath, []);
@@ -382,7 +405,12 @@ export class FakePi {
     if (this.busy) {
       const behavior = String(cmd.streamingBehavior ?? "");
       if (!behavior) {
-        return this.respond(cmd, false, undefined, "agent is streaming; specify streamingBehavior to queue");
+        return this.respond(
+          cmd,
+          false,
+          undefined,
+          "agent is streaming; specify streamingBehavior to queue",
+        );
       }
       const q = behavior === "followUp" ? this.followUpQueue : this.steeringQueue;
       q.push(message);
@@ -402,7 +430,11 @@ export class FakePi {
   }
 
   private emitQueueUpdate() {
-    this.emit({ type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
+    this.emit({
+      type: "queue_update",
+      steering: [...this.steeringQueue],
+      followUp: [...this.followUpQueue],
+    });
   }
 
   /** Execute a full agent run: user message → scripted steps → settle. */
@@ -419,9 +451,18 @@ export class FakePi {
   private executeStep(step: RunStep) {
     if (step.kind === "text") {
       this.emit({ type: "message_start", message: { role: "assistant" } });
-      this.emit({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
-      this.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: step.text } });
-      this.emit({ type: "message_update", assistantMessageEvent: { type: "text_end", contentIndex: 0, content: step.text } });
+      this.emit({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+      });
+      this.emit({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: step.text },
+      });
+      this.emit({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_end", contentIndex: 0, content: step.text },
+      });
       const assistant: AgentMessage = {
         role: "assistant",
         content: [{ type: "text", text: step.text }],
@@ -435,14 +476,27 @@ export class FakePi {
     }
     if (step.kind === "tool") {
       const id = nextToolCallId();
-      const blocks: ContentBlock[] = [{ type: "toolCall", id, name: step.name, arguments: step.args }];
+      const blocks: ContentBlock[] = [
+        { type: "toolCall", id, name: step.name, arguments: step.args },
+      ];
       this.emit({ type: "message_start", message: { role: "assistant" } });
-      this.emit({ type: "message_update", assistantMessageEvent: { type: "toolcall_start", id, toolName: step.name } });
       this.emit({
         type: "message_update",
-        assistantMessageEvent: { type: "toolcall_end", toolCall: { id, name: step.name, arguments: step.args } },
+        assistantMessageEvent: { type: "toolcall_start", id, toolName: step.name },
       });
-      this.emit({ type: "tool_execution_start", toolCallId: id, toolName: step.name, args: step.args });
+      this.emit({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_end",
+          toolCall: { id, name: step.name, arguments: step.args },
+        },
+      });
+      this.emit({
+        type: "tool_execution_start",
+        toolCallId: id,
+        toolName: step.name,
+        args: step.args,
+      });
       this.emit({
         type: "tool_execution_update",
         toolCallId: id,
