@@ -80,7 +80,41 @@ pipeline was introduced:
 - GitHub Dependabot reports `GHSA-wrw7-89jp-8q8g` in the transitive Rust
   `glib` dependency below 0.20.0. The first patched release is 0.20.0; update
   the owning dependency deliberately and run the native suite rather than
-  editing `Cargo.lock` by hand.
+  editing `Cargo.lock` by hand. (Review note 2026-09-19: this GHSA is the
+  GitHub mirror of `RUSTSEC-2024-0429`, already accepted in
+  `.cargo/audit.toml` with the version-lock rationale — glib 0.18 is pinned
+  by tauri 2.11.5 → muda/tao → gtk 0.18 and 0.20 is unreachable until the
+  tauri/wry stack moves. Closure is the documentation cross-reference, not an
+  upgrade.)
+
+### Triage from the CodeRabbit review of this pipeline PR
+
+CodeRabbit reviewed the PR that introduced this pipeline; findings triaged on
+2026-09-19:
+
+- Checkout credential persistence — resolved in this pipeline: every
+  checkout in `ci.yml`, `release.yml`, and `dependency-review.yml` sets
+  `persist-credentials: false` (no step performs authenticated git
+  operations, and PR-triggered jobs must not get a persisted token).
+- `pimgr::tests::update_deadline_includes_inherited_pipes_after_parent_exit`
+  flake — same item as the timing-sensitive test above; stabilize the
+  pipe-drain deadline behavior or the test's timing robustness.
+- `src/components/StartScreen.svelte`: recheck `$updateInstallLock` after
+  async work and before each startup-draft mutation, and disable the
+  textarea while locked — in-flight picker/`FileReader` work can otherwise
+  mutate a draft after the update blocker scan passed.
+- `src/components/StartScreen.svelte`: handle `FileReader` rejection in
+  `onPaste` — catch, show a note, continue with the remaining files.
+- `src/lib/keybindings.ts`: match Latin-letter bindings by
+  `KeyboardEvent.code` (`KeyN`) in addition to `event.key`, so default
+  bindings survive non-Latin keyboard layouts.
+- `src/lib/settings/mgmt.test.ts`: the stale-handle test must clear the
+  original object identity (same fields, distinct objects) or it cannot fail
+  on a structurally-comparing implementation.
+- `src/lib/settings/mgmt.ts`: re-reading `commands`/`companionAvailable()`
+  after `await ensureAgentDir()` validates against whatever project is
+  foreground *then* — validate against the captured project's state, or
+  bail out when the foreground changed.
 
 Clean each category in a separate commit. For promise findings, confirm whether
 the intended behavior is to await, return, or explicitly detach with `void`;
