@@ -135,9 +135,10 @@ pub async fn list_sessions() -> Result<Vec<SessionInfo>, String> {
 /// otherwise re-read every jsonl in the agent dir each time; entries whose
 /// stamp changed (or vanished files) are re-parsed, so renames and appends
 /// stay fresh. Held per process — the GUI is the only writer of sessions.
-static SESSION_CACHE: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<PathBuf, (u64, u64, SessionInfo)>>,
-> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+/// Cache value per file: (mtime ms, size, fully-parsed session header).
+type SessionCache = std::collections::HashMap<PathBuf, (u64, u64, SessionInfo)>;
+static SESSION_CACHE: std::sync::LazyLock<std::sync::Mutex<SessionCache>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(SessionCache::new()));
 
 fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
     let root = agent_dir().join("sessions");
@@ -146,8 +147,7 @@ fn scan_sessions() -> Result<Vec<SessionInfo>, String> {
     }
     let mut cache = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let mut out: Vec<SessionInfo> = Vec::new();
-    let mut fresh: std::collections::HashMap<PathBuf, (u64, u64, SessionInfo)> =
-        std::collections::HashMap::new();
+    let mut fresh: SessionCache = SessionCache::new();
     let project_dirs = fs::read_dir(&root).map_err(|e| e.to_string())?;
     for pd in project_dirs.flatten() {
         if !pd.path().is_dir() {
@@ -553,7 +553,7 @@ fn open_path_checked(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
 /// Minimal standard base64 encoder (no external deps).
 pub fn base64_encode(data: &[u8]) -> String {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b = [
             chunk[0],
@@ -586,7 +586,7 @@ pub const MAX_ARTIFACT_FILES: usize = 500;
 /// — otherwise the "newest 500" guarantee fails on huge directories.
 const ARTIFACT_SCAN_BOUND: usize = 5000;
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct ArtifactFile {
     pub name: String,
     pub path: String,
@@ -596,7 +596,7 @@ pub struct ArtifactFile {
     pub exists: bool,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct ArtifactsReport {
     pub images: Vec<ArtifactFile>,
     pub docs: Vec<ArtifactFile>,
@@ -746,7 +746,7 @@ pub fn allow_project_images_scope<R: tauri::Runtime>(app: &tauri::AppHandle<R>, 
 
 // ---------- project git checkout info ----------
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoInfo {
     pub repo: bool,
@@ -1427,7 +1427,7 @@ mod tests {
         assert_eq!(report.images[0].name, "a.png");
         let existing_docs = report.docs.iter().filter(|d| d.exists).count();
         assert_eq!(existing_docs, 1, "only AGENTS.md exists in the fixture");
-        assert!(report.docs.iter().all(|d| d.name != ""));
+        assert!(report.docs.iter().all(|d| !d.name.is_empty()));
 
         // Guarded delete: inside ok, outside/relative rejected.
         let inside = images.join("a.png");
@@ -1860,11 +1860,10 @@ mod tests {
             "no trailing newline adds the last line"
         );
         assert_eq!((s(2).loc, s(2).is_text, s(2).size), (Some(0), true, 0));
-        assert_eq!(s(3).is_text, false, "NUL in the sniff window marks binary");
+        assert!(!s(3).is_text, "NUL in the sniff window marks binary");
         assert_eq!(s(3).loc, Some(1));
-        assert_eq!(
-            s(4).is_text,
-            false,
+        assert!(
+            !s(4).is_text,
             "denylisted extension is binary even without NULs"
         );
         assert_eq!(
