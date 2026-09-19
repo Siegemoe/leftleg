@@ -664,7 +664,7 @@ pub fn run() {
             sessions::repo_files,
             sessions::file_stats_batch,
             sessions::read_text_file,
-            sessions::create_project_dir,
+            sessions::pick_and_create_project_dir,
             pi::pi_module_info,
             pimgr::run_pi_manager,
             pimgr::pi_integrity_report,

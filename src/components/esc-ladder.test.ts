@@ -35,7 +35,7 @@ const mocks = vi.hoisted(() => ({
     readTextFile: vi
       .fn()
       .mockResolvedValue({ path: "src/a.ts", content: "a\n", loc: 1, size: 2, truncated: false }),
-    createProjectDir: vi.fn(),
+    pickAndCreateProject: vi.fn(),
   },
 }));
 
