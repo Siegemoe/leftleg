@@ -15,8 +15,8 @@ integration test.
 | --- | --- | --- |
 | `npm run build:web` | Svelte checks, tests that do not spawn Pi, production web build | Required and green |
 | `npm run test:integration` | Five tests against a real isolated `pi --mode rpc` process | Required and green |
-| `npm run test:rust` | Native unit and integration tests with the lockfile enforced | Required and green |
-| `npm run verify:functional` | Complete local functional gate | Required and green |
+| `npm run test:rust` | Native unit and integration tests with the lockfile enforced | Required; green locally, one timing-sensitive test failed on the first hosted run |
+| `npm run verify:functional` | Complete local functional gate | Required; green locally |
 | `npm run format:check` | Prettier check for frontend, companion, config, and documentation files | Advisory until baseline cleanup |
 | `npm run lint` | ESLint recommended rules plus typed promise checks at the application TypeScript boundary | Advisory until baseline cleanup |
 | `npm run format:rust:check` | Rustfmt check | Advisory until baseline cleanup |
@@ -56,7 +56,9 @@ The initial report covers 59.5% of statements, 50.79% of branches, 48.46% of
 functions, and 65.99% of lines. Treat this as a map and a ratchet point, not as
 a claim that every covered line has a strong assertion.
 
-Advisory means `continue-on-error` is present at the job level. Do not add an
+Advisory checks allow the individual baseline-check step to fail, then publish
+a warning and job summary while leaving the job green. This keeps the pull
+request signal readable without hiding the remediation output. Do not add an
 advisory job to the branch ruleset.
 
 ## Baseline cleanup handoff
@@ -70,6 +72,15 @@ pipeline was introduced:
 - Rustfmt reported existing formatting drift.
 - Clippy reported ten diagnostics, including use of Rust 1.80 APIs despite the
   declared Rust 1.77.2 minimum.
+- The first GitHub-hosted Windows run failed
+  `pimgr::tests::update_deadline_includes_inherited_pipes_after_parent_exit`
+  with `pipe drain outlived update deadline`; the same test passes locally.
+  Treat this as a timing-sensitive test to diagnose rather than retrying it
+  until it happens to pass.
+- GitHub Dependabot reports `GHSA-wrw7-89jp-8q8g` in the transitive Rust
+  `glib` dependency below 0.20.0. The first patched release is 0.20.0; update
+  the owning dependency deliberately and run the native suite rather than
+  editing `Cargo.lock` by hand.
 
 Clean each category in a separate commit. For promise findings, confirm whether
 the intended behavior is to await, return, or explicitly detach with `void`;
@@ -79,7 +90,8 @@ compiler actually tested and supported.
 
 After every advisory command is green:
 
-1. Remove `continue-on-error` from the three hygiene/MSRV jobs.
+1. Remove `continue-on-error` from the advisory check steps in the three
+   hygiene/MSRV jobs.
 2. Add those jobs to the `quality-gate.needs` list and its result check.
 3. Keep `Required quality gate` as the stable branch-rule check.
 4. Run `npm run verify` locally and confirm the pull request checks.

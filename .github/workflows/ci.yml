@@ -117,11 +117,11 @@ jobs:
 
   # The current repository has known formatting and lint debt. These checks
   # publish the exact remediation queue without blocking functional work.
-  # Remove continue-on-error after the baseline-cleanup commit lands.
+  # Remove the step-level continue-on-error settings after the baseline cleanup
+  # lands, then promote these jobs into the required quality gate.
   frontend-hygiene:
     name: Frontend hygiene (advisory)
     if: github.event_name != 'schedule'
-    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - name: Check out the commit
@@ -137,16 +137,29 @@ jobs:
         run: npm ci
 
       - name: Check formatting
+        id: formatting
+        continue-on-error: true
         run: npm run format:check
 
       - name: Lint TypeScript and Svelte
+        id: lint
         if: always()
+        continue-on-error: true
         run: npm run lint
+
+      - name: Summarize advisory findings
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.formatting.outcome }}" != "success" ] || [ "${{ steps.lint.outcome }}" != "success" ]; then
+            echo "::warning title=Frontend hygiene debt::Prettier or ESLint found baseline issues. See the failed advisory steps for the remediation queue."
+            echo "### Frontend hygiene needs cleanup" >> "$GITHUB_STEP_SUMMARY"
+            echo "Prettier or ESLint found baseline issues. These findings are visible but do not block functional changes yet." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   rust-hygiene:
     name: Rust hygiene (advisory)
     if: github.event_name != 'schedule'
-    continue-on-error: true
     runs-on: windows-latest
     steps:
       - name: Check out the commit
@@ -164,16 +177,29 @@ jobs:
           workspaces: src-tauri -> target
 
       - name: Check Rust formatting
+        id: formatting
+        continue-on-error: true
         run: npm run format:rust:check
 
       - name: Lint Rust
+        id: lint
         if: always()
+        continue-on-error: true
         run: npm run lint:rust
+
+      - name: Summarize advisory findings
+        if: always()
+        shell: pwsh
+        run: |
+          if ('${{ steps.formatting.outcome }}' -ne 'success' -or '${{ steps.lint.outcome }}' -ne 'success') {
+            Write-Output '::warning title=Rust hygiene debt::rustfmt or Clippy found baseline issues. See the failed advisory steps for the remediation queue.'
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '### Rust hygiene needs cleanup'
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value 'rustfmt or Clippy found baseline issues. These findings are visible but do not block functional changes yet.'
+          }
 
   msrv:
     name: Declared Rust 1.77.2 compatibility (advisory)
     if: github.event_name != 'schedule'
-    continue-on-error: true
     runs-on: windows-latest
     steps:
       - name: Check out the commit
@@ -185,6 +211,8 @@ jobs:
           toolchain: "1.77.2"
 
       - name: Verify the declared minimum compiler
+        id: compatibility
+        continue-on-error: true
         shell: pwsh
         run: |
           $version = rustc +1.77.2 --version
@@ -193,10 +221,17 @@ jobs:
           }
           cargo +1.77.2 check --manifest-path src-tauri/Cargo.toml --locked
 
+      - name: Summarize advisory finding
+        if: always() && steps.compatibility.outcome != 'success'
+        shell: pwsh
+        run: |
+          Write-Output '::warning title=Declared Rust minimum is not supported::The locked dependency graph or source does not compile with Rust 1.77.2.'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '### Declared Rust minimum needs a decision'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value 'Rust 1.77.2 is declared in Cargo.toml but the locked project does not compile with it. Restore compatibility or update the declaration to the oldest compiler the project tests.'
+
   coverage:
     name: Coverage report (advisory)
     if: github.event_name == 'schedule' || github.ref == 'refs/heads/master'
-    continue-on-error: true
     runs-on: windows-latest
     steps:
       - name: Check out the commit
@@ -216,6 +251,8 @@ jobs:
         run: npm install --global @earendil-works/pi-coding-agent@${{ env.PI_VERSION }}
 
       - name: Generate coverage without enforcing an arbitrary threshold
+        id: report
+        continue-on-error: true
         run: npm run test:coverage
 
       - name: Upload coverage report
@@ -226,6 +263,14 @@ jobs:
           path: coverage/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Summarize coverage failure
+        if: always() && steps.report.outcome != 'success'
+        shell: pwsh
+        run: |
+          Write-Output '::warning title=Coverage report failed::Coverage is advisory, but its generation should be repaired.'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '### Coverage report generation failed'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value 'Coverage is advisory, but this reporting failure should be repaired.'
 
   security:
     name: Dependency audit
