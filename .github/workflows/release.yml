@@ -21,6 +21,11 @@ jobs:
   release-windows:
     runs-on: windows-latest
     steps:
+      - name: Check out the commit to build
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Skip the nightly when master is unchanged since the last one
         id: decide
         if: github.event_name == 'schedule'
@@ -30,8 +35,11 @@ jobs:
           # A nightly is only worth shipping when its source moved. The
           # nightly tag created by the previous run points at that run's
           # commit; tauri-action's release-created tags are lightweight, so
-          # the ls-remote sha is the commit itself.
-          $head = "${{ github.sha }}"
+          # the ls-remote sha is the commit itself. This step must run after
+          # checkout — before it there is no repository to resolve `origin`
+          # against — and compares the checked-out HEAD, i.e. what would
+          # actually be built.
+          $head = (git rev-parse HEAD).Trim()
           $nightlies = foreach ($line in (git ls-remote origin "refs/tags/v*-nightly.*")) {
             $parts = $line -split '\s+'
             if ($parts[1] -match '^refs/tags/v(\d+\.\d+\.\d+)-nightly\.(\d+)$') {
@@ -45,17 +53,11 @@ jobs:
           }
           $latest = $nightlies | Sort-Object base, n | Select-Object -Last 1
           if ($latest -and $latest.sha -eq $head) {
-            "Nightly skipped: master HEAD $head is already shipped as $($latest.name)" >> $env:GITHUB_STEP_SUMMARY
+            "Nightly skipped: HEAD $head is already shipped as $($latest.name)" >> $env:GITHUB_STEP_SUMMARY
             "shouldBuild=false" >> $env:GITHUB_OUTPUT
           } else {
             "shouldBuild=true" >> $env:GITHUB_OUTPUT
           }
-
-      - name: Check out the tagged commit
-        if: steps.decide.outputs.shouldBuild != 'false'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
 
       - name: Set up Node.js
         if: steps.decide.outputs.shouldBuild != 'false'
@@ -113,9 +115,18 @@ jobs:
             throw "Version mismatch: tauri=$tauriVersion package=$packageVersion lock=$lockVersion lock-package=$lockPackageVersion cargo=$cargoVersion"
           }
 
-          $tag = "${{ github.ref_name }}"
+          # The tag/ref name rides in through the runner-provided GITHUB_REF_NAME
+          # environment variable, never interpolated into this script — a
+          # pushed tag is attacker-controlled text as far as the shell is
+          # concerned (GHA security hardening: use env vars for untrusted context).
+          $tag = $env:GITHUB_REF_NAME
           $isNightly = $false
           if ($env:GITHUB_EVENT_NAME -eq "schedule" -or $env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            # A manual dispatch checks out whatever branch it was dispatched
+            # from; only master may publish itself as a nightly.
+            if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch" -and $env:GITHUB_REF_NAME -ne "master") {
+              throw "Nightly dispatches build from master; dispatch this workflow on the master branch (got ref '$env:GITHUB_REF_NAME')"
+            }
             # Nightlies build from the checked-out master HEAD; the release
             # tag is synthesized here (tauri-action creates it) and carries a
             # nightly prerelease segment so semver ordering stays correct
