@@ -24,6 +24,7 @@
     settled,
     fileCardOpen,
     sessionQuery,
+    searchFocusTick,
     sessionStates,
     sessions,
     settledView,
@@ -154,6 +155,17 @@
   }
 
   const searching = $derived($sessionQuery.trim().length > 0);
+
+  // focusSearch keybinding (TitleBar dispatch): reveal + focus the search
+  // field. Ticked so pressing the chord again re-selects what's there; the
+  // initial 0 is the "nothing asked yet" state.
+  let searchInput: HTMLInputElement | null = $state(null);
+  $effect(() => {
+    if ($searchFocusTick > 0) {
+      searchInput?.focus();
+      searchInput?.select();
+    }
+  });
 
   /** Unified history: every project's settled sessions in one list. */
   const unifiedSettled = $derived.by(() => {
@@ -421,7 +433,12 @@
     <div class="search-row">
       <div class="search">
         <Search size={13} strokeWidth={2} />
-        <input placeholder="Search sessions…" bind:value={$sessionQuery} spellcheck="false" />
+        <input
+          placeholder="Search sessions…"
+          bind:value={$sessionQuery}
+          bind:this={searchInput}
+          spellcheck="false"
+        />
       </div>
       <button class="new-session-btn" title="New session" onclick={() => newSession()}>
         <Plus size={14} strokeWidth={2.4} />

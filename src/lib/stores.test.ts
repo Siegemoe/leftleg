@@ -61,8 +61,12 @@ import {
   streaming,
   switchToProject,
   collectUpdateInstallBlockers,
+  cycleTheme,
+  cycleThinkingLevel,
   handlePiExit,
   recordProcess,
+  retryLatestFailed,
+  theme,
   updateInstallLock,
 } from "./stores";
 import { composerDraftFor } from "./composer-drafts";
@@ -1045,5 +1049,94 @@ describe("newSession", () => {
 
     const types = vi.mocked(api.piRequest).mock.calls.map(([c]) => (c as { type: string }).type);
     expect(types).not.toContain("set_model");
+  });
+});
+
+describe("keybinding helpers", () => {
+  it("cycleTheme advances light → dark → system → light", () => {
+    // jsdom has no matchMedia; "system" resolves against a stubbed light OS.
+    (window as unknown as { matchMedia: unknown }).matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+    });
+    theme.set("light");
+    cycleTheme();
+    expect(get(theme)).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    cycleTheme();
+    expect(get(theme)).toBe("system");
+    cycleTheme();
+    expect(get(theme)).toBe("light");
+  });
+
+  it("cycleThinkingLevel steps to the next reported level", async () => {
+    projectDir.set("/proj");
+    rpcState.set({ thinkingLevel: "low" } as unknown as import("./types").RpcState);
+    cycleThinkingLevel();
+    await Promise.resolve();
+    expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "set_thinking_level", level: "medium" }),
+      expect.any(Number),
+      "/proj",
+      undefined,
+    );
+  });
+
+  it("cycleThinkingLevel is a no-op while pi has not reported a level", async () => {
+    projectDir.set("/proj");
+    rpcState.set(null);
+    vi.mocked(api.piRequest).mockClear();
+    cycleThinkingLevel();
+    await Promise.resolve();
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
+  });
+
+  it("retryLatestFailed re-sends the newest failed bubble", async () => {
+    connected.set(true);
+    projectDir.set("/proj");
+    items.set([
+      {
+        kind: "user",
+        id: "u1",
+        text: "older failed",
+        images: [],
+        status: "failed",
+        ts: 1,
+      } as unknown as import("./types").UserItem,
+      {
+        kind: "user",
+        id: "u2",
+        text: "newest failed",
+        images: [],
+        status: "failed",
+        ts: 2,
+      } as unknown as import("./types").UserItem,
+    ]);
+
+    await retryLatestFailed();
+
+    expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "prompt", message: "newest failed" }),
+      600,
+      "/proj",
+      undefined,
+    );
+    // The retried bubble is dropped and re-sent as a fresh in-flight bubble;
+    // the older failed one stays for a second press (per-bubble semantics).
+    const left = get(items).filter(
+      (x) => x.kind === "user",
+    ) as unknown as import("./types").UserItem[];
+    expect(left.map((x) => x.text)).toEqual(["older failed", "newest failed"]);
+    expect(left[0].status).toBe("failed");
+    expect(left[1].status).not.toBe("failed");
+  });
+
+  it("retryLatestFailed stays silent when nothing failed", async () => {
+    connected.set(true);
+    projectDir.set("/proj");
+    items.set([]);
+    vi.mocked(api.piRequest).mockClear();
+
+    await expect(retryLatestFailed()).resolves.toBeNull();
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
   });
 });

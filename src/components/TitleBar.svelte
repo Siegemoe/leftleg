@@ -39,6 +39,12 @@
     newProjectOpen,
     projectSettingsDir,
     keybindings,
+    queue,
+    searchFocusTick,
+    cycleThinkingLevel,
+    cycleTheme,
+    retryLatestFailed,
+    clearQueue,
   } from "../lib/stores";
   import { matchKeybinding, effectiveBindings } from "../lib/keybindings";
   import { checkForUpdates } from "../lib/updater";
@@ -65,7 +71,7 @@
   // Status/Artifacts (and the Diff/Files docks) open as cards in the right
   // panel (openRightPanel toggles the active tab); menu items force the
   // panel open, clearing the start-view collapse too.
-  function openPanelTab(tab: "status" | "artifacts" | "diff" | "files") {
+  function openPanelTab(tab: "status" | "artifacts" | "subagents" | "diff" | "files") {
     homePanelCollapsed.set(false);
     rightPanelTab.set(tab);
     rightPanelOpen.set(true);
@@ -133,6 +139,33 @@
     else if (action === "openStatus") openRightPanel("status");
     else if (action === "openDiff") openRightPanel("diff");
     else if (action === "openFiles") openRightPanel("files");
+    else if (action === "openSubagents") openRightPanel("subagents");
+    else if (action === "openBrowser") openRightPanel("browser");
+    else if (action === "openTerminal") openRightPanel("terminal");
+    else if (action === "toggleRightPanel") {
+      // Toggle the panel itself (last tab stays active) — the dock chords
+      // toggle per tab via openRightPanel; this is the "get out of my way" chord.
+      if (panelShown) rightPanelOpen.set(false);
+      else {
+        homePanelCollapsed.set(false);
+        rightPanelOpen.set(true);
+      }
+    } else if (action === "focusSearch") {
+      // The search input lives in the sidebar; reveal it if hidden, then
+      // tick the sidebar's effect to focus + select the field.
+      sidebarOpen.set(true);
+      searchFocusTick.update((n) => n + 1);
+    } else if (action === "openSettings") {
+      settingsProject.set(null);
+      settingsOpen.set(true);
+    } else if (action === "cycleThinking") cycleThinkingLevel();
+    else if (action === "clearQueue") {
+      // Guarded here, not in clearQueue: an empty queue is a no-op, not an
+      // rpc round-trip.
+      if ($queue.steering.length + $queue.followUp.length > 0) void clearQueue();
+    } else if (action === "retryFailed") void retryLatestFailed();
+    else if (action === "cycleTheme") cycleTheme();
+    else if (action === "goHome") void goHome();
   }
 
   // ---------- Edit (best-effort webview editing) ----------
@@ -212,7 +245,10 @@
               run(() => {
                 settingsProject.set(null);
                 settingsOpen.set(true);
-              })}>Settings…</button
+              })}
+            >Settings…{#if bindings.openSettings}<span class="hint-key"
+                >{bindings.openSettings}</span
+              >{/if}</button
           >
           <div class="sep"></div>
           <button onclick={() => run(() => quitApp())}>Exit</button>
@@ -250,6 +286,11 @@
           <button onclick={() => run(() => openPanelTab("artifacts"))}
             >Artifacts…{#if bindings.openArtifacts}<span class="hint-key"
                 >{bindings.openArtifacts}</span
+              >{/if}</button
+          >
+          <button onclick={() => run(() => openPanelTab("subagents"))}
+            >Subagents…{#if bindings.openSubagents}<span class="hint-key"
+                >{bindings.openSubagents}</span
               >{/if}</button
           >
           <button onclick={() => run(() => openPanelTab("diff"))}
