@@ -15,6 +15,8 @@ vi.mock("../lib/api", () => ({
   writeGuiState: vi.fn().mockResolvedValue(undefined),
   pickAttachments: vi.fn().mockResolvedValue([]),
   getAgentDir: vi.fn().mockResolvedValue(""),
+  gitRepoInfo: vi.fn().mockResolvedValue({ repo: false, branch: "", dirty: 0, toplevel: "" }),
+  gitDiffSummary: vi.fn().mockResolvedValue({ repo: false, files: [], truncated: false }),
 }));
 
 import * as api from "../lib/api";

@@ -4,6 +4,8 @@ vi.mock("../lib/api", () => ({
   piRequest: vi.fn(),
   listSessions: vi.fn().mockResolvedValue([]),
   openPathLocal: vi.fn().mockResolvedValue(undefined),
+  gitRepoInfo: vi.fn().mockResolvedValue({ repo: false, branch: "", dirty: 0, toplevel: "" }),
+  gitDiffSummary: vi.fn().mockResolvedValue({ repo: false, files: [], truncated: false }),
 }));
 vi.mock("@tauri-apps/api/path", () => ({
   resolve: vi.fn().mockResolvedValue("/work/src/file.ts"),

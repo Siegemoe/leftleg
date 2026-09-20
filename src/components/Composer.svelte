@@ -16,6 +16,7 @@
   import { buildPromptMessage } from "../lib/prompt-message";
   import { FileText, Paperclip, Send, Square } from "@lucide/svelte";
   import { pickAttachments, type PickedAttachment } from "../lib/api";
+  import ComposerBar from "./ComposerBar.svelte";
 
   interface Attachment {
     name: string;
@@ -374,10 +375,15 @@
       </button>
     {/if}
   </div>
-  <div class="hint">
-    {$streaming
-      ? `Agent running — sent messages steer the current run. ${$statusNote ? "" : ""}`
-      : "Enter to send · Shift+Enter newline · + to attach · / for commands"}
+  <!-- Controls live directly under the chat bar: branch, model, thinking
+       level; the keybinding hint rides along at the row's right end. -->
+  <div class="under-row">
+    <ComposerBar />
+    <div class="hint">
+      {$streaming
+        ? `Agent running — sent messages steer the current run. ${$statusNote ? "" : ""}`
+        : "Enter to send · Shift+Enter newline · + to attach · / for commands"}
+    </div>
   </div>
 
   {#each belowWidgets as [key, w] (key)}
@@ -598,9 +604,16 @@
     flex-shrink: 0;
     border-radius: 10px;
   }
+  .under-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+  }
   .hint {
+    margin-left: auto;
+    padding-right: 4px;
     font-size: 11px;
     color: var(--text-3);
-    padding: 5px 6px 0 44px;
   }
 </style>
