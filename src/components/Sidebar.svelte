@@ -345,6 +345,17 @@
         act: "install" as const,
       };
     }
+    // Preparing/installing still reports check status "available", so without
+    // this branch the chip would render as a clickable "install" while
+    // onUpdateClick is refusing clicks — handle the active states first.
+    if ($updateStatus === "preparing" || $updateStatus === "installing") {
+      return {
+        cls: "ready",
+        label: `⟳ update ${$updateStatus}…`,
+        title: `The update is ${$updateStatus}.`,
+        act: "none" as const,
+      };
+    }
     if (c.status === "available") {
       return {
         cls: "ready",
