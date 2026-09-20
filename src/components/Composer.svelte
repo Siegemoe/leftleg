@@ -158,6 +158,16 @@
         return;
       }
     }
+    // Esc with a live run aborts it — the agent-TUI convention (Esc
+    // interrupts, keeping the work done so far). Element-level, so it only
+    // fires while the composer owns focus, and its preventDefault stands the
+    // window Esc ladder down for this keypress. The palette above outranks:
+    // the first Esc closes the palette, the next one aborts.
+    if (e.key === "Escape" && $streaming) {
+      e.preventDefault();
+      void abort();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       doSend();

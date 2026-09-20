@@ -85,6 +85,11 @@ export function setKeybinding(action: ActionId, binding: string | null): void {
   });
 }
 
+/** Bumped to ask the sidebar to focus (and select) its session-search input —
+ * the focusSearch keybinding dispatches this. A tick rather than a flag so
+ * pressing the chord again re-selects what's there. */
+export const searchFocusTick = writable(0);
+
 // ---------- code-viewer card ----------
 
 /** The floating code-viewer card. One instance: opening a file raises it
@@ -1228,6 +1233,13 @@ export function applyTheme(t: "light" | "dark" | "system") {
   theme.set(t);
 }
 
+/** Advance light → dark → system → light — the View menu's order. */
+export function cycleTheme(): void {
+  const order = ["light", "dark", "system"] as const;
+  const at = order.indexOf(get(theme));
+  applyTheme(order[(at + 1) % order.length]);
+}
+
 export async function refreshStats() {
   try {
     const res = await requestForView<{ success: boolean; data?: SessionStats }>(
@@ -1369,6 +1381,18 @@ export async function sendPrompt(
   )
     void refreshRpcState().catch(() => {});
   return result;
+}
+
+/** Retry the most recent failed user bubble, newest first. Silent no-op when
+ * nothing in the transcript has failed — the retryFailed keybinding dispatches
+ * this, and "nothing failed" is not an error worth interrupting for. */
+export async function retryLatestFailed(): Promise<PromptResult | null> {
+  const failed = [...get(items)]
+    .reverse()
+    .find((x) => x.kind === "user" && (x as import("./types").UserItem).status === "failed") as
+    import("./types").UserItem | undefined;
+  if (!failed) return null;
+  return retryFailedUser(failed.id);
 }
 
 /** Re-send a failed bubble's content, dropping the failed bubble first. */
@@ -1697,6 +1721,28 @@ export async function setModel(provider: string, modelId: string) {
 }
 export async function setThinkingLevel(level: ThinkingLevel) {
   await rpcActionThenRefresh({ type: "set_thinking_level", level });
+}
+
+/** The composer pill's cycle order (ComposerBar.svelte uses the same). */
+const THINKING_LEVELS: ThinkingLevel[] = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+/** Advance the thinking level one step (backward when requested). No-op while
+ * pi hasn't reported a level — there is nothing to cycle from. */
+export function cycleThinkingLevel(backward = false): void {
+  const cur = get(rpcState)?.thinkingLevel;
+  const at = cur ? THINKING_LEVELS.indexOf(cur) : -1;
+  if (at < 0) return;
+  const next =
+    THINKING_LEVELS[(at + (backward ? THINKING_LEVELS.length - 1 : 1)) % THINKING_LEVELS.length];
+  void setThinkingLevel(next);
 }
 export async function setSteeringMode(mode: "all" | "one-at-a-time") {
   await rpcActionThenRefresh({ type: "set_steering_mode", mode });
