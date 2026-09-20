@@ -433,6 +433,19 @@ describe("handleEvent: tool lifecycle", () => {
       "success",
     );
 
+    // A malformed later heartbeat clears the snapshot — stale results must
+    // not masquerade as fresh state.
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "sa1",
+      partialResult: {
+        content: [{ type: "text", text: "running" }],
+        details: "garbage" as never,
+      },
+    });
+    tool = get(items).find((x) => x.kind === "tool") as ToolItem;
+    expect(tool.details).toBeUndefined();
+
     // Other tools never gain details from updates — only the subagent
     // extension's heartbeat carries a structured snapshot worth keeping.
     await handleEvent({

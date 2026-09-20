@@ -51,9 +51,12 @@
     return typeof v === "number" && Number.isFinite(v) ? v : 0;
   }
 
-  function toneOf(status: string, running: boolean): Tone {
-    if (running) return "run";
+  function toneOf(status: string): Tone {
+    // Per-task: each task's own status decides its tone — a finished task
+    // inside a still-running run must not inherit the run's pulsing dot.
     switch (status) {
+      case "running":
+        return "run";
       case "success":
       case "completed":
         return "ok";
@@ -104,7 +107,7 @@
         agent: str(o.agent) || "agent",
         task: str(o.task),
         status,
-        tone: toneOf(status, running),
+        tone: toneOf(status),
         model: str(o.model),
         tokens: num(usage.input) + num(usage.output),
         cost: num(usage.cost),
@@ -125,7 +128,7 @@
           agent: str(o.agent) || str(args.agent) || "agent",
           task: str(o.task),
           status: running ? "running" : "unknown",
-          tone: running ? "run" : "neutral",
+          tone: toneOf(running ? "running" : "unknown"),
           model: "",
           tokens: 0,
           cost: 0,

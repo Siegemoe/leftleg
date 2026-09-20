@@ -1006,8 +1006,11 @@ function renderEvent(
           // lets the subagents panel render live runs from the transcript
           // itself — no second store to keep in sync.
           if (t.name === "subagent") {
+            // A malformed snapshot (null / primitive / array) clears instead
+            // of keeping the previous one — stale results must not masquerade
+            // as fresh state; the panel falls back to the call arguments.
             const d = evt.partialResult?.details;
-            if (d && typeof d === "object") t.details = d;
+            t.details = d && typeof d === "object" && !Array.isArray(d) ? d : undefined;
           }
         }
         return a;

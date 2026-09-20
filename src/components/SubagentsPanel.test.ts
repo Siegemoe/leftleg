@@ -70,6 +70,29 @@ describe("subagents panel", () => {
     expect(document.body.querySelector(".t-task")?.textContent).toBe("map the repo");
   });
 
+  it("tones each task by its own status while the run is live", () => {
+    mountPanel([
+      toolItem({
+        details: {
+          results: [
+            { agent: "a", status: "success" },
+            { agent: "b", status: "running" },
+            { agent: "c", status: "error" },
+          ],
+        },
+      }),
+    ]);
+    // The run as a whole is still live…
+    expect(document.body.querySelector(".run .row1 .dot")?.className).toContain("run");
+    // …but a finished task inside it must not inherit the pulsing dot.
+    document.body.querySelector<HTMLButtonElement>(".run")!.click();
+    flushSync();
+    const dots = [...document.body.querySelectorAll(".task .dot")].map((d) =>
+      d.className.replace(/svelte-\S+/, "").trim(),
+    );
+    expect(dots).toEqual(["dot ok", "dot run", "dot err"]);
+  });
+
   it("renders a finished multi-agent run with usage", () => {
     mountPanel([
       toolItem({
