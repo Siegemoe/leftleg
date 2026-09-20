@@ -70,10 +70,10 @@
       if (revision === gitRevision && target === $projectDir) gitInfo = null;
     }
   }
-  // Branch-chip hover: one-line working-tree diff total (+N −M vs HEAD).
-  // Debounced on hover-open and cached 5 s so pointer travel doesn't re-run
-  // git; the popover is pointer-events:none, so leaving the chip is the only
-  // dismiss path (no focus-handlers needed on a passive tooltip).
+  // Branch-chip hover/focus: one-line working-tree diff total (+N −M vs
+  // HEAD). Debounced on open and cached 5 s so pointer travel doesn't re-run
+  // git; the popover is pointer-events:none, so leave/blur is the only
+  // dismiss path. Focus mirrors hover so keyboard users see the totals too.
   interface DiffHover {
     added: number;
     deleted: number;
@@ -123,6 +123,16 @@
 
   $effect(() => {
     const dir = $projectDir;
+    // A project switch clears the previous repo's chip/diff state up front —
+    // no stale branch lingers while the new repo's info is in flight.
+    gitInfo = null;
+    diffHover = null;
+    diffCache = null;
+    diffHoverSeq++;
+    if (diffHoverTimer) {
+      clearTimeout(diffHoverTimer);
+      diffHoverTimer = null;
+    }
     void refreshGit(dir);
     const iv = setInterval(() => void refreshGit(), 30000);
     return () => clearInterval(iv);
@@ -275,6 +285,8 @@
           (gitInfo.toplevel ? "\n" + gitInfo.toplevel : "")}
         onmouseenter={onChipEnter}
         onmouseleave={onChipLeave}
+        onfocus={onChipEnter}
+        onblur={onChipLeave}
         onclick={() => void refreshGit()}
       >
         <GitBranch size={12} strokeWidth={2} />

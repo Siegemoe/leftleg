@@ -69,6 +69,9 @@ describe("status bar branch chip", () => {
 
     projectDir.set("/b");
     flushSync();
+    // The switch clears the old repo's chip up front — nothing stale lingers
+    // while the new project's info is in flight.
+    expect(document.body.querySelector(".git-branch")).toBeNull();
     await vi.waitFor(() => expect(mocks.gitRepoInfo).toHaveBeenCalledWith("/b"));
     resolveB({ repo: true, branch: "branch-b", dirty: 0, toplevel: "/b" });
     await settle();
@@ -114,6 +117,37 @@ describe("status bar branch chip", () => {
     // The updater chip + version moved to the sidebar footer.
     expect(document.body.querySelector("footer .version")).toBeNull();
     expect(document.body.querySelector("footer button.upd")).toBeNull();
+  });
+
+  it("opens the diff popover on keyboard focus and closes on blur", async () => {
+    mocks.gitRepoInfo.mockResolvedValue({ repo: true, branch: "main", dirty: 1, toplevel: "/a" });
+    mocks.gitDiffSummary.mockResolvedValue({
+      repo: true,
+      files: [{ path: "f.ts", added: 4, deleted: 1 }],
+      truncated: false,
+    });
+    projectDir.set("/a");
+    instance = mount(StatusBar, { target: document.body });
+    flushSync();
+    const chip = await vi.waitFor(() => {
+      const el = document.body.querySelector<HTMLButtonElement>(".git-chip");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+
+    // Focus mirrors hover so keyboard users get the diff totals.
+    chip.dispatchEvent(new FocusEvent("focus"));
+    flushSync();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    flushSync();
+    const pop = document.body.querySelector(".diff-pop");
+    expect(pop?.textContent).toContain("+4");
+    expect(pop?.textContent).toContain("−1");
+
+    // Blur dismisses it, mirroring mouse-leave.
+    chip.dispatchEvent(new FocusEvent("blur"));
+    flushSync();
+    expect(document.body.querySelector(".diff-pop")).toBeNull();
   });
 
   it("no longer renders the global idle/working streaming pill", () => {

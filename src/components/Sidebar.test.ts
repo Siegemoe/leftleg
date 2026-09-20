@@ -78,4 +78,18 @@ describe("sidebar footer", () => {
     // The branch chip moved to the status bar.
     expect(document.body.querySelector(".git-wrap")).toBeNull();
   });
+
+  it("disables the chip while the update is preparing or installing", () => {
+    // Those states still report check status "available"; the chip must not
+    // render as a clickable install while onUpdateClick refuses clicks.
+    updateAvailable.set({ version: "0.3.0" } as never);
+    updateStatus.set("preparing");
+    updateCheck.set({ status: "available", at: Date.now(), message: "v0.3.0 is available" });
+    instance = mount(Sidebar, { target: document.body });
+    flushSync();
+
+    const button = document.body.querySelector<HTMLButtonElement>("button.upd")!;
+    expect(button.textContent).toContain("update preparing…");
+    expect(button.disabled).toBe(true);
+  });
 });
