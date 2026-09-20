@@ -446,7 +446,13 @@
     background: var(--bg-surface);
     font-size: 11.5px;
     color: var(--text-2);
-    overflow: hidden;
+    /* Horizontal containment only: plain `overflow: hidden` also clips the
+     * vertical axis, which cut the upward-opening popovers (the branch
+     * chip's diff hover, the model menu) down to a sliver. `clip` keeps an
+     * over-long row cut at the footer's edge without creating a scroll
+     * container; the visible vertical axis lets the popovers paint above
+     * the chat space. */
+    overflow: clip visible;
   }
   .pill {
     display: inline-flex;
