@@ -1,9 +1,9 @@
 <script lang="ts">
   // Right panel: a resizable, floating card beside the chat hosting tool
-  // cards (Status, Artifacts — plus placeholder docks: Diff, Browser,
-  // Terminal, Files). Tab switching lives in the title bar; the card just
-  // shows the active view, its own scrollbar, and a close button. Mirrors
-  // the left sidebar's drag-to-resize handle with the direction flipped.
+  // cards (Status, Subagents, Artifacts — plus placeholder docks: Browser,
+  // Terminal). Tab switching lives in the title bar; the card just shows the
+  // active view, its own scrollbar, and a close button. Mirrors the left
+  // sidebar's drag-to-resize handle with the direction flipped.
   import { X } from "@lucide/svelte";
   import {
     rightPanelOpen,
@@ -12,6 +12,7 @@
     type RightPanelTab,
   } from "../lib/stores";
   import StatusCard from "./StatusCard.svelte";
+  import SubagentsPanel from "./SubagentsPanel.svelte";
   import Artifacts from "./Artifacts.svelte";
   import DiffPanel from "./DiffPanel.svelte";
   import FilesPanel from "./FilesPanel.svelte";
@@ -69,6 +70,8 @@
   <div class="panel-body">
     {#if $rightPanelTab === "status"}
       <StatusCard />
+    {:else if $rightPanelTab === "subagents"}
+      <SubagentsPanel />
     {:else if $rightPanelTab === "artifacts"}
       <Artifacts />
     {:else if $rightPanelTab === "diff"}

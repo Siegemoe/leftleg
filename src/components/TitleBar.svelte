@@ -319,9 +319,9 @@
 
   <!-- Placeholder docks: views arrive over time; buttons keep them visible. -->
   <button
-    class="tb-btn soon"
+    class="tb-btn"
     class:open={panelShown && $rightPanelTab === "subagents"}
-    title="Subagent thread inspector — coming soon"
+    title="Subagent runs — status, tasks, and usage (right panel)"
     onclick={() => openRightPanel("subagents")}
   >
     <Workflow size={14} strokeWidth={2} />
