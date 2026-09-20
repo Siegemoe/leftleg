@@ -72,6 +72,28 @@ jobs:
         with:
           toolchain: "1.98.1"
 
+      # rust-toolchain.toml pins clippy + rustfmt, so the first cargo
+      # invocation would otherwise download them mid-workflow. The gate's
+      # `cargo metadata` captures stdout, which hid that download's stderr —
+      # a mid-gate failure died silently and cost the first two scheduled
+      # nightlies (run 35500298123). Install here instead: visible errors,
+      # retried, and the gate goes fully offline.
+      - name: Install pinned Rust components
+        if: steps.decide.outputs.shouldBuild != 'false'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $attempt = 0
+          while ($true) {
+            rustup component add clippy rustfmt
+            if ($LASTEXITCODE -eq 0) { break }
+            $attempt++
+            if ($attempt -ge 3) {
+              throw "rustup component add failed after $attempt attempts (exit $LASTEXITCODE)"
+            }
+            Start-Sleep -Seconds (10 * $attempt)
+          }
+
       - name: Install locked frontend dependencies
         if: steps.decide.outputs.shouldBuild != 'false'
         run: npm ci
@@ -102,11 +124,16 @@ jobs:
           $lockData = Get-Content -Raw package-lock.json | ConvertFrom-Json -AsHashtable
           $lockVersion = $lockData['version']
           $lockPackageVersion = $lockData['packages']['']['version']
-          $cargoMetadata = cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --locked --format-version 1
+          # stdout goes to a file rather than a captured variable: with the
+          # variable form, rustup/cargo stderr never reached the log and a
+          # failed component download died silently (exit 1, no output).
+          $metaFile = Join-Path $env:RUNNER_TEMP "cargo-metadata.json"
+          cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --locked --format-version 1 > $metaFile
           if ($LASTEXITCODE -ne 0) {
-            throw "cargo metadata failed"
+            Get-Content $metaFile | Select-Object -First 40
+            throw "cargo metadata failed (exit $LASTEXITCODE)"
           }
-          $cargoVersion = ($cargoMetadata | ConvertFrom-Json).packages |
+          $cargoVersion = (Get-Content -Raw $metaFile | ConvertFrom-Json).packages |
             Where-Object { $_.name -eq 'leftleg' } |
             Select-Object -ExpandProperty version -First 1
 
