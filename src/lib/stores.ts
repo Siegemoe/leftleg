@@ -1001,6 +1001,14 @@ function renderEvent(
           t.output = text;
           t.outputTruncated = truncated;
           if (diff) t.diff = diff;
+          // The subagent extension re-sends its full per-task snapshot on
+          // details with every heartbeat; keeping the freshest one on the item
+          // lets the subagents panel render live runs from the transcript
+          // itself — no second store to keep in sync.
+          if (t.name === "subagent") {
+            const d = evt.partialResult?.details;
+            if (d && typeof d === "object") t.details = d;
+          }
         }
         return a;
       });

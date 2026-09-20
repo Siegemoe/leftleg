@@ -395,6 +395,64 @@ describe("handleEvent: tool lifecycle", () => {
     expect(tool.status).toBe("running");
   });
 
+  it("keeps the freshest subagent details from heartbeat updates", async () => {
+    // The subagent extension re-sends its per-task snapshot on every
+    // heartbeat; the panel renders live runs from whatever snapshot the item
+    // last carried, so each update must replace it wholesale.
+    await handleEvent({
+      type: "tool_execution_start",
+      toolCallId: "sa1",
+      toolName: "subagent",
+      args: { agent: "scout", task: "map the repo" },
+    });
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "sa1",
+      partialResult: {
+        content: [{ type: "text", text: "running" }],
+        details: { mode: "single", results: [{ agent: "scout", status: "running" }] },
+      },
+    });
+    let tool = get(items).find((x) => x.kind === "tool") as ToolItem;
+    expect(tool.name).toBe("subagent");
+    expect(tool.details).toEqual({
+      mode: "single",
+      results: [{ agent: "scout", status: "running" }],
+    });
+
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "sa1",
+      partialResult: {
+        content: [{ type: "text", text: "running" }],
+        details: { mode: "single", results: [{ agent: "scout", status: "success" }] },
+      },
+    });
+    tool = get(items).find((x) => x.kind === "tool") as ToolItem;
+    expect((tool.details as { results: Array<{ status: string }> }).results[0].status).toBe(
+      "success",
+    );
+
+    // Other tools never gain details from updates — only the subagent
+    // extension's heartbeat carries a structured snapshot worth keeping.
+    await handleEvent({
+      type: "tool_execution_start",
+      toolCallId: "b1",
+      toolName: "bash",
+      args: {},
+    });
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "b1",
+      partialResult: {
+        content: [{ type: "text", text: "out" }],
+        details: { mode: "single", results: [] },
+      },
+    });
+    const bash = get(items).find((x) => x.kind === "tool" && x.toolCallId === "b1") as ToolItem;
+    expect(bash.details).toBeUndefined();
+  });
+
   it("ignores updates for unknown tool ids", async () => {
     await handleEvent({
       type: "tool_execution_update",
