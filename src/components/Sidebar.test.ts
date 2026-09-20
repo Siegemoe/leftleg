@@ -1,12 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 
-const mocks = vi.hoisted(() => ({ gitRepoInfo: vi.fn() }));
-vi.mock("../lib/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/api")>();
-  return { ...actual, gitRepoInfo: mocks.gitRepoInfo };
-});
-
 import Sidebar from "./Sidebar.svelte";
 import {
   activeSessionPath,
@@ -22,18 +16,11 @@ import {
   settledView,
   visitedAt,
 } from "../lib/stores";
+import { updateAvailable, updateCheck, updateStatus } from "../lib/updater";
 
 let instance: ReturnType<typeof mount> | null = null;
 
-async function settle() {
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  flushSync();
-}
-
 beforeEach(() => {
-  mocks.gitRepoInfo
-    .mockReset()
-    .mockResolvedValue({ repo: false, branch: "", dirty: 0, toplevel: "" });
   activeSessionPath.set(null);
   connected.set(true);
   pins.set([]);
@@ -46,12 +33,17 @@ beforeEach(() => {
   settled.set([]);
   settledView.set("per-project");
   visitedAt.set({});
+  updateAvailable.set(null);
+  updateStatus.set("idle");
+  updateCheck.set({ status: "idle", at: null, message: "" });
+  vi.stubGlobal("__APP_VERSION__", "0.2.3");
 });
 
 afterEach(async () => {
   if (instance) await unmount(instance);
   instance = null;
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 describe("sidebar project ownership", () => {
@@ -69,36 +61,21 @@ describe("sidebar project ownership", () => {
       ),
     ).toBe(true);
   });
+});
 
-  it("does not show a stale branch after switching projects", async () => {
-    let resolveA!: (value: unknown) => void;
-    let resolveB!: (value: unknown) => void;
-    mocks.gitRepoInfo
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveA = resolve;
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveB = resolve;
-          }),
-      );
-    projectDir.set("/a");
+describe("sidebar footer", () => {
+  it("shows the updater chip + version where the branch chip used to be", () => {
+    updateAvailable.set({ version: "0.3.0" } as never);
+    updateStatus.set("ready");
+    updateCheck.set({ status: "available", at: Date.now(), message: "v0.3.0 is available" });
     instance = mount(Sidebar, { target: document.body });
     flushSync();
-    await vi.waitFor(() => expect(mocks.gitRepoInfo).toHaveBeenCalledWith("/a"));
 
-    projectDir.set("/b");
-    flushSync();
-    await vi.waitFor(() => expect(mocks.gitRepoInfo).toHaveBeenCalledWith("/b"));
-    resolveB({ repo: true, branch: "branch-b", dirty: 0, toplevel: "/b" });
-    await settle();
-    resolveA({ repo: true, branch: "branch-a", dirty: 0, toplevel: "/a" });
-    await settle();
-
-    expect(document.body.querySelector(".git-branch")?.textContent).toBe("branch-b");
+    const button = document.body.querySelector<HTMLButtonElement>("button.upd")!;
+    expect(button.textContent).toContain("update downloaded — install");
+    expect(button.disabled).toBe(false);
+    expect(document.body.querySelector(".version")?.textContent).toBe("v0.2.3");
+    // The branch chip moved to the status bar.
+    expect(document.body.querySelector(".git-wrap")).toBeNull();
   });
 });

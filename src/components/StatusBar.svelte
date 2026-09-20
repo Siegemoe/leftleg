@@ -13,16 +13,11 @@
     newProjectOpen,
     projectSettingsDir,
     fileCardOpen,
+    projectDir,
   } from "../lib/stores";
   import { setThinkingLevel } from "../lib/stores";
-  import { ChevronDown } from "@lucide/svelte";
-  import {
-    updateCheck,
-    checkForUpdates,
-    applyUpdate,
-    updateAvailable,
-    updateStatus,
-  } from "../lib/updater";
+  import { ChevronDown, GitBranch } from "@lucide/svelte";
+  import { gitRepoInfo, gitDiffSummary } from "../lib/api";
   import type { ThinkingLevel, ModelInfo } from "../lib/types";
 
   function fmtCost(c: number | undefined): string {
@@ -50,88 +45,88 @@
 
   const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-  // Update-check visibility: version text tooltip always reports the last
-  // check; a failed check or a ready update gets a clickable chip so the
-  // updater can never be silently invisible again.
-  let checkTime = $derived(
-    $updateCheck.at === null ? "" : new Date($updateCheck.at).toLocaleTimeString(),
-  );
-  let versionTitle = $derived.by(() => {
-    const c = $updateCheck;
-    if (c.status === "checking") return "Checking for updates…";
-    if (c.status === "failed") return c.message;
-    if (c.status === "current") return `Up to date — checked ${checkTime}`;
-    if (c.status === "available") return c.message;
-    return "Leftleg build";
-  });
-  let updateChip = $derived.by(() => {
-    const c = $updateCheck;
-    if ($updateStatus === "downloading") {
-      return {
-        cls: "ready",
-        label: "⟳ update downloading…",
-        title: "The update is downloading — it will install and relaunch when ready.",
-        act: "none" as const,
-      };
+  // Git checkout state for the footer's branch chip: current branch +
+  // uncommitted count, refreshed on project switch and every 30s while
+  // mounted.
+  interface GitInfo {
+    repo: boolean;
+    branch: string;
+    dirty: number;
+    toplevel: string;
+  }
+  let gitInfo = $state<GitInfo | null>(null);
+  let gitRevision = 0;
+  async function refreshGit(dir?: string) {
+    const target = dir ?? $projectDir;
+    const revision = ++gitRevision;
+    if (!target) {
+      gitInfo = null;
+      return;
     }
-    if ($updateStatus === "ready") {
-      return {
-        cls: "ready",
-        label: "⟳ update downloaded — install",
-        title: "The update is downloaded — click to finish installing and restart.",
-        act: "install" as const,
-      };
-    }
-    if (c.status === "available") {
-      return {
-        cls: "ready",
-        label: "⟳ update ready — install",
-        title: `${c.message} — click to install & restart`,
-        act: "install" as const,
-      };
-    }
-    if (c.status === "checking") {
-      return {
-        cls: "",
-        label: "checking for updates…",
-        title: "Checking for updates…",
-        act: "none" as const,
-      };
-    }
-    if (c.status === "failed") {
-      return {
-        cls: "warn",
-        label: "⚠ update check failed",
-        title: `${c.message} — click to retry`,
-        act: "check" as const,
-      };
-    }
-    if (c.status === "current") {
-      return {
-        cls: "",
-        label: "✓ up to date",
-        title: `Up to date — checked ${checkTime}. Click to re-check.`,
-        act: "check" as const,
-      };
-    }
-    return {
-      cls: "",
-      label: "⟳ check for updates",
-      title: "Check for updates now",
-      act: "check" as const,
-    };
-  });
-  function onUpdateClick() {
-    if (
-      updateChip.act === "install" &&
-      $updateAvailable &&
-      !["downloading", "preparing", "installing"].includes($updateStatus)
-    ) {
-      void applyUpdate();
-    } else if (updateChip.act === "check") {
-      void checkForUpdates();
+    try {
+      const result = await gitRepoInfo(target);
+      if (revision === gitRevision && target === $projectDir) gitInfo = result;
+    } catch {
+      if (revision === gitRevision && target === $projectDir) gitInfo = null;
     }
   }
+  // Branch-chip hover: one-line working-tree diff total (+N −M vs HEAD).
+  // Debounced on hover-open and cached 5 s so pointer travel doesn't re-run
+  // git; the popover is pointer-events:none, so leaving the chip is the only
+  // dismiss path (no focus-handlers needed on a passive tooltip).
+  interface DiffHover {
+    added: number;
+    deleted: number;
+    files: number;
+  }
+  let diffHover = $state<DiffHover | null>(null);
+  let diffHoverTimer: ReturnType<typeof setTimeout> | null = null;
+  let diffHoverSeq = 0;
+  let diffCache: { at: number; dir: string; data: DiffHover } | null = null;
+  function onChipEnter() {
+    if (diffHoverTimer) return;
+    diffHoverTimer = setTimeout(async () => {
+      diffHoverTimer = null;
+      const seq = ++diffHoverSeq;
+      const dir = $projectDir;
+      if (!dir) return;
+      const now = Date.now();
+      if (diffCache && diffCache.dir === dir && now - diffCache.at < 5000) {
+        if (seq === diffHoverSeq) diffHover = diffCache.data;
+        return;
+      }
+      try {
+        const summary = await gitDiffSummary(dir);
+        // A leave after hover-open bumped the seq: the popover must not
+        // resurrect when the in-flight summary lands.
+        if (seq !== diffHoverSeq || dir !== $projectDir) return;
+        const data: DiffHover = {
+          added: summary.files.reduce((n, f) => n + f.added, 0),
+          deleted: summary.files.reduce((n, f) => n + f.deleted, 0),
+          files: summary.files.length,
+        };
+        diffCache = { at: Date.now(), dir, data };
+        diffHover = data;
+      } catch {
+        /* hover stats are best-effort */
+      }
+    }, 250);
+  }
+  function onChipLeave() {
+    if (diffHoverTimer) {
+      clearTimeout(diffHoverTimer);
+      diffHoverTimer = null;
+    }
+    diffHoverSeq++;
+    diffHover = null;
+  }
+
+  $effect(() => {
+    const dir = $projectDir;
+    void refreshGit(dir);
+    const iv = setInterval(() => void refreshGit(), 30000);
+    return () => clearInterval(iv);
+  });
 
   // ---------- model dropdown ----------
   let modelOpen = $state(false);
@@ -270,6 +265,34 @@
 <svelte:window onpointerdown={onStatusbarPointerDown} onkeydown={onStatusbarKeydown} />
 
 <footer>
+  {#if gitInfo?.repo}
+    <div class="git-wrap">
+      <button
+        class="pill as-btn git-chip"
+        title={"branch " +
+          gitInfo.branch +
+          (gitInfo.dirty ? ` · ${gitInfo.dirty} uncommitted` : " · clean") +
+          (gitInfo.toplevel ? "\n" + gitInfo.toplevel : "")}
+        onmouseenter={onChipEnter}
+        onmouseleave={onChipLeave}
+        onclick={() => void refreshGit()}
+      >
+        <GitBranch size={12} strokeWidth={2} />
+        <span class="git-branch mono">{gitInfo.branch || "detached"}</span>
+        {#if gitInfo.dirty}<span class="git-dirty">{gitInfo.dirty}</span>{/if}
+      </button>
+      {#if diffHover}
+        <div class="diff-pop" role="status">
+          <span class="pop-added">+{diffHover.added}</span>
+          <span class="pop-deleted">−{diffHover.deleted}</span>
+          <span class="pop-hint"
+            >working tree vs HEAD · {diffHover.files} file{diffHover.files === 1 ? "" : "s"}</span
+          >
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   {#if $statusNote}
     <span class="note">{$statusNote}</span>
   {/if}
@@ -409,15 +432,6 @@
   {/if}
 
   <span class="spacer"></span>
-  <button
-    class="pill as-btn upd {updateChip.cls}"
-    title={updateChip.title}
-    onclick={onUpdateClick}
-    disabled={updateChip.act === "none"}
-  >
-    {updateChip.label}
-  </button>
-  <span class="version" title={versionTitle}>v{__APP_VERSION__}</span>
 </footer>
 
 <style>
@@ -476,27 +490,63 @@
     color: orange;
     border-color: orange;
   }
-  .upd {
-    cursor: pointer;
-    font: inherit;
+  .git-wrap {
+    position: relative;
   }
-  .upd:hover {
-    border-color: var(--border-strong);
+  .git-chip {
+    gap: 4px;
+    padding: 1px 8px;
+    font-size: 10.5px;
+    color: var(--text-3);
   }
-  .upd.ready {
+  .git-chip:hover {
     color: var(--accent);
-    border-color: var(--accent);
   }
-  .upd.ready:hover {
-    background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface-2));
+  .git-branch {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .upd.warn {
-    color: orange;
-    border-color: orange;
+  .git-dirty {
+    background: color-mix(in srgb, var(--danger) 75%, transparent);
+    color: #fff;
+    border-radius: 99px;
+    padding: 0 5px;
+    font-size: 9px;
+    line-height: 14px;
+    font-weight: 700;
   }
-  .upd:disabled {
-    opacity: 0.8;
-    cursor: default;
+  .diff-pop {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 60;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow);
+    white-space: nowrap;
+    pointer-events: none;
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .pop-added {
+    color: var(--ok);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .pop-deleted {
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .pop-hint {
+    color: var(--text-3);
   }
   .msearch {
     padding: 2px 4px 6px;
@@ -606,10 +656,5 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .version {
-    color: var(--text-3);
-    letter-spacing: 0.3px;
-    user-select: none;
   }
 </style>
