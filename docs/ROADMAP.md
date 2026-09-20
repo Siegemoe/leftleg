@@ -60,6 +60,12 @@
 - [x] Dedicated Key bindings section in Settings: registry-driven shortcuts, click-to-rebind capture, duplicate chords named and refused, overrides in GUI state, Reset all; menu hint-keys reflect effective bindings
 - [x] Per-session activity cue: the status bar's global idle/working pill moved into each session row as a pulsing "working" chip, in preparation for multiple concurrent sessions across projects
 
+## Post-0.7.2 master — on the nightly channel (unreleased)
+
+- [x] Composer controls regrouped: branch chip, model selector, and thinking level directly under the chat bar; status bar footer = run telemetry; updater chip + version in the sidebar footer
+- [x] Nightly release channel: scheduled 03:23 UTC master builds publish `vX.Y.Z-nightly.N` prereleases and roll `latest-nightly.json` onto a `nightly` release; stable feed untouched (see docs/RELEASE.md)
+- [x] Subagents dock is live: current-session subagent runs (live per-agent status from heartbeat snapshots, finished runs with model/usage/errors), derived from transcript items
+
 ## Next sweep — the foundation (MAJOR → 1.0.0 per the versioning policy)
 
 Multi-harness support (codex / Claude Code / DSH / cursor) behind an adapter
@@ -78,7 +84,7 @@ Windows+Linux. Ranked breakdown and remaining pi-RPC gaps:
 - [ ] Fork/clone UI on message items (RPC fork/clone/get_fork_messages)
 - [ ] pi-plan mode UI (plan → implement → verify → review states)
 - [ ] pi-todo task graph panel
-- [ ] Subagent thread inspector (the Subagents dock tab exists in the right panel; its view is still a placeholder)
+- [ ] Subagent history: cross-session runs from `.pi/subagent-history.json` (needs a path-validated Rust command — readers are git-tracked-only by posture) and background-run completion toasts; the current-session view is shipped
 - [ ] Diff viewer modal (monaco or codemirror) instead of pre blocks (the Diff dock and code-viewer card don't cover ToolCard's pre-block edit diffs)
 - [ ] Telemetry-free crash reporting via the log pipeline
 - [ ] Automated UI smoke tests (click-through: launch → pick project → send → tool card renders)

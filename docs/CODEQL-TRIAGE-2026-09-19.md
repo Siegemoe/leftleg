@@ -170,3 +170,43 @@ name)` was replaced by `pick_and_create_project_dir(app, name)`, which
 
 The next master analysis should mark #21 and the four R6 alerts fixed. The
 open-alert target state is 0, or 1 (#53) pending the dismissal above.
+
+## Final state (2026-09-20, API-verified)
+
+The master re-analysis after the remediation closed the queue at **0 open
+alerts**:
+
+- **#21 (file-system-race)** — fixed: the fd-based read satisfied the query
+  outright.
+- **#53 (R3, read_attachment)** — fixed: canonicalize + regular-file check
+  satisfied the query; no dismissal needed.
+- **#69/#95/#101/#102 (R6)** — dismissed as "won't fix": the flagged
+  locations inside `create_project_dir_checked` still exist (the validator
+  is unchanged), so the analysis could not mark them fixed — but the
+  webview-supplied-parent flow they described is gone
+  (`pick_and_create_project_dir`), and each dismissal cites exactly that
+  ("Parent comes from the OS folder dialog opened in Rust, never the
+  webview; the webview sends only a validated folder name. Containing it
+  further would defeat user-picked project folders.").
+- Everything else keeps its earlier disposition (99 dismissed with class
+  citations; 24+ marked fixed by the analyses).
+
+CodeQL is at zero open. Nothing is an outstanding queue — the four R6
+dismissals are documented decisions, not deferred work.
+
+## Dependabot: the one open alert (glib)
+
+Dependabot alert #1 (medium, GHSA-wrw7-89jp-8q8g): unsound `VariantStrIter`
+iterators in `glib` 0.18.x (src-tauri/Cargo.lock). Assessed 2026-09-19;
+left open deliberately:
+
+- **No Windows exposure.** The vulnerable iterator API is reachable only
+  inside gtk/glib code paths compiled for Linux targets (`cargo tree -i
+glib` is empty on the Windows host; the gtk stack is target-gated), and
+  Leftleg ships Windows installers.
+- **No fix in range.** The advisory's only patched release is glib 0.20.0,
+  a breaking major bump, and tauri's gtk 0.18 stack pins glib ^0.18 —
+  nothing Leftleg controls can move it today.
+- **Action:** none until Tauri moves to the gtk/glib 0.20 stack. Do not
+  dismiss — the alert is an accurate statement about the Linux build;
+  revisit on the next tauri dependency bump.
