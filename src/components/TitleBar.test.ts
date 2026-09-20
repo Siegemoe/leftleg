@@ -26,9 +26,7 @@ vi.mock("../lib/updater", () => ({
 }));
 
 import TitleBar from "./TitleBar.svelte";
-import StatusBar from "./StatusBar.svelte";
 import { settingsOpen, settingsProject } from "../lib/stores";
-import { updateAvailable, updateCheck, updateStatus } from "../lib/updater";
 
 let instance: ReturnType<typeof mount> | null = null;
 
@@ -36,9 +34,6 @@ beforeEach(() => {
   vi.stubGlobal("__APP_VERSION__", "0.2.3");
   settingsOpen.set(false);
   settingsProject.set(null);
-  updateAvailable.set(null);
-  updateStatus.set("idle");
-  updateCheck.set({ status: "idle", at: null, message: "" });
 });
 
 afterEach(async () => {
@@ -91,29 +86,22 @@ describe("title bar", () => {
     flushSync();
     expect(mocks.win.close).toHaveBeenCalledTimes(1);
   });
-});
 
-describe("status bar updater state", () => {
-  it("offers installation after the download is ready", () => {
-    updateAvailable.set({ version: "0.3.0" } as never);
-    updateStatus.set("ready");
-    updateCheck.set({ status: "available", at: Date.now(), message: "v0.3.0 is available" });
-    instance = mount(StatusBar, { target: document.body });
+  it("dock order puts Status left of Artifacts", () => {
+    instance = mount(TitleBar, { target: document.body });
     flushSync();
 
-    const button = document.body.querySelector<HTMLButtonElement>("button.upd")!;
-    expect(button.textContent).toContain("update downloaded — install");
-    expect(button.disabled).toBe(false);
-  });
-});
-
-describe("status bar activity indicator", () => {
-  it("no longer renders the global idle/working streaming pill", () => {
-    instance = mount(StatusBar, { target: document.body });
-    flushSync();
-
-    // The activity cue moved into the per-session rows (SessionRow's working
-    // chip); the status bar must stay quiet about it.
-    expect(document.body.querySelector(".streaming")).toBeNull();
+    const labels = [...document.body.querySelectorAll<HTMLButtonElement>("button.tb-btn span")].map(
+      (s) => s.textContent,
+    );
+    expect(labels).toEqual([
+      "Status",
+      "Artifacts",
+      "Subagents",
+      "Diff",
+      "Browser",
+      "Terminal",
+      "Files",
+    ]);
   });
 });
