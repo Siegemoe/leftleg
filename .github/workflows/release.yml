@@ -241,3 +241,8 @@ jobs:
               --title "Nightly channel" `
               --notes "Rolling automatic-update feed for nightly installs; this file is overwritten every nightly. Installers live on their own vX.Y.Z-nightly.N tags."
           }
+          # Belt and braces: never let the nightly prerelease claim the
+          # "latest release" marker — the stable feed resolves
+          # /releases/latest, and a prerelease must not be what it finds.
+          $releaseId = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" --jq .id
+          gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/releases/$releaseId" -f make_latest="false" --jq .name
