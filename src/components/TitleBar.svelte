@@ -243,13 +243,13 @@
                 >{bindings.toggleSidebar}</span
               >{/if}</button
           >
+          <button onclick={() => run(() => openPanelTab("status"))}
+            >Status…{#if bindings.openStatus}<span class="hint-key">{bindings.openStatus}</span
+              >{/if}</button
+          >
           <button onclick={() => run(() => openPanelTab("artifacts"))}
             >Artifacts…{#if bindings.openArtifacts}<span class="hint-key"
                 >{bindings.openArtifacts}</span
-              >{/if}</button
-          >
-          <button onclick={() => run(() => openPanelTab("status"))}
-            >Status…{#if bindings.openStatus}<span class="hint-key">{bindings.openStatus}</span
               >{/if}</button
           >
           <button onclick={() => run(() => openPanelTab("diff"))}
@@ -298,16 +298,6 @@
   <span class="flex-spacer" data-tauri-drag-region></span>
 
   <button
-    class="tb-btn artifacts"
-    class:open={panelShown && $rightPanelTab === "artifacts"}
-    title="Project artifacts — images and docs (right panel)"
-    onclick={() => openRightPanel("artifacts")}
-  >
-    <Images size={14} strokeWidth={2} />
-    <span>Artifacts</span>
-  </button>
-
-  <button
     class="tb-btn"
     class:open={panelShown && $rightPanelTab === "status"}
     title="Todos and pi module (right panel)"
@@ -317,11 +307,21 @@
     <span>Status</span>
   </button>
 
+  <button
+    class="tb-btn artifacts"
+    class:open={panelShown && $rightPanelTab === "artifacts"}
+    title="Project artifacts — images and docs (right panel)"
+    onclick={() => openRightPanel("artifacts")}
+  >
+    <Images size={14} strokeWidth={2} />
+    <span>Artifacts</span>
+  </button>
+
   <!-- Placeholder docks: views arrive over time; buttons keep them visible. -->
   <button
-    class="tb-btn soon"
+    class="tb-btn"
     class:open={panelShown && $rightPanelTab === "subagents"}
-    title="Subagent thread inspector — coming soon"
+    title="Subagent runs — status, tasks, and usage (right panel)"
     onclick={() => openRightPanel("subagents")}
   >
     <Workflow size={14} strokeWidth={2} />

@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "v*.*.*-nightly.*"
+  schedule:
+    # Nightly from master HEAD (skipped when HEAD already shipped).
+    - cron: "23 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,26 +21,63 @@ jobs:
   release-windows:
     runs-on: windows-latest
     steps:
-      - name: Check out the tagged commit
+      - name: Check out the commit to build
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Skip the nightly when master is unchanged since the last one
+        id: decide
+        if: github.event_name == 'schedule'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # A nightly is only worth shipping when its source moved. The
+          # nightly tag created by the previous run points at that run's
+          # commit; tauri-action's release-created tags are lightweight, so
+          # the ls-remote sha is the commit itself. This step must run after
+          # checkout — before it there is no repository to resolve `origin`
+          # against — and compares the checked-out HEAD, i.e. what would
+          # actually be built.
+          $head = (git rev-parse HEAD).Trim()
+          $nightlies = foreach ($line in (git ls-remote origin "refs/tags/v*-nightly.*")) {
+            $parts = $line -split '\s+'
+            if ($parts[1] -match '^refs/tags/v(\d+\.\d+\.\d+)-nightly\.(\d+)$') {
+              [pscustomobject]@{
+                name = $parts[1] -replace '^refs/tags/', ''
+                sha = $parts[0]
+                base = [version]$Matches[1]
+                n = [int]$Matches[2]
+              }
+            }
+          }
+          $latest = $nightlies | Sort-Object base, n | Select-Object -Last 1
+          if ($latest -and $latest.sha -eq $head) {
+            "Nightly skipped: HEAD $head is already shipped as $($latest.name)" >> $env:GITHUB_STEP_SUMMARY
+            "shouldBuild=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "shouldBuild=true" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Set up Node.js
+        if: steps.decide.outputs.shouldBuild != 'false'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm
 
       - name: Set up Rust
+        if: steps.decide.outputs.shouldBuild != 'false'
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: "1.98.1"
 
       - name: Install locked frontend dependencies
+        if: steps.decide.outputs.shouldBuild != 'false'
         run: npm ci
 
       - name: Install pinned Pi integration runtime
+        if: steps.decide.outputs.shouldBuild != 'false'
         shell: pwsh
         run: |
           npm install --global @earendil-works/pi-coding-agent@0.85.1
@@ -45,13 +87,15 @@ jobs:
           }
 
       - name: Validate tag and version identity
+        id: gate
+        if: steps.decide.outputs.shouldBuild != 'false'
         shell: pwsh
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
-          $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Stable release tags must be vMAJOR.MINOR.PATCH; got '$tag'"
-          }
 
           $tauriVersion = (Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json -AsHashtable)['version']
           $packageVersion = (Get-Content -Raw package.json | ConvertFrom-Json -AsHashtable)['version']
@@ -70,11 +114,56 @@ jobs:
           if (($versions | Select-Object -Unique).Count -ne 1) {
             throw "Version mismatch: tauri=$tauriVersion package=$packageVersion lock=$lockVersion lock-package=$lockPackageVersion cargo=$cargoVersion"
           }
-          if ($tag -ne "v$tauriVersion") {
-            throw "Tag $tag does not match application version v$tauriVersion"
+
+          # The tag/ref name rides in through the runner-provided GITHUB_REF_NAME
+          # environment variable, never interpolated into this script — a
+          # pushed tag is attacker-controlled text as far as the shell is
+          # concerned (GHA security hardening: use env vars for untrusted context).
+          $tag = $env:GITHUB_REF_NAME
+          $isNightly = $false
+          if ($env:GITHUB_EVENT_NAME -eq "schedule" -or $env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            # A manual dispatch checks out whatever branch it was dispatched
+            # from; only master may publish itself as a nightly.
+            if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch" -and $env:GITHUB_REF_NAME -ne "master") {
+              throw "Nightly dispatches build from master; dispatch this workflow on the master branch (got ref '$env:GITHUB_REF_NAME')"
+            }
+            # Nightlies build from the checked-out master HEAD; the release
+            # tag is synthesized here (tauri-action creates it) and carries a
+            # nightly prerelease segment so semver ordering stays correct
+            # (0.7.2-nightly.10 > 0.7.2-nightly.9, and a nightly never
+            # satisfies a stable feed). The workflow's run number makes the
+            # suffix strictly increasing.
+            $isNightly = $true
+            $tag = "v$tauriVersion-nightly.$env:GITHUB_RUN_NUMBER"
+            if (gh release view "$tag" --json name -q .name 2>$null) {
+              throw "Release $tag already exists (re-run of this workflow?). Delete the partial release and tag, then dispatch a fresh run."
+            }
+          }
+          elseif ($tag -match '^v\d+\.\d+\.\d+-nightly\.\d+$') {
+            # A manually pushed nightly tag must sit on the checked-in base
+            # version; the nightly prerelease segment is the tag's own.
+            $isNightly = $true
+            $base = $tag -replace '-nightly\.\d+$', ''
+            if ($base -ne "v$tauriVersion") {
+              throw "Nightly tag $tag must sit on the checked-in version v$tauriVersion"
+            }
+          }
+          elseif ($tag -match '^v\d+\.\d+\.\d+$') {
+            if ($tag -ne "v$tauriVersion") {
+              throw "Tag $tag does not match application version v$tauriVersion"
+            }
+          }
+          else {
+            throw "Release tags must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.N; got '$tag'"
           }
 
+          $isNightlyOut = if ($isNightly) { "true" } else { "false" }
+          "isNightly=$isNightlyOut" >> $env:GITHUB_OUTPUT
+          $appVersion = if ($isNightly) { $tag.Substring(1) } else { $tauriVersion }
+          "appVersion=$appVersion" >> $env:GITHUB_OUTPUT
+
       - name: Require updater signing secret
+        if: steps.decide.outputs.shouldBuild != 'false'
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -84,25 +173,87 @@ jobs:
           }
 
       - name: Verify frontend
+        if: steps.decide.outputs.shouldBuild != 'false'
         run: npm run build
 
       - name: Verify Rust
+        if: steps.decide.outputs.shouldBuild != 'false'
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 
-      - name: Build signed updater and create draft release
+      - name: Write the nightly flavor config
+        if: steps.gate.outputs.isNightly == 'true'
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.gate.outputs.appVersion }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Merged over tauri.conf.json by `tauri build --config`: the nightly
+          # carries its full prerelease identity (the updater's semver
+          # ordering needs it) and polls the rolling nightly feed instead of
+          # the stable one. Stable installs are untouched — their endpoint is
+          # latest.json on the newest full release, which never resolves to a
+          # prerelease, so a nightly can never hijack the stable feed.
+          $overlay = @{
+            version = $env:APP_VERSION
+            plugins = @{
+              updater = @{
+                endpoints = @(
+                  "https://github.com/Siegemoe/leftleg/releases/download/nightly/latest-nightly.json"
+                )
+              }
+            }
+          } | ConvertTo-Json -Depth 5
+          Set-Content -Path "${{ github.workspace }}/nightly-tauri.json" -Value $overlay -Encoding utf8NoBOM
+          Get-Content "${{ github.workspace }}/nightly-tauri.json"
+
+      - name: Build signed updater and create the release
+        if: steps.decide.outputs.shouldBuild != 'false'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Nightly flavors display their full prerelease identity (vite's
+          # __APP_VERSION__), matching what their updater feed carries.
+          LEFTLEG_BUILD_VERSION: ${{ steps.gate.outputs.appVersion }}
         with:
           tagName: v__VERSION__
-          releaseName: Leftleg v__VERSION__
-          releaseBody: Signed Windows installer and automatic-update metadata for Leftleg v__VERSION__.
-          releaseDraft: true
-          prerelease: false
+          releaseName: Leftleg v__VERSION__${{ steps.gate.outputs.isNightly == 'true' && ' (nightly)' || '' }}
+          releaseBody: Signed Windows installer and automatic-update metadata for Leftleg v__VERSION__.${{ steps.gate.outputs.isNightly == 'true' && format(' Built from commit {0}.', github.sha) || '' }}
+          # Stable releases stay drafts for inspection before publishing;
+          # nightlies publish directly — that is the point of the cadence.
+          releaseDraft: ${{ steps.gate.outputs.isNightly == 'true' && 'false' || 'true' }}
+          prerelease: ${{ steps.gate.outputs.isNightly == 'true' && 'true' || 'false' }}
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           uploadUpdaterSignatures: true
           # Everything after `--` is forwarded to Cargo by `tauri build`.
-          args: -- --locked
+          args: ${{ steps.gate.outputs.isNightly == 'true' && format('--config {0}/nightly-tauri.json -- --locked', github.workspace) || '-- --locked' }}
+
+      - name: Publish the rolling nightly feed
+        if: steps.gate.outputs.isNightly == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          # The version-tagged prerelease carries its own latest.json, but its
+          # URL changes every night — installed nightly flavors poll ONE
+          # fixed address. Copy the fresh feed onto the rolling `nightly`
+          # release as latest-nightly.json (asset URLs inside point at the
+          # version tag, which is where the installers live).
+          $tag = "v${{ steps.gate.outputs.appVersion }}"
+          gh release download "$tag" --pattern "latest.json" --dir . --clobber
+          Move-Item latest.json latest-nightly.json -Force
+          if (gh release view nightly --json name -q .name 2>$null) {
+            gh release upload nightly latest-nightly.json --clobber
+          } else {
+            gh release create nightly latest-nightly.json --prerelease `
+              --title "Nightly channel" `
+              --notes "Rolling automatic-update feed for nightly installs; this file is overwritten every nightly. Installers live on their own vX.Y.Z-nightly.N tags."
+          }
+          # Belt and braces: never let the nightly prerelease claim the
+          # "latest release" marker — the stable feed resolves
+          # /releases/latest, and a prerelease must not be what it finds.
+          $releaseId = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" --jq .id
+          gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/releases/$releaseId" -f make_latest="false" --jq .name

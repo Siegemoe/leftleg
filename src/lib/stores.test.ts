@@ -12,6 +12,7 @@ vi.mock("./api", () => ({
   readGuiState: vi.fn().mockResolvedValue({}),
   writeGuiState: vi.fn().mockResolvedValue(undefined),
   pickAttachments: vi.fn().mockResolvedValue([]),
+  pickAndCreateProject: vi.fn().mockResolvedValue(null),
   openPathLocal: vi.fn().mockResolvedValue(undefined),
   getAgentDir: vi.fn().mockResolvedValue(""),
   pendingGuiWriteCount: vi.fn().mockReturnValue(0),
@@ -31,6 +32,7 @@ import {
   activeSessionPath,
   compact,
   connected,
+  createProject,
   exportSessionHtml,
   extDialog,
   forgetProject,
@@ -38,6 +40,7 @@ import {
   handleEvent,
   homePanelCollapsed,
   items,
+  newProjectOpen,
   newSession,
   openRightPanel,
   projectDir,
@@ -119,6 +122,30 @@ describe("update install safety", () => {
       error: "Update installation is preparing",
     });
     expect(vi.mocked(api.piRequest)).not.toHaveBeenCalled();
+  });
+});
+
+describe("createProject", () => {
+  it("creates the folder, closes the card, and lands in the new project", async () => {
+    newProjectOpen.set(true);
+    vi.mocked(api.pickAndCreateProject).mockResolvedValue("/work/created");
+    vi.mocked(api.piStart).mockResolvedValueOnce(11);
+    vi.mocked(api.piRequest).mockResolvedValue({ success: true, data: {} } as never);
+
+    const created = await createProject("created");
+
+    expect(created).toBe("/work/created");
+    expect(get(newProjectOpen)).toBe(false);
+    expect(get(projectDir)).toBe("/work/created");
+  });
+
+  it("resolves null on a cancelled folder dialog and leaves the card open", async () => {
+    newProjectOpen.set(true);
+    vi.mocked(api.pickAndCreateProject).mockResolvedValue(null);
+
+    expect(await createProject("created")).toBe(null);
+    expect(get(newProjectOpen)).toBe(true);
+    expect(get(projectDir)).toBe("");
   });
 });
 
@@ -366,6 +393,77 @@ describe("handleEvent: tool lifecycle", () => {
     const tool = get(items).find((x) => x.kind === "tool") as ToolItem;
     expect(tool.output).toBe("partial");
     expect(tool.status).toBe("running");
+  });
+
+  it("keeps the freshest subagent details from heartbeat updates", async () => {
+    // The subagent extension re-sends its per-task snapshot on every
+    // heartbeat; the panel renders live runs from whatever snapshot the item
+    // last carried, so each update must replace it wholesale.
+    await handleEvent({
+      type: "tool_execution_start",
+      toolCallId: "sa1",
+      toolName: "subagent",
+      args: { agent: "scout", task: "map the repo" },
+    });
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "sa1",
+      partialResult: {
+        content: [{ type: "text", text: "running" }],
+        details: { mode: "single", results: [{ agent: "scout", status: "running" }] },
+      },
+    });
+    let tool = get(items).find((x) => x.kind === "tool") as ToolItem;
+    expect(tool.name).toBe("subagent");
+    expect(tool.details).toEqual({
+      mode: "single",
+      results: [{ agent: "scout", status: "running" }],
+    });
+
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "sa1",
+      partialResult: {
+        content: [{ type: "text", text: "running" }],
+        details: { mode: "single", results: [{ agent: "scout", status: "success" }] },
+      },
+    });
+    tool = get(items).find((x) => x.kind === "tool") as ToolItem;
+    expect((tool.details as { results: Array<{ status: string }> }).results[0].status).toBe(
+      "success",
+    );
+
+    // A malformed later heartbeat clears the snapshot — stale results must
+    // not masquerade as fresh state.
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "sa1",
+      partialResult: {
+        content: [{ type: "text", text: "running" }],
+        details: "garbage" as never,
+      },
+    });
+    tool = get(items).find((x) => x.kind === "tool") as ToolItem;
+    expect(tool.details).toBeUndefined();
+
+    // Other tools never gain details from updates — only the subagent
+    // extension's heartbeat carries a structured snapshot worth keeping.
+    await handleEvent({
+      type: "tool_execution_start",
+      toolCallId: "b1",
+      toolName: "bash",
+      args: {},
+    });
+    await handleEvent({
+      type: "tool_execution_update",
+      toolCallId: "b1",
+      partialResult: {
+        content: [{ type: "text", text: "out" }],
+        details: { mode: "single", results: [] },
+      },
+    });
+    const bash = get(items).find((x) => x.kind === "tool" && x.toolCallId === "b1") as ToolItem;
+    expect(bash.details).toBeUndefined();
   });
 
   it("ignores updates for unknown tool ids", async () => {

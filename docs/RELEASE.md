@@ -17,7 +17,52 @@ complete per-release checklist.
 - The app version lives in `src-tauri/tauri.conf.json` (`version`). That single
   value is the real build identity: the updater compares it against
   `latest.json`, and the UI displays it (`vite.config.ts` injects it as
-  `__APP_VERSION__` — `package.json` is only npm metadata, kept in sync by hand).
+  `__APP_VERSION__` — `package.json` is only npm metadata, kept in sync by
+  hand; nightly flavor builds override it via `LEFTLEG_BUILD_VERSION`).
+
+## Nightly channel
+
+The stable feed is **never** touched by nightlies. GitHub's
+`/releases/latest/...` resolves only to full releases, so a prerelease-tagged
+nightly is invisible to it even by asset name — and the nightly feed uses a
+different file name anyway. Two feeds, two audiences:
+
+| Audience         | Updater endpoint                                    | What it serves           |
+| ---------------- | --------------------------------------------------- | ------------------------ |
+| Stable installs  | `.../releases/latest/download/latest.json`          | newest **full** release  |
+| Nightly installs | `.../releases/download/nightly/latest-nightly.json` | newest **nightly** build |
+
+Mechanics (all in `release.yml`):
+
+1. **Triggers**: a daily schedule (03:23 UTC) and `workflow_dispatch` build
+   from master HEAD; pushing a `vX.Y.Z-nightly.N` tag manually works too. The
+   scheduled run is skipped when master HEAD is already shipped as the newest
+   nightly (tag-commit comparison via `git ls-remote`).
+2. **Tag**: the run synthesizes `v<base>-nightly.<run_number>` from the
+   checked-in version, so the suffix is strictly increasing. Nightly tags must
+   sit on the checked-in base version — the version-identity gate compares
+   `v<base>` against `tauri.conf.json`. Re-running a failed nightly requires
+   deleting the partial release + tag first (the synthesized name collides).
+3. **Identity**: the nightly build carries its full prerelease version
+   (`0.7.2-nightly.7`) — a `tauri build --config` overlay sets
+   `plugins.updater.endpoints` to the nightly feed and `version` to the full
+   identity; `LEFTLEG_BUILD_VERSION` makes vite's `__APP_VERSION__` display
+   the same value. Semver ordering keeps nightlies updating within the
+   channel (`-nightly.8 > -nightly.7`); the two channels never cross because
+   each build's endpoint is baked in at build time.
+4. **Release**: published directly (`prerelease: true`, no draft inspection —
+   that is the point of the cadence), with installer + `.sig` + `latest.json`
+   on the version tag. The verification gates run exactly as for stables.
+5. **Rolling feed**: a final step copies the fresh `latest.json` onto the
+   rolling **`nightly`** release (created once, then asset-uploaded with
+   `--clobber`) as `latest-nightly.json`. Its download URLs point at the
+   version tag, where the installers live.
+
+Installing a nightly flavor = downloading an installer from a
+`vX.Y.Z-nightly.N` prerelease. That install then updates only within the
+nightly channel; switching back to stable means installing a stable build over
+it. GUI-side channel surfacing (which feed an install listens to) is future
+work.
 
 ## Per-release checklist
 

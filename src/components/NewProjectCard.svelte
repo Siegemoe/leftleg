@@ -1,23 +1,21 @@
 <script lang="ts">
-  // "Create a new project" card: one plain folder under a parent picked in
-  // the native folder dialog, then pi starts in it immediately. Reachable
-  // from the sidebar scope picker, the settings project manager, and the
-  // File menu.
+  // "Create a new project" card: one plain folder created under a parent
+  // picked in the native folder dialog — which the Rust command itself opens
+  // when Create is pressed, so the webview never supplies a path — then pi
+  // starts in it immediately. Reachable from the sidebar scope picker, the
+  // settings project manager, and the File menu.
   import { X } from "@lucide/svelte";
-  import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { newProjectOpen, createProject, extDialog, projectSettingsDir } from "../lib/stores";
 
   let name = $state("");
-  let parent = $state("");
   let error = $state("");
   let busy = $state(false);
 
   // The component stays mounted; without this a failed attempt would still
-  // be showing its error (and prefilled parent) the next time the card opens.
+  // be showing its error the next time the card opens.
   $effect(() => {
     if ($newProjectOpen) {
       name = "";
-      parent = "";
       error = "";
     }
   });
@@ -50,22 +48,6 @@
     }
   }
 
-  async function pickParent() {
-    try {
-      const picked = await openFileDialog({
-        directory: true,
-        multiple: false,
-        title: "Choose where to create the project",
-      });
-      if (typeof picked === "string") {
-        parent = picked;
-        error = "";
-      }
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
   // Client-side mirror of the native name gate so an obviously bad name
   // disables Create instead of waiting for the error round-trip. JS strings
   // are UTF-16, so `.length` matches the Rust 200-unit rule exactly.
@@ -79,17 +61,17 @@
       ![...name.trim()].some((c) => c.charCodeAt(0) < 0x20) &&
       !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(name.trim()),
   );
-  const canCreate = $derived(nameValid && parent !== "" && !busy);
+  const canCreate = $derived(nameValid && !busy);
 
   async function submit() {
     if (!canCreate) return;
     busy = true;
     error = "";
     try {
-      await createProject(parent, name);
+      const created = await createProject(name);
+      if (created === null) return; // folder dialog cancelled — card stays open
       // Closed + noted by createProject on success.
       name = "";
-      parent = "";
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -129,21 +111,10 @@
             }}
           />
         </label>
-        <div class="field">
-          <span class="label">Location</span>
-          <button class="pick" onclick={() => void pickParent()} disabled={busy}>
-            <span class="mono pick-path" class:placeholder={!parent}
-              >{parent || "Choose a parent folder…"}</span
-            >
-          </button>
-        </div>
-        {#if parent && nameValid}
-          <p class="preview mono">{parent + (parent.includes("\\") ? "\\" : "/") + name.trim()}</p>
-        {/if}
         {#if error}<p class="error">{error}</p>{/if}
         <p class="hint">
-          Leftleg creates the folder, then starts pi in it. The folder shows up in the sidebar like
-          any other project.
+          Leftleg asks for the parent folder when you create, makes the folder there, then starts pi
+          in it. The folder shows up in the sidebar like any other project.
         </p>
       </div>
       <footer class="card-foot">
@@ -212,39 +183,8 @@
     font-size: 12.5px;
     outline: none;
   }
-  .field input:focus,
-  .pick:focus-visible {
+  .field input:focus {
     border-color: var(--accent);
-  }
-  .pick {
-    padding: 7px 10px;
-    background: var(--bg-inset);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    text-align: left;
-  }
-  .pick:hover {
-    border-color: var(--border-strong);
-  }
-  .pick-path {
-    font-size: 12px;
-    color: var(--text-2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    display: block;
-  }
-  .pick-path.placeholder {
-    color: var(--text-3);
-  }
-  .preview {
-    margin: 0;
-    font-size: 11.5px;
-    color: var(--text-3);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .error {
     margin: 0;

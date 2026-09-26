@@ -5,6 +5,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning
 follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 `src-tauri/tauri.conf.json`.
 
+## [Unreleased]
+
+### Added
+
+- Nightly release channel: a scheduled 03:23 UTC build from master publishes
+  a `vX.Y.Z-nightly.N` prerelease and rolls its updater feed onto a
+  `nightly` release (`latest-nightly.json`); the stable feed is untouched —
+  `/releases/latest` never resolves to a prerelease. A nightly _install_ is
+  a build flavor (its updater endpoint is baked in), not a runtime toggle.
+  Nightly channel mechanics live in `docs/RELEASE.md`.
+- Subagents right-panel view: every subagent run in the current session —
+  live runs on top with a pulsing dot and per-agent status from the
+  extension's heartbeat snapshots, finished runs newest-first with
+  per-agent model, token/cost usage, and errors. Derived entirely from the
+  transcript items (no second store), so it survives session switches.
+  Cross-session history (`.pi/subagent-history.json`) needs a
+  path-validated Rust command and stays a follow-up.
+
+### Changed
+
+- Composer controls regrouped: the branch chip, model selector, and
+  thinking level moved directly under the chat bar (the keybinding hint
+  pushed to the row's right end); the status bar footer now carries run
+  telemetry only; the updater chip and version live in the sidebar footer.
+
 ## [0.7.2] — 2026-09-19
 
 ### Added

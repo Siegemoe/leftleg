@@ -251,8 +251,10 @@ export function readTextFile(projectDir: string, path: string): Promise<TextFile
   return invoke("read_text_file", { projectDir, path });
 }
 
-/** Create a new project folder (one plain component under a user-picked
- * absolute parent) and return its full path. */
-export function createProjectDir(parent: string, name: string): Promise<string> {
-  return invoke("create_project_dir", { parent, name });
+/** Native folder dialog + validated folder creation in one operation: the
+ * parent is only ever a directory the user just picked in Rust, so the
+ * webview supplies nothing but the folder name. Resolves to the new folder's
+ * path, or null when the dialog was cancelled. */
+export function pickAndCreateProject(name: string): Promise<string | null> {
+  return invoke("pick_and_create_project_dir", { name });
 }

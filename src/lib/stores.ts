@@ -124,23 +124,28 @@ export function openNewProject() {
 }
 
 /** Create the folder and make it the active project. Resolves to the new
- * path; throws so the caller (the card) can show the error inline. Folder
+ * path, or null when the folder dialog was cancelled (no error — the card
+ * stays open); throws so the caller (the card) can show the error inline.
+ * The parent folder is picked by the Rust-side dialog inside the command, so
  * creation runs inside the navigation gate with a run-time lock re-check —
  * the call-time check alone is racy, and a lock engaging mid-queue must
  * not leave a created-but-never-opened folder behind. */
-export async function createProject(parent: string, name: string): Promise<string> {
+export async function createProject(name: string): Promise<string | null> {
   const lockedErr = "update installation is preparing — try again in a moment";
   if (get(updateInstallLock)) throw new Error(lockedErr);
-  const dir = await navigate(async () => {
+  const dir = await navigate<string | null>(async () => {
     if (get(updateInstallLock)) throw new Error(lockedErr);
-    const created = await api.createProjectDir(parent, name);
+    const picked = await api.pickAndCreateProject(name);
+    if (picked === null) return null; // dialog cancelled — not an error
     // Already inside the serialized navigation — call the impl directly
     // (a nested navigate() would deadlock on its own tail).
-    const ok = await switchToProjectImpl(created);
+    const ok = await switchToProjectImpl(picked);
     if (!ok) throw new Error("couldn't start pi in the new folder");
-    return created;
+    return picked;
   });
-  // navigate() resolves undefined when its call-time lock check rejects.
+  // navigate() resolves undefined when its call-time lock check rejects;
+  // null means the folder dialog was cancelled.
+  if (dir === null) return null;
   if (!dir) throw new Error(lockedErr);
   newProjectOpen.set(false);
   transientNote(`Project created: ${dir}`, 6000);
@@ -996,6 +1001,17 @@ function renderEvent(
           t.output = text;
           t.outputTruncated = truncated;
           if (diff) t.diff = diff;
+          // The subagent extension re-sends its full per-task snapshot on
+          // details with every heartbeat; keeping the freshest one on the item
+          // lets the subagents panel render live runs from the transcript
+          // itself — no second store to keep in sync.
+          if (t.name === "subagent") {
+            // A malformed snapshot (null / primitive / array) clears instead
+            // of keeping the previous one — stale results must not masquerade
+            // as fresh state; the panel falls back to the call arguments.
+            const d = evt.partialResult?.details;
+            t.details = d && typeof d === "object" && !Array.isArray(d) ? d : undefined;
+          }
         }
         return a;
       });
