@@ -38,8 +38,19 @@ describe("matchKeybinding", () => {
     expect(matchKeybinding(ev({ key: "n", ctrlKey: true, shiftKey: true }), defaults)).toBe(
       "newProject",
     );
-    // Shift is not free: Ctrl+B with shift held owns no action.
-    expect(matchKeybinding(ev({ key: "b", ctrlKey: true, shiftKey: true }), defaults)).toBeNull();
+    // Shift is significant: Ctrl+Shift+B is its own action, and a shifted
+    // chord nobody owns stays unowned.
+    expect(matchKeybinding(ev({ key: "b", ctrlKey: true, shiftKey: true }), defaults)).toBe(
+      "toggleRightPanel",
+    );
+    expect(matchKeybinding(ev({ key: "x", ctrlKey: true, shiftKey: true }), defaults)).toBeNull();
+  });
+
+  it("matches the dock digits and the punctuation chords", () => {
+    expect(matchKeybinding(ev({ key: "1", ctrlKey: true }), defaults)).toBe("openStatus");
+    expect(matchKeybinding(ev({ key: "3", ctrlKey: true }), defaults)).toBe("openSubagents");
+    expect(matchKeybinding(ev({ key: "7", ctrlKey: true }), defaults)).toBe("openFiles");
+    expect(matchKeybinding(ev({ key: ",", ctrlKey: true }), defaults)).toBe("openSettings");
   });
 
   it("compares keys case-insensitively and skips unbound and unknown entries", () => {
@@ -77,9 +88,14 @@ describe("matchKeybinding", () => {
     expect(matchKeybinding(ev({ key: "n", code: "KeyM", ctrlKey: true }), defaults)).toBe(
       "newSession",
     );
-    // A glyph that matches neither key nor physical code is not a match.
+    // A Latin glyph typed on its physical key matches even when the layout
+    // mangles e.key: Cyrillic "и" sits on the B key, so Ctrl+Shift+B lands.
     expect(
       matchKeybinding(ev({ key: "и", code: "KeyB", ctrlKey: true, shiftKey: true }), defaults),
+    ).toBe("toggleRightPanel");
+    // A glyph that matches neither key nor physical code is not a match.
+    expect(
+      matchKeybinding(ev({ key: "ю", code: "KeyX", ctrlKey: true, shiftKey: true }), defaults),
     ).toBeNull();
     // Punctuation keeps e.key-only matching: a code carrying the same glyph's
     // physical key must not substitute for a binding the key can't match.
@@ -92,6 +108,7 @@ describe("parseCapture", () => {
   it("canonicalizes qualifying combos", () => {
     expect(parseCapture(ev({ key: "j", ctrlKey: true }))).toBe("Ctrl+J");
     expect(parseCapture(ev({ key: "7", ctrlKey: true, shiftKey: true }))).toBe("Ctrl+Shift+7");
+    expect(parseCapture(ev({ key: ",", ctrlKey: true }))).toBe("Ctrl+,");
     expect(parseCapture(ev({ key: " ", ctrlKey: true }))).toBe("Ctrl+Space");
     expect(parseCapture(ev({ key: "+", ctrlKey: true }))).toBe("Ctrl+Plus");
     expect(parseCapture(ev({ key: "J", metaKey: true }))).toBe("Ctrl+J");
@@ -127,7 +144,8 @@ describe("effectiveBindings and conflicts", () => {
     const eff = effectiveBindings({ openDiff: "Ctrl+D" });
     expect(eff.newSession).toBe("Ctrl+N");
     expect(eff.openDiff).toBe("Ctrl+D");
-    expect(eff.openStatus).toBeNull();
+    expect(eff.openStatus).toBe("Ctrl+1");
+    expect(eff.clearQueue).toBeNull();
     expect(ACTIONS.find((a) => a.id === "newProject")?.label).toBe("New project");
   });
 
@@ -136,6 +154,9 @@ describe("effectiveBindings and conflicts", () => {
     expect(conflictingAction(eff, "Ctrl+A", "openStatus")).toBe("openArtifacts");
     expect(conflictingAction(eff, "Ctrl+A", "openArtifacts")).toBeNull(); // self excluded
     expect(conflictingAction(eff, "ctrl+n", "openStatus")).toBe("newSession"); // normalized compare
-    expect(conflictingAction(eff, "Ctrl+K", "openStatus")).toBeNull();
+    // Ctrl+K now belongs to focusSearch by default…
+    expect(conflictingAction(eff, "Ctrl+K", "clearQueue")).toBe("focusSearch");
+    // …and a chord no default claims stays free.
+    expect(conflictingAction(eff, "Ctrl+9", "openStatus")).toBeNull();
   });
 });

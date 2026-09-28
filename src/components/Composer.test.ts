@@ -22,6 +22,7 @@ vi.mock("../lib/api", () => ({
 import * as api from "../lib/api";
 import Composer from "./Composer.svelte";
 import {
+  commands,
   composerDraft,
   connected,
   projectDir,
@@ -64,6 +65,7 @@ beforeEach(() => {
   projectDir.set("/proj");
   streaming.set(false);
   composerDraft.set(null);
+  commands.set([]);
   vi.mocked(api.piRequest).mockReset();
 });
 
@@ -223,5 +225,73 @@ describe("Composer draft revisions", () => {
     release({ success: true });
     await settle();
     expect(textArea().value).toBe("");
+  });
+});
+
+describe("Esc aborts the streaming run", () => {
+  it("sends abort while streaming and keeps work done so far", async () => {
+    vi.mocked(api.piRequest).mockResolvedValue({ success: true } as never);
+    streaming.set(true);
+    instance = mount(Composer, { target: host });
+    flushSync();
+
+    textArea().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    flushSync();
+    await settle();
+
+    expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "abort" }),
+      120,
+      "/proj",
+      undefined,
+    );
+  });
+
+  it("does not abort when idle — the key belongs to the Esc ladder", async () => {
+    streaming.set(false);
+    instance = mount(Composer, { target: host });
+    flushSync();
+
+    textArea().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    flushSync();
+    await settle();
+
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "abort" }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("closes the slash palette first; the second Esc aborts", async () => {
+    // jsdom lacks scrollIntoView, which the palette's follow-selection effect calls.
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.mocked(api.piRequest).mockResolvedValue({ success: true } as never);
+    commands.set([{ name: "help", description: "help" }]);
+    streaming.set(true);
+    instance = mount(Composer, { target: host });
+    flushSync();
+    type("/h");
+
+    textArea().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    flushSync();
+    await settle();
+    expect(vi.mocked(api.piRequest)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "abort" }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+
+    textArea().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    flushSync();
+    await settle();
+    expect(vi.mocked(api.piRequest)).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "abort" }),
+      120,
+      "/proj",
+      undefined,
+    );
   });
 });

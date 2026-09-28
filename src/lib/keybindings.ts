@@ -11,7 +11,18 @@ export type ActionId =
   | "openArtifacts"
   | "openStatus"
   | "openDiff"
-  | "openFiles";
+  | "openFiles"
+  | "openSubagents"
+  | "openBrowser"
+  | "openTerminal"
+  | "toggleRightPanel"
+  | "focusSearch"
+  | "openSettings"
+  | "cycleThinking"
+  | "clearQueue"
+  | "retryFailed"
+  | "cycleTheme"
+  | "goHome";
 
 export interface ActionDef {
   id: ActionId;
@@ -20,15 +31,33 @@ export interface ActionDef {
   defaultBinding: string | null;
 }
 
-/** Registry order is also dispatch order: first match wins. */
+/** Registry order is also dispatch order: first match wins. Defaults follow
+ * the conventions researched in docs/KEYBINDINGS-RESEARCH.md: dock digits
+ * ride the browser-trained "Ctrl+digit jumps to thing N" muscle memory (free
+ * in a desktop webview), Ctrl+K is the chat-app quick-switcher, Ctrl+, the
+ * cross-tool settings chord. Deliberately unowned: Ctrl+J (WebView2's own
+ * Downloads accelerator), Ctrl+R/F5 (reload), Ctrl+W (close-tab, needs a
+ * gate we don't have), the native edit family, and Esc (reserved for the
+ * cancel ladder). */
 export const ACTIONS: readonly ActionDef[] = [
   { id: "newSession", label: "New session", defaultBinding: "Ctrl+N" },
   { id: "newProject", label: "New project", defaultBinding: "Ctrl+Shift+N" },
   { id: "toggleSidebar", label: "Toggle sidebar", defaultBinding: "Ctrl+B" },
-  { id: "openArtifacts", label: "Open Artifacts dock", defaultBinding: null },
-  { id: "openStatus", label: "Open Status dock", defaultBinding: null },
-  { id: "openDiff", label: "Open Diff dock", defaultBinding: null },
-  { id: "openFiles", label: "Open Files dock", defaultBinding: null },
+  { id: "openStatus", label: "Open Status dock", defaultBinding: "Ctrl+1" },
+  { id: "openArtifacts", label: "Open Artifacts dock", defaultBinding: "Ctrl+2" },
+  { id: "openSubagents", label: "Open Subagents dock", defaultBinding: "Ctrl+3" },
+  { id: "openDiff", label: "Open Diff dock", defaultBinding: "Ctrl+4" },
+  { id: "openBrowser", label: "Open Browser dock", defaultBinding: "Ctrl+5" },
+  { id: "openTerminal", label: "Open Terminal dock", defaultBinding: "Ctrl+6" },
+  { id: "openFiles", label: "Open Files dock", defaultBinding: "Ctrl+7" },
+  { id: "toggleRightPanel", label: "Toggle right panel", defaultBinding: "Ctrl+Shift+B" },
+  { id: "focusSearch", label: "Search sessions", defaultBinding: "Ctrl+K" },
+  { id: "openSettings", label: "Open settings", defaultBinding: "Ctrl+," },
+  { id: "cycleThinking", label: "Cycle thinking level", defaultBinding: "Ctrl+Shift+T" },
+  { id: "clearQueue", label: "Clear queued messages", defaultBinding: null },
+  { id: "retryFailed", label: "Retry last failed prompt", defaultBinding: null },
+  { id: "cycleTheme", label: "Cycle theme", defaultBinding: null },
+  { id: "goHome", label: "Back to start view", defaultBinding: null },
 ];
 
 export const ACTION_IDS: readonly ActionId[] = ACTIONS.map((a) => a.id);

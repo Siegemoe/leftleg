@@ -9,6 +9,7 @@ import {
   projectDir,
   projectMeta,
   projectScope,
+  searchFocusTick,
   sessionQuery,
   sessionStates,
   sessions,
@@ -91,5 +92,21 @@ describe("sidebar footer", () => {
     const button = document.body.querySelector<HTMLButtonElement>("button.upd")!;
     expect(button.textContent).toContain("update preparing…");
     expect(button.disabled).toBe(true);
+  });
+});
+
+describe("focusSearch signal", () => {
+  it("focuses and selects the session-search input when ticked", () => {
+    instance = mount(Sidebar, { target: document.body });
+    flushSync();
+    const input = document.body.querySelector<HTMLInputElement>(".search input")!;
+    expect(document.activeElement).not.toBe(input);
+
+    searchFocusTick.update((n) => n + 1);
+    flushSync();
+    expect(document.activeElement).toBe(input);
+    // Selected, so typing replaces the previous query.
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
   });
 });

@@ -9,6 +9,18 @@ follows the `MAJOR.FEATURE.FIX` policy in `AGENTS.md` and the version in
 
 ### Added
 
+- Keybindings expansion: a second wave of app-wide shortcuts behind the
+  existing registry (`src/lib/keybindings.ts`, research in
+  `docs/KEYBINDINGS-RESEARCH.md`). New defaults — dock digits `Ctrl+1…7`
+  jump to Status, Artifacts, Subagents, Diff, Browser, Terminal, Files;
+  `Ctrl+K` focuses the session search (Slack/Discord quick-switcher
+  convention); `Ctrl+,` opens Settings (VS Code/Zed convention);
+  `Ctrl+Shift+B` toggles the right panel; `Ctrl+N`/`Ctrl+Shift+N` start a
+  session/project; `Ctrl+Shift+T` cycles the thinking level. All are
+  rebindable in Settings → Keybindings; chords WebView2 owns (Ctrl+J
+  downloads, Ctrl+R reload, Ctrl+F find) stay deliberately unowned.
+  Escape in the composer now aborts a streaming run (agent-TUI interrupt
+  convention), with the slash-command palette still taking the first Esc.
 - Nightly release channel: a scheduled 03:23 UTC build from master publishes
   a `vX.Y.Z-nightly.N` prerelease and rolls its updater feed onto a
   `nightly` release (`latest-nightly.json`); the stable feed is untouched —
